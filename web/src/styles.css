@@ -161,20 +161,28 @@ button, input, select { font: inherit; }
 
 /* reader */
 .readerShell{
-  height: calc(100vh - 54px);
+  height: 100vh;
   display:flex;
   flex-direction: column;
-}
-.appShell.readerFullscreen .readerShell{
-  height: 100vh;
+  position: relative;
 }
 .readerTop{
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   display:flex;
   align-items:center;
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  background: rgba(18,22,38,.55);
+  background: rgba(18,22,38,.85);
+  backdrop-filter: blur(10px);
+  transition: transform 0.2s ease;
+}
+.readerTop.hidden {
+  transform: translateY(-100%);
 }
 .readerTitle{
   font-weight: 700;
@@ -187,9 +195,8 @@ button, input, select { font: inherit; }
   text-overflow: ellipsis;
 }
 .readerStage{
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   background: rgba(0,0,0,.10);
 }
@@ -223,6 +230,11 @@ button, input, select { font: inherit; }
 }
 
 .bottomBar{
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   height: 38px;
   display:flex;
   align-items:center;
@@ -230,9 +242,14 @@ button, input, select { font: inherit; }
   gap: 12px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
-  background: rgba(18,22,38,.55);
+  background: rgba(18,22,38,.85);
+  backdrop-filter: blur(10px);
   font-size: 12px;
   color: var(--muted);
+  transition: transform 0.2s ease;
+}
+.bottomBar.hidden {
+  transform: translateY(100%);
 }
 
 /* settings drawer */

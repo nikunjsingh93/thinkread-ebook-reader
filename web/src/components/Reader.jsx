@@ -5,7 +5,7 @@ import { loadProgress, saveProgress } from "../lib/storage.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, onFullscreenChange }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -14,10 +14,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
   const [percent, setPercent] = useState(0);
   const [locationText, setLocationText] = useState("");
 
-  // Notify parent when UI visibility changes
-  useEffect(() => {
-    onFullscreenChange?.(!uiVisible);
-  }, [uiVisible, onFullscreenChange]);
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
 
@@ -181,19 +177,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
     });
   }, [prefs]);
 
-  // Resize rendition when UI visibility changes (fullscreen toggle)
-  useEffect(() => {
-    const r = renditionRef.current;
-    if (!r) return;
-    // Use requestAnimationFrame with a small delay to ensure DOM and CSS have updated
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        try {
-          r.resize();
-        } catch {}
-      }, 10);
-    });
-  }, [uiVisible]);
 
   async function goPrev() {
     try { await renditionRef.current?.prev(); } catch {}
@@ -209,13 +192,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
 
   return (
     <div className="readerShell">
-      {uiVisible && (
-        <div className="readerTop">
-          <button className="pill" onClick={onBack}>← Library</button>
-          <div className="readerTitle" title={book.title}>{book.title}</div>
-          <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
-        </div>
-      )}
+      <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
+        <button className="pill" onClick={onBack}>← Library</button>
+        <div className="readerTitle" title={book.title}>{book.title}</div>
+        <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
+      </div>
 
       <div className="readerStage">
         {/* tap zones */}
@@ -226,12 +207,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
         <div className="renditionHost" ref={hostRef} />
       </div>
 
-      {uiVisible && (
-        <div className="bottomBar">
-          <div>{locationText || " "}</div>
-          <div>{pct}%</div>
-        </div>
-      )}
+      <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>
+        <div>{locationText || " "}</div>
+        <div>{pct}%</div>
+      </div>
 
       <SettingsDrawer
         open={drawerOpen}

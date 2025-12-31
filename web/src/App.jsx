@@ -10,7 +10,6 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [prefs, setPrefs] = useState(loadPrefs());
   const [toast, setToast] = useState("");
-  const [readerFullscreen, setReaderFullscreen] = useState(false);
 
   useEffect(() => {
     let t;
@@ -27,12 +26,6 @@ export default function App() {
     reload().catch(() => setToast("API not reachable (is the server running?)"));
   }, []);
 
-  // Reset fullscreen state when book selection changes
-  useEffect(() => {
-    if (selected) {
-      setReaderFullscreen(false);
-    }
-  }, [selected]);
 
   function onPrefsChange(patch) {
     const next = { ...prefs, ...patch };
@@ -41,14 +34,14 @@ export default function App() {
   }
 
   return (
-    <div className={`appShell ${readerFullscreen ? 'readerFullscreen' : ''}`}>
-      {!readerFullscreen && (
+    <div className="appShell">
+      {!selected && (
         <div className="topbar">
           <div className="brand">
             <span>ThinkRead</span>
           </div>
           <div className="muted" style={{fontSize: 12}}>
-            {selected ? "Reading" : "Shelf"}
+            Shelf
           </div>
         </div>
       )}
@@ -60,10 +53,8 @@ export default function App() {
           onPrefsChange={onPrefsChange}
           onBack={() => {
             setSelected(null);
-            setReaderFullscreen(false);
           }}
           onToast={(t) => setToast(t)}
-          onFullscreenChange={setReaderFullscreen}
         />
       ) : (
         <Shelf
