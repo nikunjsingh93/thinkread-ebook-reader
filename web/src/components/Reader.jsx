@@ -5,6 +5,17 @@ import { loadProgress, saveProgress } from "../lib/storage.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
+function getFontFormat(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  switch (ext) {
+    case 'ttf': return 'truetype';
+    case 'otf': return 'opentype';
+    case 'woff': return 'woff';
+    case 'woff2': return 'woff2';
+    default: return 'truetype';
+  }
+}
+
 export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
@@ -34,11 +45,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     }
 
     try {
+      // Check if this is a custom font that needs @font-face loading
+      const isCustomFont = fontFamily.startsWith('custom:');
+      let actualFontFamily = fontFamily;
+
+      if (isCustomFont) {
+        const parts = fontFamily.substring(7).split(':'); // Remove 'custom:' prefix and split filename:fontFamily
+        const filename = parts[0];
+        actualFontFamily = parts[1];
+      }
+
       // Register or update the theme - epub.js will merge with existing
       // Use !important to override inline styles and embedded CSS from EPUB files
       rendition.themes.register("custom", {
         body: {
-          "font-family": `${fontFamily} !important`,
+          "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
           "line-height": `${lineHeight} !important`,
           "color": `${fg} !important`,
@@ -47,18 +68,39 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         // Apply to all text elements - use !important to override inline styles
         "p, span, div, li, td, th, blockquote, pre, code, em, strong, b, i, u, a": {
           "color": `${fg} !important`,
-          "font-family": `${fontFamily} !important`,
+          "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
           "line-height": `${lineHeight} !important`,
         },
         // Headings - apply color and font-family but preserve relative sizing
         "h1, h2, h3, h4, h5, h6": {
           "color": `${fg} !important`,
-          "font-family": `${fontFamily} !important`,
+          "font-family": `${actualFontFamily} !important`,
           "line-height": `${lineHeight} !important`,
         }
       });
-      
+
+      // Inject custom font CSS into the epub iframe if needed
+      if (isCustomFont) {
+        const filename = fontFamily.substring(7).split(':')[0]; // Extract filename from 'custom:filename:fontFamily'
+
+        // Wait for the rendition to be ready, then inject font-face CSS
+        rendition.hooks.content.register((contents) => {
+          const css = `
+            @font-face {
+              font-family: '${actualFontFamily}';
+              src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+              font-display: swap;
+            }
+          `;
+
+          // Inject the CSS into the iframe's head
+          const style = contents.document.createElement('style');
+          style.textContent = css;
+          contents.document.head.appendChild(style);
+        });
+      }
+
       // Select the theme to apply it
       rendition.themes.select("custom");
     } catch (err) {

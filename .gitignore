@@ -35,6 +35,7 @@ data/books/*.azw3
 # Keep the books directory structure
 !data/books/.gitkeep
 data/covers/
+data/fonts/
 data/state.json
 
 # Docker volumes and data

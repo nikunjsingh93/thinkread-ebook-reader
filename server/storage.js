@@ -10,14 +10,16 @@ function ensureDir(p) {
 export function getDataPaths(dataDir) {
   const booksDir = path.join(dataDir, "books");
   const coversDir = path.join(dataDir, "covers");
+  const fontsDir = path.join(dataDir, "fonts");
   const statePath = path.join(dataDir, "state.json");
   ensureDir(dataDir);
   ensureDir(booksDir);
   ensureDir(coversDir);
+  ensureDir(fontsDir);
   if (!fs.existsSync(statePath)) {
     fs.writeFileSync(statePath, JSON.stringify(DEFAULT_STATE, null, 2), "utf-8");
   }
-  return { booksDir, coversDir, statePath };
+  return { booksDir, coversDir, fontsDir, statePath };
 }
 
 export function loadState(statePath) {

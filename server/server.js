@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const { booksDir, coversDir, statePath } = getDataPaths(DATA_DIR);
+const { booksDir, coversDir, fontsDir, statePath } = getDataPaths(DATA_DIR);
 
 function getExt(originalName = "") {
   const ext = path.extname(originalName).toLowerCase();
@@ -100,6 +100,32 @@ const upload = multer({
     const allowedExts = ["epub", "mobi"];
     if (!allowedExts.includes(ext)) {
       return cb(new Error(`File type .${ext} is not supported. Supported formats: ${allowedExts.join(", ")}`));
+    }
+    cb(null, true);
+  },
+});
+
+// Font upload configuration
+const fontStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, fontsDir),
+  filename: (req, file, cb) => {
+    const ext = getExt(file.originalname);
+    const safeBase = sanitize(path.basename(file.originalname, path.extname(file.originalname))) || "font";
+    cb(null, `${safeBase}-${nanoid(10)}.${ext || "ttf"}`);
+  },
+});
+
+const fontUpload = multer({
+  storage: fontStorage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB per font file
+    files: 50,
+  },
+  fileFilter: (req, file, cb) => {
+    const ext = getExt(file.originalname).toLowerCase();
+    const allowedExts = ["ttf", "otf", "woff", "woff2"];
+    if (!allowedExts.includes(ext)) {
+      return cb(new Error(`Font type .${ext} is not supported. Supported formats: ${allowedExts.join(", ")}`));
     }
     cb(null, true);
   },
@@ -243,6 +269,82 @@ app.get("/api/books/:id/cover", (req, res) => {
   res.setHeader("Content-Type", contentType);
   res.setHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
   res.sendFile(coverPath);
+});
+
+// Get list of uploaded fonts
+app.get("/api/fonts", (req, res) => {
+  try {
+    const files = fs.readdirSync(fontsDir);
+    const fonts = files.map(filename => {
+      const ext = getExt(filename);
+      const name = path.basename(filename, path.extname(filename));
+      // Extract font family name from filename (remove nanoid suffix)
+      const fontFamily = name.replace(/-\w+$/, '').replace(/[-_]/g, ' ');
+      return {
+        filename,
+        fontFamily,
+        url: `/api/fonts/${filename}`,
+        format: ext
+      };
+    });
+    res.json({ fonts });
+  } catch (err) {
+    console.error("Error reading fonts directory:", err);
+    res.json({ fonts: [] });
+  }
+});
+
+// Upload fonts
+app.post("/api/fonts/upload", fontUpload.array("fonts", 50), async (req, res) => {
+  const files = req.files || [];
+  const uploaded = files.map(f => ({
+    filename: f.filename,
+    originalName: f.originalname,
+    size: f.size,
+    uploadedAt: Date.now()
+  }));
+
+  res.json({ uploaded });
+});
+
+// Serve font files
+app.get("/api/fonts/:filename", (req, res) => {
+  const { filename } = req.params;
+  const fontPath = path.join(fontsDir, filename);
+
+  if (!fs.existsSync(fontPath)) {
+    return res.status(404).send("Font file not found");
+  }
+
+  const ext = getExt(filename).toLowerCase();
+  let contentType = "application/octet-stream";
+  switch (ext) {
+    case "ttf": contentType = "font/ttf"; break;
+    case "otf": contentType = "font/otf"; break;
+    case "woff": contentType = "font/woff"; break;
+    case "woff2": contentType = "font/woff2"; break;
+  }
+
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
+  res.setHeader("Access-Control-Allow-Origin", "*"); // Allow cross-origin for font loading
+  res.sendFile(fontPath);
+});
+
+// Delete font
+app.delete("/api/fonts/:filename", (req, res) => {
+  const { filename } = req.params;
+  const fontPath = path.join(fontsDir, filename);
+
+  try {
+    if (fs.existsSync(fontPath)) {
+      fs.unlinkSync(fontPath);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Error deleting font:", err);
+    res.status(500).json({ error: "Failed to delete font" });
+  }
 });
 
 // Multer error handler (and others)

@@ -18,3 +18,24 @@ export async function apiDeleteBook(id) {
   if (!r.ok) throw new Error("Delete failed");
   return r.json();
 }
+
+export async function apiGetFonts() {
+  const r = await fetch("/api/fonts");
+  if (!r.ok) throw new Error("Failed to fetch fonts");
+  return r.json();
+}
+
+export async function apiUploadFonts(files) {
+  const fd = new FormData();
+  for (const f of files) fd.append("fonts", f);
+  const r = await fetch("/api/fonts/upload", { method: "POST", body: fd });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "Font upload failed");
+  return data;
+}
+
+export async function apiDeleteFont(filename) {
+  const r = await fetch(`/api/fonts/${filename}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("Font delete failed");
+  return r.json();
+}
