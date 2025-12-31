@@ -1,0 +1,36 @@
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ./server:/app
+      - /app/node_modules
+    environment:
+      - DATA_DIR=/data
+      - NODE_ENV=development
+      - PORT=8080
+    command: nodemon server.js
+    stdin_open: true
+    tty: true
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://server:8080
+    command: npm run dev
+    stdin_open: true
+    tty: true
+    depends_on:
+      - server

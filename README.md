@@ -6,38 +6,32 @@ A dead‑simple self‑hosted EPUB library + reader (Kindle-ish):
 - Read in-browser with **themes + typography controls** (font, size, margins, line height, colors)
 - Remembers your **last position** per book
 
-## Quick start (Docker)
+## Development Mode (with Docker)
 
-1) Install Docker Desktop (or Docker Engine)  
-2) From this folder:
+For development with hot-reload and watch mode:
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+**Access:**
+- Web UI: http://localhost:5173
+- API Server: http://localhost:8080
+
+## Production Build (Docker)
+
+For production deployment:
 
 ```bash
 docker compose up --build
 ```
 
-3) Open:
-- http://localhost:8080
+**Access:**
+- Application: http://localhost:8080
 
 Uploaded books + app data are stored in `./data` (mapped to `/data` inside the container).
 
-## Notes / limitations (kept intentionally simple)
+## Notes / Limitations
+
 - **EPUB only** (no MOBI/KFX). EPUB is the most browser-friendly format.
 - Covers are placeholders generated from the filename (easy to upgrade later).
-
-## Dev (optional, without Docker)
-
-In two terminals:
-
-```bash
-cd server
-npm install
-npm run dev
-```
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Then open the Vite URL and the API will be at `http://localhost:5174`.

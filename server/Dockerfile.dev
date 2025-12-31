@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install nodemon globally for auto-reload
+RUN npm install -g nodemon
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Install dependencies
+RUN npm install
+
+# Copy source (will be overridden by volume mount, but needed for initial setup)
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Run with nodemon for auto-reload on file changes
+CMD ["nodemon", "server.js"]
+
