@@ -37,23 +37,33 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
       hostRef.current.style.color = fg;
     }
 
-    rendition.themes.register("custom", {
-      body: {
-        "font-family": fontFamily,
-        "font-size": `${fontSize}px`,
-        "line-height": `${lineHeight}`,
-        "color": fg,
-        "background": bg,
-        "padding-left": `${margin}px`,
-        "padding-right": `${margin}px`,
-        "padding-top": "24px",
-        "padding-bottom": "36px",
-      },
-      "p, span, div": {
-        "color": fg
-      }
-    });
-    rendition.themes.select("custom");
+    try {
+      // Register or update the theme - epub.js will merge with existing
+      rendition.themes.register("custom", {
+        body: {
+          "font-family": fontFamily,
+          "font-size": `${fontSize}px`,
+          "line-height": `${lineHeight}`,
+          "color": fg,
+          "background": bg,
+          "padding-left": `${margin}px`,
+          "padding-right": `${margin}px`,
+          "padding-top": "24px",
+          "padding-bottom": "36px",
+        },
+        "p, span, div, h1, h2, h3, h4, h5, h6, li, td, th": {
+          "color": fg,
+          "font-family": fontFamily,
+          "font-size": `${fontSize}px`,
+          "line-height": `${lineHeight}`,
+        }
+      });
+      
+      // Select the theme
+      rendition.themes.select("custom");
+    } catch (err) {
+      console.error("Error applying theme:", err);
+    }
   }
 
   useEffect(() => {
@@ -80,9 +90,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
     const saved = loadProgress(book.id);
     const startAt = saved?.cfi || undefined;
 
+    // Apply prefs first, then display
     applyPrefs(rendition, prefs);
-
-    rendition.display(startAt).catch(() => rendition.display());
+    
+    // Display after a small delay to ensure theme is registered
+    setTimeout(() => {
+      rendition.display(startAt).catch(() => rendition.display());
+    }, 50);
 
     // Build locations (for percent) lazily
     epub.ready
@@ -127,7 +141,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
   useEffect(() => {
     const r = renditionRef.current;
     if (!r) return;
+    
+    // Get current location before applying prefs
+    const currentCfi = r.location?.start?.cfi;
+    
+    // Apply preferences
     applyPrefs(r, prefs);
+    
+    // Force re-render by re-displaying the current page
+    // This is necessary for epub.js to apply theme changes
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (currentCfi) {
+          r.display(currentCfi).catch(() => {
+            // Fallback: try to get current location again and display
+            try {
+              const loc = r.location?.start?.cfi;
+              if (loc) {
+                r.display(loc).catch(() => {});
+              } else {
+                // If no location, try next/prev to trigger re-render
+                r.next().catch(() => r.prev().catch(() => {}));
+              }
+            } catch {}
+          });
+        } else {
+          // If no location, try to display first page
+          r.display().catch(() => {});
+        }
+      }, 50);
+    });
   }, [prefs]);
 
   // Resize rendition when UI visibility changes (fullscreen toggle)

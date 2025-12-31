@@ -64,7 +64,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
         <div>
           <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
           <div className="muted" style={{fontSize: 12}}>
-            EPUB only • {books.length} book(s)
+            EPUB, MOBI • {books.length} book(s)
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           <input
             ref={inputRef}
             type="file"
-            accept=".epub"
+            accept=".epub,.mobi"
             multiple
             onChange={onFileChange}
             style={{display:"none"}}
@@ -100,7 +100,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
 
       {filtered.length === 0 ? (
         <div className="muted" style={{padding: "18px 0"}}>
-          No books yet. Click <b>Upload</b> to add EPUB files.
+          No books yet. Click <b>Upload</b> to add EPUB or MOBI files.
         </div>
       ) : (
         <div className="grid">

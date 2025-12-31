@@ -1,6 +1,8 @@
 import express from "express";
 import path from "node:path";
 import fs from "node:fs";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import morgan from "morgan";
 import multer from "multer";
 import mime from "mime-types";
@@ -8,6 +10,8 @@ import sanitize from "sanitize-filename";
 import { nanoid } from "nanoid";
 import { fileURLToPath } from "node:url";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
+
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +26,9 @@ function getExt(originalName = "") {
 }
 
 function guessTypeByExt(ext) {
-  if (ext === "epub") return "epub";
+  const extLower = ext.toLowerCase();
+  if (extLower === "epub") return "epub";
+  if (extLower === "mobi") return "mobi";
   return "unknown";
 }
 
@@ -42,9 +48,11 @@ const upload = multer({
     files: 200,
   },
   fileFilter: (req, file, cb) => {
-    const ext = getExt(file.originalname);
-    // Keep it intentionally simple: EPUB only.
-    if (ext !== "epub") return cb(new Error("Only .epub files are supported in this simple build."));
+    const ext = getExt(file.originalname).toLowerCase();
+    const allowedExts = ["epub", "mobi"];
+    if (!allowedExts.includes(ext)) {
+      return cb(new Error(`File type .${ext} is not supported. Supported formats: ${allowedExts.join(", ")}`));
+    }
     cb(null, true);
   },
 });
@@ -65,25 +73,64 @@ app.get("/api/books", (req, res) => {
   res.json({ books });
 });
 
-app.post("/api/upload", upload.array("files", 200), (req, res) => {
+app.post("/api/upload", upload.array("files", 200), async (req, res) => {
   const files = req.files || [];
   const state = loadState(statePath);
 
   const added = [];
   for (const f of files) {
-    const ext = getExt(f.originalname);
-    const type = guessTypeByExt(ext);
+    let ext = getExt(f.originalname);
+    let type = guessTypeByExt(ext);
+    let storedName = f.filename;
+    let finalType = type;
+    let fileSize = f.size;
+
+    // Convert MOBI to EPUB
+    if (type === "mobi") {
+      try {
+        const inputPath = path.join(booksDir, f.filename);
+        const outputPath = path.join(booksDir, `${path.basename(f.filename, path.extname(f.filename))}-${nanoid(10)}.epub`);
+        
+        // Use ebook-convert from Calibre to convert MOBI to EPUB
+        await execAsync(`ebook-convert "${inputPath}" "${outputPath}"`);
+        
+        // Delete original MOBI file
+        try {
+          fs.unlinkSync(inputPath);
+        } catch (err) {
+          console.error("Error deleting original MOBI file:", err);
+        }
+        
+        // Update file info
+        storedName = path.basename(outputPath);
+        finalType = "epub";
+        ext = "epub";
+        
+        // Update file size
+        try {
+          const stats = fs.statSync(outputPath);
+          fileSize = stats.size;
+        } catch (err) {
+          console.error("Error getting converted file stats:", err);
+        }
+      } catch (err) {
+        console.error("Error converting MOBI to EPUB:", err);
+        // If conversion fails, return error
+        return res.status(500).json({ error: "Failed to convert MOBI file to EPUB. Please ensure Calibre is installed." });
+      }
+    }
+
     const id = nanoid(12);
     const originalName = f.originalname;
     const safeTitle = path.basename(originalName, path.extname(originalName));
 
     const book = {
       id,
-      type,
+      type: finalType,
       title: safeTitle,
       originalName,
-      storedName: f.filename,
-      sizeBytes: f.size,
+      storedName,
+      sizeBytes: fileSize,
       addedAt: Date.now(),
     };
     state.books.push(book);

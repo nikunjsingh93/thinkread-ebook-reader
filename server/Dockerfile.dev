@@ -1,6 +1,12 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
+
+# Install Calibre for MOBI to EPUB conversion
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends calibre && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install nodemon globally for auto-reload
 RUN npm install -g nodemon

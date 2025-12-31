@@ -7,8 +7,15 @@ COPY web ./
 RUN npm run build
 
 # --- Runtime server (serves API + static web build) ---
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
+
+# Install Calibre for MOBI to EPUB conversion
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends calibre && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production
 COPY server/package.json server/package-lock.json* ./
 RUN npm install --omit=dev
