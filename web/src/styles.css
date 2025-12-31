@@ -252,6 +252,17 @@ button, input, select { font: inherit; }
   transform: translateY(100%);
 }
 
+/* Multi-select card styling */
+.card.multi-select {
+  position: relative;
+  cursor: pointer;
+}
+
+.card.multi-select:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
 /* Navigation slider styling */
 .bottomBar input[type="range"] {
   -webkit-appearance: none;

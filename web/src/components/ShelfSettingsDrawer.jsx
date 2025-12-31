@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { apiGetFonts, apiUploadFonts, apiDeleteFont } from "../lib/api.js";
 
-export default function ShelfSettingsDrawer({ open, onClose }) {
+export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
@@ -69,6 +69,28 @@ export default function ShelfSettingsDrawer({ open, onClose }) {
         </div>
 
         <div style={{marginTop: "20px"}}>
+          <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Library Management</h4>
+
+          <div className="row" style={{marginBottom: "20px"}}>
+            <label>Delete Books</label>
+            <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
+              <button
+                className="pill"
+                onClick={() => {
+                  onClose();
+                  onEnterDeleteMode();
+                }}
+                style={{fontSize: "12px", padding: "6px 12px"}}
+              >
+                Select Books to Delete
+              </button>
+            </div>
+          </div>
+
+          <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
+            Select and delete multiple books at once.
+          </div>
+
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
 
           <div className="row">

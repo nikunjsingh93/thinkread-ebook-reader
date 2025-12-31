@@ -16,11 +16,12 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+  const [selectedBooks, setSelectedBooks] = useState(new Set());
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -31,6 +32,60 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [sortDropdownOpen]);
+
+  function toggleBookSelection(bookId) {
+    const newSelected = new Set(selectedBooks);
+    if (newSelected.has(bookId)) {
+      newSelected.delete(bookId);
+    } else {
+      newSelected.add(bookId);
+    }
+    setSelectedBooks(newSelected);
+  }
+
+  function enterMultiSelectMode() {
+    onEnterDeleteMode();
+    setSelectedBooks(new Set());
+  }
+
+  function exitMultiSelectMode() {
+    onExitDeleteMode();
+    setSelectedBooks(new Set());
+  }
+
+  function selectAllBooks() {
+    setSelectedBooks(new Set(filtered.map(b => b.id)));
+  }
+
+  function clearSelection() {
+    setSelectedBooks(new Set());
+  }
+
+  async function deleteSelectedBooks() {
+    if (selectedBooks.size === 0) return;
+
+    const bookTitles = Array.from(selectedBooks).map(id =>
+      books.find(b => b.id === id)?.title || 'Unknown book'
+    );
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      for (const bookId of selectedBooks) {
+        await apiDeleteBook(bookId);
+      }
+      setSelectedBooks(new Set());
+      onExitDeleteMode();
+      onReload?.();
+      onToast?.(`Deleted ${selectedBooks.size} book(s)`);
+    } catch (err) {
+      onToast?.(err?.message || "Delete failed");
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -98,14 +153,51 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   return (
     <div className="page">
       <div className="shelfHeader">
-        <div>
-          <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
-          <div className="muted" style={{fontSize: 12}}>
-            EPUB, MOBI • {books.length} book(s)
-          </div>
-        </div>
+        {deleteMode ? (
+          <>
+            <div>
+              <div style={{fontWeight: 800, fontSize: 18}}>
+                Delete Books ({selectedBooks.size} selected)
+              </div>
+              <div className="muted" style={{fontSize: 12}}>
+                Select books to delete
+              </div>
+            </div>
 
-        <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
+            <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
+              <button className="pill" onClick={selectAllBooks} style={{fontSize: "12px", padding: "4px 8px"}}>
+                Select All
+              </button>
+              <button className="pill" onClick={clearSelection} style={{fontSize: "12px", padding: "4px 8px"}}>
+                Clear
+              </button>
+              <button className="pill" onClick={exitMultiSelectMode} style={{fontSize: "12px", padding: "4px 8px"}}>
+                Cancel
+              </button>
+              <button
+                className="pill"
+                onClick={deleteSelectedBooks}
+                disabled={selectedBooks.size === 0}
+                style={{
+                  fontSize: "12px",
+                  padding: "4px 8px",
+                  opacity: selectedBooks.size === 0 ? 0.5 : 1
+                }}
+              >
+                Delete ({selectedBooks.size})
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
+              <div className="muted" style={{fontSize: 12}}>
+                EPUB, MOBI • {books.length} book(s)
+              </div>
+            </div>
+
+            <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -216,6 +308,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             style={{display:"none"}}
           />
         </div>
+          </>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -228,15 +322,33 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             const progress = loadProgress(b.id);
             const pct = progress?.percent != null ? Math.round(progress.percent * 100) : null;
             return (
-              <div className="card" key={b.id} onClick={() => onOpenBook(b)}>
-                <button
-                  className="kebab"
-                  onClick={(e) => { e.stopPropagation(); deleteBook(b.id); }}
-                  title="Delete"
-                  aria-label="Delete"
-                >
-                  ✕
-                </button>
+              <div
+                className={`card ${deleteMode ? 'multi-select' : ''}`}
+                key={b.id}
+                onClick={() => deleteMode ? toggleBookSelection(b.id) : onOpenBook(b)}
+              >
+                {deleteMode && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      zIndex: 10
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedBooks.has(b.id)}
+                      onChange={() => toggleBookSelection(b.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        accentColor: 'var(--accent, #007acc)'
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="cover">
                   {b.coverImage ? (
                     <img

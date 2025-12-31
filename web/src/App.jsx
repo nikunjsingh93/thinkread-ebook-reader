@@ -12,6 +12,7 @@ export default function App() {
   const [prefs, setPrefs] = useState(loadPrefs());
   const [toast, setToast] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteMode, setDeleteMode] = useState(false);
 
   useEffect(() => {
     let t;
@@ -76,6 +77,9 @@ export default function App() {
           onToast={(t) => setToast(t)}
           sortBy={prefs.sortBy}
           onSortChange={(sortBy) => onPrefsChange({ sortBy })}
+          deleteMode={deleteMode}
+          onEnterDeleteMode={() => setDeleteMode(true)}
+          onExitDeleteMode={() => setDeleteMode(false)}
         />
       )}
 
@@ -84,6 +88,7 @@ export default function App() {
       <ShelfSettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        onEnterDeleteMode={() => setDeleteMode(true)}
       />
     </div>
   );
