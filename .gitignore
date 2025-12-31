@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+server/node_modules/
+web/node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+web/dist/
+web/build/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data files (user uploaded books and state)
+data/books/*.epub
+data/books/*.pdf
+data/books/*.mobi
+data/books/*.azw
+data/books/*.azw3
+# Keep the books directory structure
+!data/books/.gitkeep
+data/state.json
+
+# Docker volumes and data
+docker-volumes/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
