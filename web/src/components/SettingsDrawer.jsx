@@ -187,6 +187,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           </div>
         </div>
 
+        <div className="row">
+          <label>Two Page Layout</label>
+          <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer'}}>
+            <input
+              type="checkbox"
+              checked={prefs.twoPageLayout || false}
+              onChange={(e) => onChange({ twoPageLayout: e.target.checked })}
+              style={{width: '16px', height: '16px'}}
+            />
+            <span style={{fontSize: '14px'}}>Enable side-by-side pages</span>
+          </label>
+        </div>
+
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
           Tip: Tap the middle of the page to show/hide the reader toolbar.
         </div>

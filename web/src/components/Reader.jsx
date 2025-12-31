@@ -129,7 +129,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     const rendition = epub.renderTo(host, {
       width: "100%",
       height: "100%",
-      spread: "none",
+      spread: prefs.twoPageLayout ? "auto" : "none",
       flow: "paginated",
     });
     renditionRef.current = rendition;
@@ -272,41 +272,73 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     // Get current location before applying prefs
     const currentCfi = r.location?.start?.cfi;
 
+    // Check if two-page layout changed and update spread
+    const newSpread = prefs.twoPageLayout ? "auto" : "none";
+    const spreadChanged = r.settings?.spread !== newSpread;
+
+    if (spreadChanged) {
+
+      // Use epub.js spread method to change layout
+      setTimeout(() => {
+        try {
+          r.spread(newSpread);
+
+          // Force resize and re-display
+          setTimeout(() => {
+            r.resize();
+            if (currentCfi) {
+              r.display(currentCfi).catch(() => {});
+            }
+          }, 50);
+        } catch (err) {
+          console.warn("Failed to apply spread change:", err);
+          // Fallback: try direct settings change
+          try {
+            r.settings.spread = newSpread;
+            r.resize();
+          } catch (fallbackErr) {
+            console.warn("Fallback also failed:", fallbackErr);
+          }
+        }
+      }, 50);
+    }
+
     // Apply preferences
     applyPrefs(r, prefs);
 
     // Resize rendition when prefs change (for margin changes)
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        try {
-          r.resize();
-        } catch {}
-      }, 10);
-    });
+    if (!spreadChanged) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try {
+            r.resize();
+          } catch {}
+        }, 10);
+      });
 
-    // Force re-render by re-displaying the current page
-    // This is necessary for epub.js to apply theme changes
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        if (currentCfi) {
-          r.display(currentCfi).catch(() => {
-            // Fallback: try to get current location again and display
-            try {
-              const loc = r.location?.start?.cfi;
-              if (loc) {
-                r.display(loc).catch(() => {});
-              } else {
-                // If no location, try next/prev to trigger re-render
-                r.next().catch(() => r.prev().catch(() => {}));
-              }
-            } catch {}
-          });
-        } else {
-          // If no location, try to display first page
-          r.display().catch(() => {});
-        }
-      }, 50);
-    });
+      // Force re-render by re-displaying the current page
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (currentCfi) {
+            r.display(currentCfi).catch(() => {
+              // Fallback: try to get current location again and display
+              try {
+                const loc = r.location?.start?.cfi;
+                if (loc) {
+                  r.display(loc).catch(() => {});
+                } else {
+                  // If no location, try next/prev to trigger re-render
+                  r.next().catch(() => r.prev().catch(() => {}));
+                }
+              } catch {}
+            });
+          } else {
+            // If no location, try to display first page
+            r.display().catch(() => {});
+          }
+        }, 50);
+      });
+    }
   }, [prefs]);
 
 

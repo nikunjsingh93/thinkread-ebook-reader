@@ -25,6 +25,7 @@ export function defaultPrefs() {
     bg: "#f6f1e7",
     fg: "#1a1a1a",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
+    twoPageLayout: false, // Enable two-page side-by-side layout
   };
 }
 
