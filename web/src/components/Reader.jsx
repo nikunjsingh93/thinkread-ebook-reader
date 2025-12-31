@@ -39,27 +39,35 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, on
 
     try {
       // Register or update the theme - epub.js will merge with existing
+      // Use !important to override inline styles and embedded CSS from EPUB files
       rendition.themes.register("custom", {
         body: {
-          "font-family": fontFamily,
-          "font-size": `${fontSize}px`,
-          "line-height": `${lineHeight}`,
-          "color": fg,
-          "background": bg,
-          "padding-left": `${margin}px`,
-          "padding-right": `${margin}px`,
-          "padding-top": "24px",
-          "padding-bottom": "36px",
+          "font-family": `${fontFamily} !important`,
+          "font-size": `${fontSize}px !important`,
+          "line-height": `${lineHeight} !important`,
+          "color": `${fg} !important`,
+          "background": `${bg} !important`,
+          "padding-left": `${margin}px !important`,
+          "padding-right": `${margin}px !important`,
+          "padding-top": "24px !important",
+          "padding-bottom": "36px !important",
         },
-        "p, span, div, h1, h2, h3, h4, h5, h6, li, td, th": {
-          "color": fg,
-          "font-family": fontFamily,
-          "font-size": `${fontSize}px`,
-          "line-height": `${lineHeight}`,
+        // Apply to all text elements - use !important to override inline styles
+        "p, span, div, li, td, th, blockquote, pre, code, em, strong, b, i, u, a": {
+          "color": `${fg} !important`,
+          "font-family": `${fontFamily} !important`,
+          "font-size": `${fontSize}px !important`,
+          "line-height": `${lineHeight} !important`,
+        },
+        // Headings - apply color and font-family but preserve relative sizing
+        "h1, h2, h3, h4, h5, h6": {
+          "color": `${fg} !important`,
+          "font-family": `${fontFamily} !important`,
+          "line-height": `${lineHeight} !important`,
         }
       });
       
-      // Select the theme
+      // Select the theme to apply it
       rendition.themes.select("custom");
     } catch (err) {
       console.error("Error applying theme:", err);
