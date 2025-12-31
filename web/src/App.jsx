@@ -44,9 +44,6 @@ export default function App() {
             <span>ThinkRead</span>
           </div>
           <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
-            <div className="muted" style={{fontSize: 12}}>
-              Shelf
-            </div>
             <button
               className="pill"
               onClick={() => setSettingsOpen(true)}
