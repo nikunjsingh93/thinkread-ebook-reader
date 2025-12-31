@@ -68,13 +68,15 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           </div>
         </div>
 
-        <div style={{display:"flex", gap:10, alignItems:"center"}}>
+        <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0}}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search…"
             style={{
-              width: 220,
+              flex: 1,
+              minWidth: 0,
+              maxWidth: 220,
               border: "1px solid rgba(255,255,255,.12)",
               background: "rgba(18,22,38,.55)",
               color: "var(--text)",
@@ -82,7 +84,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
               padding: "10px 12px"
             }}
           />
-          <button className="pill" onClick={pickFiles} disabled={uploading}>
+          <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
           <input

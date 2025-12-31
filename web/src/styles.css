@@ -7,9 +7,14 @@
   --accent: #7c5cff;
 }
 *{ box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { 
+  height: 100%; 
+  width: 100%;
+  overflow-x: hidden;
+}
 body{
   margin:0;
+  padding: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   color: var(--text);
   background: radial-gradient(1200px 900px at 20% 10%, rgba(124,92,255,.28), transparent 60%),
@@ -21,8 +26,11 @@ button, input, select { font: inherit; }
 
 .appShell{
   height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 /* top bar */
@@ -38,6 +46,9 @@ button, input, select { font: inherit; }
   position: sticky;
   top: 0;
   z-index: 20;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .brand{
   display:flex;
@@ -62,6 +73,7 @@ button, input, select { font: inherit; }
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+  box-sizing: border-box;
 }
 .shelfHeader{
   display:flex;
@@ -69,6 +81,22 @@ button, input, select { font: inherit; }
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+  .shelfHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .shelfHeader > div:last-child {
+    width: 100%;
+    display: flex;
+    gap: 10px;
+  }
 }
 .muted{ color: var(--muted); }
 .grid{
