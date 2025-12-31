@@ -13,6 +13,12 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   }, [open, onClose]);
 
   useEffect(() => {
+    // Load fonts when component mounts
+    loadFonts();
+  }, []);
+
+  useEffect(() => {
+    // Also load fonts when drawer opens (in case fonts were added)
     if (open) {
       loadFonts();
     }
@@ -52,6 +58,12 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 {font.fontFamily} (Custom)
               </option>
             ))}
+            {/* Fallback option for custom fonts that aren't loaded yet */}
+            {prefs.fontFamily && prefs.fontFamily.startsWith('custom:') && !fonts.some(font => `custom:${font.filename}:${font.fontFamily}` === prefs.fontFamily) && (
+              <option value={prefs.fontFamily}>
+                {prefs.fontFamily.split(':')[2] || 'Custom Font'} (Custom)
+              </option>
+            )}
           </select>
         </div>
 
