@@ -1,4 +1,4 @@
-# Simple E‑Book Reader (React + Docker)
+# ThinkRead (React + Docker)
 
 A dead‑simple self‑hosted EPUB library + reader (Kindle-ish):
 - Upload multiple **EPUB** files from your device

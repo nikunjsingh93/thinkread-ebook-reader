@@ -46,7 +46,7 @@ export default function App() {
         <div className="topbar">
           <div className="brand">
             <span style={{display:"inline-flex", width: 10, height: 10, borderRadius: 999, background: "var(--accent)"}} />
-            <span>Simple E‑Book Reader</span>
+            <span>ThinkRead</span>
           </div>
           <div className="muted" style={{fontSize: 12}}>
             {selected ? "Reading" : "Shelf"}

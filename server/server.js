@@ -152,6 +152,6 @@ if (fs.existsSync(publicDir)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Simple E‑Book Reader running on http://localhost:${PORT}`);
+  console.log(`ThinkRead running on http://localhost:${PORT}`);
   console.log(`DATA_DIR: ${DATA_DIR}`);
 });
