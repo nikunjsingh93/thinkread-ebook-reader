@@ -9,6 +9,7 @@ import mime from "mime-types";
 import sanitize from "sanitize-filename";
 import { nanoid } from "nanoid";
 import { fileURLToPath } from "node:url";
+import epubParser from "epub";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
 
 const execAsync = promisify(exec);
@@ -18,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const { booksDir, statePath } = getDataPaths(DATA_DIR);
+const { booksDir, coversDir, statePath } = getDataPaths(DATA_DIR);
 
 function getExt(originalName = "") {
   const ext = path.extname(originalName).toLowerCase();
@@ -30,6 +31,53 @@ function guessTypeByExt(ext) {
   if (extLower === "epub") return "epub";
   if (extLower === "mobi") return "mobi";
   return "unknown";
+}
+
+async function extractCoverImage(epubPath, bookId) {
+  return new Promise((resolve, reject) => {
+    const epub = new epubParser(epubPath);
+    epub.on("end", () => {
+      // Check if there's a cover image
+      if (epub.metadata.cover) {
+        const coverId = epub.metadata.cover;
+        const coverImage = epub.manifest[coverId];
+        if (coverImage && coverImage.href) {
+          // Get the full path to the cover image within the epub
+          epub.getImage(coverId, (error, img, mimeType) => {
+            if (error) {
+              console.log(`No cover found for book ${bookId}:`, error.message);
+              return resolve(null);
+            }
+
+            // Save the cover image
+            const coverExt = mimeType === 'image/jpeg' ? 'jpg' : 'png';
+            const coverFilename = `${bookId}.${coverExt}`;
+            const coverPath = path.join(coversDir, coverFilename);
+
+            fs.writeFile(coverPath, img, (err) => {
+              if (err) {
+                console.error(`Error saving cover for book ${bookId}:`, err);
+                return resolve(null);
+              }
+              console.log(`Extracted cover for book ${bookId}`);
+              resolve(coverFilename);
+            });
+          });
+        } else {
+          resolve(null);
+        }
+      } else {
+        resolve(null);
+      }
+    });
+
+    epub.on("error", (error) => {
+      console.log(`Error parsing epub for book ${bookId}:`, error.message);
+      resolve(null);
+    });
+
+    epub.parse();
+  });
 }
 
 const storage = multer.diskStorage({
@@ -124,6 +172,13 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
     const originalName = f.originalname;
     const safeTitle = path.basename(originalName, path.extname(originalName));
 
+    // Extract cover image for epub files
+    let coverImage = null;
+    if (finalType === "epub") {
+      const epubPath = path.join(booksDir, storedName);
+      coverImage = await extractCoverImage(epubPath, id);
+    }
+
     const book = {
       id,
       type: finalType,
@@ -131,6 +186,7 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
       originalName,
       storedName,
       sizeBytes: fileSize,
+      coverImage,
       addedAt: Date.now(),
     };
     state.books.push(book);
@@ -174,6 +230,21 @@ app.get("/api/books/:id/file", (req, res) => {
   res.sendFile(filePath);
 });
 
+app.get("/api/books/:id/cover", (req, res) => {
+  const { id } = req.params;
+  const state = loadState(statePath);
+  const book = state.books.find((b) => b.id === id);
+  if (!book || !book.coverImage) return res.status(404).send("No cover found");
+
+  const coverPath = path.join(coversDir, book.coverImage);
+  if (!fs.existsSync(coverPath)) return res.status(404).send("Cover file missing");
+
+  const contentType = mime.lookup(coverPath) || "image/jpeg";
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=31536000"); // Cache for 1 year
+  res.sendFile(coverPath);
+});
+
 // Multer error handler (and others)
 app.use((err, req, res, next) => {
   if (err) {
@@ -198,7 +269,7 @@ if (fs.existsSync(publicDir)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`ThinkRead running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`ThinkRead running on http://0.0.0.0:${PORT}`);
   console.log(`DATA_DIR: ${DATA_DIR}`);
 });

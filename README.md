@@ -2,7 +2,7 @@
 
 A dead‑simple self‑hosted EPUB library + reader (Kindle-ish):
 - Upload multiple **EPUB** files from your device
-- Browse them in a **shelf** view
+- Browse them in a **shelf** view with **extracted book covers**
 - Read in-browser with **themes + typography controls** (font, size, margins, line height, colors)
 - Remembers your **last position** per book
 
@@ -34,4 +34,4 @@ Uploaded books + app data are stored in `./data` (mapped to `/data` inside the c
 ## Notes / Limitations
 
 - **EPUB only** (no MOBI/KFX). EPUB is the most browser-friendly format.
-- Covers are placeholders generated from the filename (easy to upgrade later).
+- **EPUB covers are automatically extracted** and displayed in the shelf view.

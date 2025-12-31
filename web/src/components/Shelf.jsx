@@ -117,7 +117,27 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
                 >
                   ✕
                 </button>
-                <div className="cover">{coverLetter(b.title)}</div>
+                <div className="cover">
+                  {b.coverImage ? (
+                    <img
+                      src={`/api/books/${b.id}/cover`}
+                      alt={`${b.title} cover`}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
+                        borderRadius: '4px'
+                      }}
+                      onError={(e) => {
+                        // Fallback to letter if image fails to load
+                        e.target.style.display = 'none';
+                        e.target.parentNode.textContent = coverLetter(b.title);
+                      }}
+                    />
+                  ) : (
+                    coverLetter(b.title)
+                  )}
+                </div>
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
                   <div className="small">
