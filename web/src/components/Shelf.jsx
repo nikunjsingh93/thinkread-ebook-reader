@@ -16,12 +16,11 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
-  const [sortBy, setSortBy] = useState("upload"); // "upload", "alphabetical", "lastOpened"
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -150,7 +149,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
               }}>
                 <button
                   onClick={() => {
-                    setSortBy("upload");
+                    onSortChange("upload");
                     setSortDropdownOpen(false);
                   }}
                   style={{
@@ -169,7 +168,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
                 </button>
                 <button
                   onClick={() => {
-                    setSortBy("alphabetical");
+                    onSortChange("alphabetical");
                     setSortDropdownOpen(false);
                   }}
                   style={{
@@ -188,7 +187,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
                 </button>
                 <button
                   onClick={() => {
-                    setSortBy("lastOpened");
+                    onSortChange("lastOpened");
                     setSortDropdownOpen(false);
                   }}
                   style={{

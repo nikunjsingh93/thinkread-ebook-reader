@@ -74,6 +74,8 @@ export default function App() {
           onOpenBook={(b) => setSelected(b)}
           onReload={reload}
           onToast={(t) => setToast(t)}
+          sortBy={prefs.sortBy}
+          onSortChange={(sortBy) => onPrefsChange({ sortBy })}
         />
       )}
 

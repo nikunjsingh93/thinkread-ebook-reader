@@ -24,6 +24,7 @@ export function defaultPrefs() {
     horizontalMargin: 46, // px (left/right padding)
     bg: "#f6f1e7",
     fg: "#1a1a1a",
+    sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
   };
 }
 
