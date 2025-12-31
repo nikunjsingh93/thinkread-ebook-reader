@@ -45,15 +45,27 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
-          <label>Margins</label>
+          <label>Vertical margins</label>
           <input
             type="range"
             min="10"
             max="110"
-            value={prefs.margin}
-            onChange={(e) => onChange({ margin: Number(e.target.value) })}
+            value={prefs.verticalMargin}
+            onChange={(e) => onChange({ verticalMargin: Number(e.target.value) })}
           />
-          <div style={{width: 42, textAlign:"right"}}>{prefs.margin}px</div>
+          <div style={{width: 42, textAlign:"right"}}>{prefs.verticalMargin}px</div>
+        </div>
+
+        <div className="row">
+          <label>Horizontal margins</label>
+          <input
+            type="range"
+            min="10"
+            max="110"
+            value={prefs.horizontalMargin}
+            onChange={(e) => onChange({ horizontalMargin: Number(e.target.value) })}
+          />
+          <div style={{width: 42, textAlign:"right"}}>{prefs.horizontalMargin}px</div>
         </div>
 
         <div className="row">

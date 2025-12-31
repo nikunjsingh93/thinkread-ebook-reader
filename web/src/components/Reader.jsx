@@ -21,7 +21,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   function applyPrefs(rendition, p) {
     if (!rendition) return;
     const fontSize = clamp(p.fontSize, 10, 60);
-    const margin = clamp(p.margin, 0, 180);
     const lineHeight = clamp(p.lineHeight, 1.0, 2.6);
     const bg = p.bg || "#f6f1e7";
     const fg = p.fg || "#1a1a1a";
@@ -43,10 +42,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           "line-height": `${lineHeight} !important`,
           "color": `${fg} !important`,
           "background": `${bg} !important`,
-          "padding-left": `${margin}px !important`,
-          "padding-right": `${margin}px !important`,
-          "padding-top": "24px !important",
-          "padding-bottom": "36px !important",
         },
         // Apply to all text elements - use !important to override inline styles
         "p, span, div, li, td, th, blockquote, pre, code, em, strong, b, i, u, a": {
@@ -145,13 +140,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   useEffect(() => {
     const r = renditionRef.current;
     if (!r) return;
-    
+
     // Get current location before applying prefs
     const currentCfi = r.location?.start?.cfi;
-    
+
     // Apply preferences
     applyPrefs(r, prefs);
-    
+
+    // Resize rendition when prefs change (for margin changes)
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          r.resize();
+        } catch {}
+      }, 10);
+    });
+
     // Force re-render by re-displaying the current page
     // This is necessary for epub.js to apply theme changes
     requestAnimationFrame(() => {
@@ -190,6 +194,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
 
   const pct = Math.round((percent || 0) * 100);
 
+  const verticalMargin = clamp(prefs.verticalMargin || 30, 0, 180);
+  const horizontalMargin = clamp(prefs.horizontalMargin || 46, 0, 180);
+
   return (
     <div className="readerShell">
       <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
@@ -204,7 +211,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         <div className="navZone navRight" onClick={goNext} aria-label="Next page" />
         <div className="navZone navMid" onClick={toggleUI} aria-label="Toggle UI" />
 
-        <div className="renditionHost" ref={hostRef} />
+        <div
+          className="renditionHost"
+          ref={hostRef}
+          style={{
+            paddingLeft: `${horizontalMargin}px`,
+            paddingRight: `${horizontalMargin}px`,
+            paddingTop: `${verticalMargin}px`,
+            paddingBottom: `${verticalMargin}px`,
+          }}
+        />
       </div>
 
       <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>

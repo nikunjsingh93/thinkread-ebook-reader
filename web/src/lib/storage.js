@@ -20,7 +20,8 @@ export function defaultPrefs() {
     fontFamily: "serif",
     fontSize: 18,       // px
     lineHeight: 1.6,
-    margin: 46,         // px (side padding)
+    verticalMargin: 30,   // px (top/bottom padding)
+    horizontalMargin: 46, // px (left/right padding)
     bg: "#f6f1e7",
     fg: "#1a1a1a",
   };
