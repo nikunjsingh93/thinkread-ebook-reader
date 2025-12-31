@@ -477,9 +477,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             className="pill"
             onClick={toggleFullscreen}
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-            style={{fontSize: '14px', padding: '6px'}}
+            style={isFullscreen ? {opacity: 0.8} : {}}
           >
-            {isFullscreen ? '⊡' : '⊞'}
+            ⛶
           </button>
           <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
         </div>
