@@ -82,20 +82,74 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
 
         <div className="row">
           <label>Background</label>
-          <input
-            type="color"
-            value={prefs.bg}
-            onChange={(e) => onChange({ bg: e.target.value })}
-          />
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                backgroundColor: prefs.bg,
+                border: '2px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                position: 'relative'
+              }}
+              onClick={(e) => {
+                // Find the hidden color input and click it
+                const colorInput = e.currentTarget.nextSibling;
+                if (colorInput) colorInput.click();
+              }}
+              title={`Background color: ${prefs.bg}`}
+            />
+            <input
+              type="color"
+              value={prefs.bg}
+              onChange={(e) => onChange({ bg: e.target.value })}
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                pointerEvents: 'none',
+                width: '1px',
+                height: '1px'
+              }}
+            />
+            <span style={{fontSize: '12px', color: 'var(--muted)'}}>{prefs.bg}</span>
+          </div>
         </div>
 
         <div className="row">
           <label>Text</label>
-          <input
-            type="color"
-            value={prefs.fg}
-            onChange={(e) => onChange({ fg: e.target.value })}
-          />
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                backgroundColor: prefs.fg,
+                border: '2px solid rgba(255,255,255,0.2)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                position: 'relative'
+              }}
+              onClick={(e) => {
+                // Find the hidden color input and click it
+                const colorInput = e.currentTarget.nextSibling;
+                if (colorInput) colorInput.click();
+              }}
+              title={`Text color: ${prefs.fg}`}
+            />
+            <input
+              type="color"
+              value={prefs.fg}
+              onChange={(e) => onChange({ fg: e.target.value })}
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                pointerEvents: 'none',
+                width: '1px',
+                height: '1px'
+              }}
+            />
+            <span style={{fontSize: '12px', color: 'var(--muted)'}}>{prefs.fg}</span>
+          </div>
         </div>
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
