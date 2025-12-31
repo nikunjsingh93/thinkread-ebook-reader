@@ -30,6 +30,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [lastPageInfo, setLastPageInfo] = useState(null);
   const [originalPosition, setOriginalPosition] = useState(null);
   const [lastPositionTimer, setLastPositionTimer] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -414,6 +415,30 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     startLastPositionTimer();
   }
 
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      // Enter fullscreen
+      document.documentElement.requestFullscreen().catch(err => {
+        console.warn('Failed to enter fullscreen:', err);
+      });
+    } else {
+      // Exit fullscreen
+      document.exitFullscreen().catch(err => {
+        console.warn('Failed to exit fullscreen:', err);
+      });
+    }
+  }
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   function startLastPositionTimer() {
     // Clear any existing timer
     if (lastPositionTimer) {
@@ -447,7 +472,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
         <button className="pill" onClick={onBack}>← Library</button>
         <div className="readerTitle" title={book.title}>{book.title}</div>
-        <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
+        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+          <button
+            className="pill"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+            style={{fontSize: '14px', padding: '6px'}}
+          >
+            {isFullscreen ? '⊡' : '⊞'}
+          </button>
+          <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
+        </div>
       </div>
 
       <div className="readerStage">
