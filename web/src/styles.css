@@ -252,6 +252,38 @@ button, input, select { font: inherit; }
   transform: translateY(100%);
 }
 
+/* Navigation slider styling */
+.bottomBar input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.2);
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  width: 100%;
+}
+
+.bottomBar input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent, #007acc);
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
+
+.bottomBar input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent, #007acc);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
+
 /* settings drawer */
 .drawerBackdrop{
   position: fixed;

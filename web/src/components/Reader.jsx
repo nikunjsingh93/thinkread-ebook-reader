@@ -25,6 +25,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [percent, setPercent] = useState(0);
   const [locationText, setLocationText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [navigatingToPercent, setNavigatingToPercent] = useState(null);
+  const [hasDragged, setHasDragged] = useState(false);
+  const [lastPageInfo, setLastPageInfo] = useState(null);
+  const [originalPosition, setOriginalPosition] = useState(null);
+  const [lastPositionTimer, setLastPositionTimer] = useState(null);
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -190,7 +195,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         }
       } catch {}
       setPercent(p);
-      setLocationText(loc?.start?.displayed?.page ? `Page ${loc.start.displayed.page}` : "");
+      const pageText = loc?.start?.displayed?.page ? `Page ${loc.start.displayed.page}` : "";
+      setLocationText(pageText);
+
+      // Update last page info for the button
+      if (pageText) {
+        setLastPageInfo({ page: loc.start.displayed.page, percent: Math.round(p) });
+      }
+
       saveProgress(book.id, { cfi, percent: p, updatedAt: Date.now() });
     };
 
@@ -237,6 +249,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     return () => {
       destroyed = true;
       clearInterval(progressInterval);
+      clearLastPositionTimer();
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("keydown", onKeyDown);
 
@@ -307,6 +320,91 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     setUiVisible(v => !v);
   }
 
+  async function goToPercent(percent, isDragging = false) {
+    if (!renditionRef.current || !epubBookRef.current) return;
+
+    try {
+      if (!isDragging) {
+        setNavigatingToPercent(percent);
+      }
+
+      const cfi = epubBookRef.current.locations.cfiFromPercentage(percent / 100);
+      if (cfi) {
+        await renditionRef.current.display(cfi);
+        if (!isDragging) {
+          setNavigatingToPercent(null);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to navigate to percentage:", err);
+      if (!isDragging) {
+        setNavigatingToPercent(null);
+      }
+    }
+  }
+
+  async function goToLastPosition() {
+    if (!originalPosition?.cfi || !renditionRef.current) return;
+
+    try {
+      await renditionRef.current.display(originalPosition.cfi);
+      clearLastPositionTimer();
+      setHasDragged(false); // Hide the button after using it
+      setOriginalPosition(null); // Clear the original position
+    } catch (err) {
+      console.warn("Failed to go to last position:", err);
+    }
+  }
+
+  function handleSliderChange(e) {
+    const newPercent = Number(e.target.value);
+
+    // Clear any existing timer since they're actively navigating
+    clearLastPositionTimer();
+
+    // Capture original position on first drag
+    if (!hasDragged && !originalPosition) {
+      setOriginalPosition({
+        percent: pct,
+        page: lastPageInfo?.page,
+        cfi: renditionRef.current?.location?.start?.cfi
+      });
+    }
+
+    setNavigatingToPercent(newPercent);
+    setHasDragged(true);
+    goToPercent(newPercent, true);
+  }
+
+  function handleSliderMouseUp() {
+    setNavigatingToPercent(null);
+    // Start timer to clear original position after 5 minutes of reading
+    startLastPositionTimer();
+  }
+
+  function startLastPositionTimer() {
+    // Clear any existing timer
+    if (lastPositionTimer) {
+      clearTimeout(lastPositionTimer);
+    }
+
+    // Set new timer for 5 minutes (300,000 ms)
+    const timer = setTimeout(() => {
+      setHasDragged(false);
+      setOriginalPosition(null);
+      setLastPositionTimer(null);
+    }, 5 * 60 * 1000); // 5 minutes
+
+    setLastPositionTimer(timer);
+  }
+
+  function clearLastPositionTimer() {
+    if (lastPositionTimer) {
+      clearTimeout(lastPositionTimer);
+      setLastPositionTimer(null);
+    }
+  }
+
   const pct = Math.round((percent || 0) * 100);
 
   const verticalMargin = clamp(prefs.verticalMargin || 30, 0, 180);
@@ -355,8 +453,61 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       </div>
 
       <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>
-        <div>{locationText || " "}</div>
-        <div>{pct}%</div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0}}>
+          {hasDragged && originalPosition && (
+            <button
+              className="pill"
+              onClick={goToLastPosition}
+              style={{fontSize: '10px', padding: '2px 6px', height: 'auto'}}
+              title={`Go back to Page ${originalPosition.page} (${originalPosition.percent}%)`}
+            >
+              ↺ Page {originalPosition.page}
+            </button>
+          )}
+          <span style={{fontSize: '11px', whiteSpace: 'nowrap'}}>{locationText || " "}</span>
+        </div>
+
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', padding: '0 20px', position: 'relative'}}>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={navigatingToPercent !== null ? navigatingToPercent : pct}
+            onChange={handleSliderChange}
+            onMouseUp={handleSliderMouseUp}
+            style={{
+              width: '100%',
+              height: '4px',
+              cursor: 'pointer',
+              background: 'rgba(255,255,255,0.2)',
+              borderRadius: '2px'
+            }}
+            title={`Navigate to position: ${navigatingToPercent !== null ? navigatingToPercent : pct}%`}
+          />
+          {hasDragged && originalPosition && (
+            <div
+              style={{
+                position: 'absolute',
+                left: `${originalPosition.percent}%`,
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '8px',
+                height: '8px',
+                backgroundColor: 'var(--accent, #007acc)',
+                borderRadius: '50%',
+                border: '2px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 0 4px rgba(0,122,204,0.3)',
+                pointerEvents: 'none',
+                zIndex: 10
+              }}
+              title={`Original position: Page ${originalPosition.page} (${originalPosition.percent}%)`}
+            />
+          )}
+        </div>
+
+        <div style={{fontSize: '11px', minWidth: '40px', textAlign: 'right'}}>
+          {navigatingToPercent !== null ? navigatingToPercent : pct}%
+        </div>
       </div>
 
       <SettingsDrawer

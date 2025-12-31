@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { apiUploadBooks, apiDeleteBook } from "../lib/api.js";
 import { loadProgress } from "../lib/storage.js";
+import ShelfSettingsDrawer from "./ShelfSettingsDrawer.jsx";
 
 function formatBytes(bytes) {
   if (!bytes && bytes !== 0) return "";
@@ -20,6 +21,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -87,6 +89,14 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
+          <button
+            className="pill"
+            onClick={() => setSettingsOpen(true)}
+            style={{padding: "8px", minWidth: "auto", flexShrink: 0}}
+            title="Settings"
+          >
+            ⋯
+          </button>
           <input
             ref={inputRef}
             type="file"
@@ -149,6 +159,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           })}
         </div>
       )}
+
+      <ShelfSettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }
