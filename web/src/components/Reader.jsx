@@ -13,6 +13,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [uiVisible, setUiVisible] = useState(true);
   const [percent, setPercent] = useState(0);
   const [locationText, setLocationText] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -89,18 +90,53 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     const saved = loadProgress(book.id);
     const startAt = saved?.cfi || undefined;
 
-    // Apply prefs first, then display
-    applyPrefs(rendition, prefs);
-    
-    // Display after a small delay to ensure theme is registered
-    setTimeout(() => {
-      rendition.display(startAt).catch(() => rendition.display());
-    }, 50);
-
     // Build locations (for percent) lazily
     epub.ready
       .then(() => epub.locations.generate(1600))
       .catch(() => null);
+
+    // Wait for epub to be ready before displaying
+    epub.ready.then(() => {
+      // Apply prefs first, then display
+      applyPrefs(rendition, prefs);
+
+      // Display after a small delay to ensure theme is registered
+      setTimeout(() => {
+        if (startAt) {
+          rendition.display(startAt).then(() => {
+            setIsLoading(false);
+          }).catch((err) => {
+            console.warn("Failed to restore position, trying fallback methods");
+
+              // Try to restore by percentage if we have it
+              if (saved?.percent && saved.percent > 0) {
+                setTimeout(() => {
+                  try {
+                    const cfiFromPercent = epub.locations.cfiFromPercentage(saved.percent);
+                    if (cfiFromPercent) {
+                      rendition.display(cfiFromPercent).then(() => {
+                        setIsLoading(false);
+                      }).catch(() => {
+                        rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                      });
+                    } else {
+                      rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                    }
+                  } catch {
+                    rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                  }
+                }, 500);
+              } else {
+                rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+              }
+            });
+        } else {
+          rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+        }
+      }, 100);
+    }).catch((err) => {
+      console.warn("EPUB failed to load:", err);
+    });
 
     const onRelocated = (loc) => {
       if (destroyed) return;
@@ -118,6 +154,37 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
 
     rendition.on("relocated", onRelocated);
 
+    // Save progress periodically and on page visibility change
+    const saveCurrentProgress = () => {
+      if (destroyed) return;
+      try {
+        const loc = rendition.location;
+        if (loc?.start?.cfi) {
+          const cfi = loc.start.cfi;
+          let p = 0;
+          try {
+            if (epub.locations?.length()) {
+              p = epub.locations.percentageFromCfi(cfi) || 0;
+            }
+          } catch {}
+          saveProgress(book.id, { cfi, percent: p, updatedAt: Date.now() });
+        }
+      } catch (err) {
+        console.warn("Failed to save progress:", err);
+      }
+    };
+
+    // Save progress every 30 seconds
+    const progressInterval = setInterval(saveCurrentProgress, 30000);
+
+    // Save progress when page becomes hidden (user switches tabs/closes browser)
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        saveCurrentProgress();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     const onKeyDown = (e) => {
       if (e.key === "ArrowRight") rendition.next();
       if (e.key === "ArrowLeft") rendition.prev();
@@ -127,7 +194,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
 
     return () => {
       destroyed = true;
+      clearInterval(progressInterval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("keydown", onKeyDown);
+
+      // Save progress when component unmounts
+      saveCurrentProgress();
+
       try { rendition?.off("relocated", onRelocated); } catch {}
       try { rendition?.destroy(); } catch {}
       try { epub?.destroy(); } catch {}
@@ -211,6 +284,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         <div className="navZone navRight" onClick={goNext} aria-label="Next page" />
         <div className="navZone navMid" onClick={toggleUI} aria-label="Toggle UI" />
 
+        {isLoading && (
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            color: 'var(--muted)',
+            fontSize: '14px',
+            zIndex: 5
+          }}>
+            Loading...
+          </div>
+        )}
+
         <div
           className="renditionHost"
           ref={hostRef}
@@ -219,6 +306,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             paddingRight: `${horizontalMargin}px`,
             paddingTop: `${verticalMargin}px`,
             paddingBottom: `${verticalMargin}px`,
+            opacity: isLoading ? 0 : 1,
+            transition: 'opacity 0.2s ease',
           }}
         />
       </div>
