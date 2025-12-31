@@ -1,7 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { apiUploadBooks, apiDeleteBook } from "../lib/api.js";
 import { loadProgress } from "../lib/storage.js";
-import ShelfSettingsDrawer from "./ShelfSettingsDrawer.jsx";
 
 function formatBytes(bytes) {
   if (!bytes && bytes !== 0) return "";
@@ -21,13 +20,50 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
+  const [sortBy, setSortBy] = useState("upload"); // "upload", "alphabetical", "lastOpened"
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (sortDropdownOpen && !event.target.closest('.sort-dropdown')) {
+        setSortDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [sortDropdownOpen]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return books;
-    return books.filter(b => (b.title || b.originalName || "").toLowerCase().includes(q));
-  }, [books, query]);
+    let filteredBooks = books;
+
+    // Apply search filter
+    if (q) {
+      filteredBooks = books.filter(b => (b.title || b.originalName || "").toLowerCase().includes(q));
+    }
+
+    // Apply sorting
+    filteredBooks = [...filteredBooks].sort((a, b) => {
+      switch (sortBy) {
+        case "alphabetical":
+          return (a.title || a.originalName || "").localeCompare(b.title || b.originalName || "");
+        case "lastOpened":
+          // Sort by last opened (books without progress first, then by last updated)
+          const aProgress = loadProgress(a.id);
+          const bProgress = loadProgress(b.id);
+          if (!aProgress && !bProgress) return 0;
+          if (!aProgress) return 1; // Books never opened go to end
+          if (!bProgress) return -1;
+          return (bProgress.updatedAt || 0) - (aProgress.updatedAt || 0);
+        case "upload":
+        default:
+          // Sort by upload date (newest first)
+          return (b.addedAt || 0) - (a.addedAt || 0);
+      }
+    });
+
+    return filteredBooks;
+  }, [books, query, sortBy]);
 
   async function pickFiles() {
     inputRef.current?.click();
@@ -70,7 +106,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           </div>
         </div>
 
-        <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0}}>
+        <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -89,14 +125,89 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
             {uploading ? "Uploading…" : "Upload"}
           </button>
-          <button
-            className="pill"
-            onClick={() => setSettingsOpen(true)}
-            style={{padding: "8px", minWidth: "auto", flexShrink: 0}}
-            title="Settings"
-          >
-            ⋯
-          </button>
+          <div style={{position: "relative"}} className="sort-dropdown">
+            <button
+              className="pill"
+              onClick={() => setSortDropdownOpen(!sortDropdownOpen)}
+              style={{padding: "8px", minWidth: "auto", flexShrink: 0}}
+              title="Sort options"
+            >
+              ⇅
+            </button>
+            {sortDropdownOpen && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: "4px",
+                background: "rgba(18,22,38,.95)",
+                border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: "8px",
+                padding: "8px 0",
+                minWidth: "160px",
+                zIndex: 1000,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
+              }}>
+                <button
+                  onClick={() => {
+                    setSortBy("upload");
+                    setSortDropdownOpen(false);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "8px 16px",
+                    background: sortBy === "upload" ? "rgba(255,255,255,0.1)" : "none",
+                    border: "none",
+                    color: "var(--text)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: "14px"
+                  }}
+                >
+                  📅 Sort by Upload Date
+                </button>
+                <button
+                  onClick={() => {
+                    setSortBy("alphabetical");
+                    setSortDropdownOpen(false);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "8px 16px",
+                    background: sortBy === "alphabetical" ? "rgba(255,255,255,0.1)" : "none",
+                    border: "none",
+                    color: "var(--text)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: "14px"
+                  }}
+                >
+                  🔤 Sort Alphabetically
+                </button>
+                <button
+                  onClick={() => {
+                    setSortBy("lastOpened");
+                    setSortDropdownOpen(false);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "8px 16px",
+                    background: sortBy === "lastOpened" ? "rgba(255,255,255,0.1)" : "none",
+                    border: "none",
+                    color: "var(--text)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: "14px"
+                  }}
+                >
+                  📖 Sort by Last Opened
+                </button>
+              </div>
+            )}
+          </div>
           <input
             ref={inputRef}
             type="file"
@@ -159,11 +270,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast }) {
           })}
         </div>
       )}
-
-      <ShelfSettingsDrawer
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
     </div>
   );
 }

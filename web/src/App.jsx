@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import Shelf from "./components/Shelf.jsx";
 import Reader from "./components/Reader.jsx";
 import Toast from "./components/Toast.jsx";
+import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
@@ -10,6 +11,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [prefs, setPrefs] = useState(loadPrefs());
   const [toast, setToast] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     let t;
@@ -40,8 +42,18 @@ export default function App() {
           <div className="brand">
             <span>ThinkRead</span>
           </div>
-          <div className="muted" style={{fontSize: 12}}>
-            Shelf
+          <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+            <div className="muted" style={{fontSize: 12}}>
+              Shelf
+            </div>
+            <button
+              className="pill"
+              onClick={() => setSettingsOpen(true)}
+              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              title="Settings"
+            >
+              ☰
+            </button>
           </div>
         </div>
       )}
@@ -66,6 +78,11 @@ export default function App() {
       )}
 
       <Toast text={toast} />
+
+      <ShelfSettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
     </div>
   );
 }
