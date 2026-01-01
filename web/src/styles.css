@@ -221,6 +221,10 @@ button, input, select { font: inherit; }
   bottom:0;
   width: 30%;
   z-index: 5;
+  -webkit-touch-callout: none; /* Prevent iOS callout menu */
+  -webkit-user-select: none; /* Prevent text selection on iOS */
+  user-select: none; /* Prevent text selection */
+  touch-action: manipulation; /* Prevent double-tap zoom and other gestures */
 }
 .navLeft{ left:0; }
 .navRight{ right:0; }

@@ -373,6 +373,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       const navZones = readerStage?.querySelectorAll('.navZone');
       
       const handleLongPressStart = (e) => {
+        // Prevent default behavior for touch events (prevents context menu on mobile)
+        if (e.type === 'touchstart') {
+          e.preventDefault();
+        }
+        
         // Reset the flag
         longPressTriggeredRef.current = false;
         
@@ -533,7 +538,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           zone.addEventListener('mousemove', handleLongPressMove);
           zone.addEventListener('click', handleClick, true); // Capture phase to prevent navigation
           zone.addEventListener('contextmenu', handleContextMenu); // Prevent context menu
-          zone.addEventListener('touchstart', handleLongPressStart, { passive: true });
+          zone.addEventListener('touchstart', handleLongPressStart, { passive: false }); // Non-passive to allow preventDefault
           zone.addEventListener('touchend', handleLongPressEnd);
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
         });
