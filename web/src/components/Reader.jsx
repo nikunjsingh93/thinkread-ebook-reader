@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ePub from "epubjs";
 import SettingsDrawer from "./SettingsDrawer.jsx";
+import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
+import { lookupWord } from "../lib/dictionary.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -31,6 +33,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [originalPosition, setOriginalPosition] = useState(null);
   const [lastPositionTimer, setLastPositionTimer] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [dictionaryPopup, setDictionaryPopup] = useState(null); // { word, definition, position: { x, y } }
+  const longPressTimerRef = useRef(null);
+  const longPressStartRef = useRef(null);
+  const dictionaryCleanupRef = useRef(null);
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -251,6 +257,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       destroyed = true;
       clearInterval(progressInterval);
       clearLastPositionTimer();
+      
+      // Clear long press timer
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("keydown", onKeyDown);
 
@@ -341,6 +354,211 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       });
     }
   }, [prefs]);
+
+  // Dictionary long-press feature - set up after component mounts and epub loads
+  useEffect(() => {
+    // Wait for nav zones to be rendered
+    const timer = setTimeout(() => {
+      console.log('[Dictionary] Setting up dictionary feature');
+      
+      // Add event listeners to the navigation zones (since they're on top of the iframe)
+      // NavZones are in the readerStage, which is the parent of hostRef
+      const readerStage = hostRef.current?.parentElement;
+      const navZones = readerStage?.querySelectorAll('.navZone');
+      
+      const handleLongPressStart = (e) => {
+        console.log('[Dictionary] Mouse/touch down detected on nav zone');
+        
+        // Don't interfere with navigation on very short clicks
+        // Clear any existing timer
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+        }
+        
+        // Store the start position and time
+        longPressStartRef.current = {
+          x: e.clientX || (e.touches && e.touches[0].clientX),
+          y: e.clientY || (e.touches && e.touches[0].clientY),
+          time: Date.now(),
+        };
+        
+        console.log('[Dictionary] Starting long press timer at position:', longPressStartRef.current);
+        
+        // Set a timer for long press (500ms)
+        longPressTimerRef.current = setTimeout(() => {
+          handleLongPress(e);
+        }, 500);
+      };
+      
+      const handleLongPressEnd = (e) => {
+        // Clear the timer if the press ends before 500ms
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        longPressStartRef.current = null;
+      };
+      
+      const handleLongPressMove = (e) => {
+        // If the user moves too much, cancel the long press
+        if (longPressStartRef.current) {
+          const currentX = e.clientX || (e.touches && e.touches[0].clientX);
+          const currentY = e.clientY || (e.touches && e.touches[0].clientY);
+          const deltaX = Math.abs(currentX - longPressStartRef.current.x);
+          const deltaY = Math.abs(currentY - longPressStartRef.current.y);
+          
+          // If movement is more than 10px, cancel long press
+          if (deltaX > 10 || deltaY > 10) {
+            if (longPressTimerRef.current) {
+              clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = null;
+            }
+            longPressStartRef.current = null;
+          }
+        }
+      };
+      
+      const handleLongPress = (e) => {
+        console.log('[Dictionary] Long press triggered');
+        
+        // Get the iframe and calculate position relative to it
+        const iframe = hostRef.current?.querySelector('iframe');
+        if (!iframe) {
+          console.log('[Dictionary] No iframe found');
+          return;
+        }
+        
+        const iframeRect = iframe.getBoundingClientRect();
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        
+        if (!iframeDoc) {
+          console.log('[Dictionary] Cannot access iframe document');
+          return;
+        }
+        
+        // Calculate position relative to iframe
+        const relativeX = longPressStartRef.current.x - iframeRect.left;
+        const relativeY = longPressStartRef.current.y - iframeRect.top;
+        
+        console.log('[Dictionary] Position relative to iframe:', relativeX, relativeY);
+        
+        // Get word at position
+        let word = null;
+        let range = null;
+        
+        // Try caretRangeFromPoint (Chrome, Safari)
+        if (iframeDoc.caretRangeFromPoint) {
+          range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
+        }
+        // Try caretPositionFromPoint (Firefox)
+        else if (iframeDoc.caretPositionFromPoint) {
+          const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
+          if (position) {
+            range = iframeDoc.createRange();
+            range.setStart(position.offsetNode, position.offset);
+            range.setEnd(position.offsetNode, position.offset);
+          }
+        }
+        
+        if (range && range.startContainer) {
+          // Get the text node
+          const textNode = range.startContainer;
+          if (textNode.nodeType === 3) { // TEXT_NODE
+            const text = textNode.textContent;
+            const offset = range.startOffset;
+            
+            // Find word boundaries
+            let start = offset;
+            let end = offset;
+            
+            // Move start backwards to find start of word
+            while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
+              start--;
+            }
+            
+            // Move end forwards to find end of word
+            while (end < text.length && /[a-zA-Z]/.test(text[end])) {
+              end++;
+            }
+            
+            word = text.substring(start, end).trim();
+            console.log('[Dictionary] Word extracted:', word);
+          }
+        }
+        
+        if (word) {
+          // Look up the word
+          const definition = lookupWord(word);
+          console.log('[Dictionary] Definition found:', definition ? 'yes' : 'no');
+          
+          if (definition) {
+            const x = longPressStartRef.current.x;
+            const y = longPressStartRef.current.y + 20; // Offset below cursor
+            
+            console.log('[Dictionary] Showing popup at', x, y);
+            
+            setDictionaryPopup({
+              word: word,
+              definition: definition,
+              position: { x, y }
+            });
+          } else {
+            // Word not found in dictionary
+            onToast?.(`"${word}" not found in dictionary`);
+          }
+        } else {
+          console.log('[Dictionary] No word detected');
+        }
+      };
+      
+      // Attach listeners to nav zones
+      if (navZones && navZones.length > 0) {
+        navZones.forEach(zone => {
+          zone.addEventListener('mousedown', handleLongPressStart);
+          zone.addEventListener('mouseup', handleLongPressEnd);
+          zone.addEventListener('mousemove', handleLongPressMove);
+          zone.addEventListener('touchstart', handleLongPressStart, { passive: true });
+          zone.addEventListener('touchend', handleLongPressEnd);
+          zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
+        });
+        
+        console.log('[Dictionary] Event handlers attached to', navZones.length, 'nav zones');
+      } else {
+        console.log('[Dictionary] No nav zones found');
+      }
+      
+      // Store cleanup function in a ref so we can call it later
+      const cleanup = () => {
+        if (navZones) {
+          navZones.forEach(zone => {
+            zone.removeEventListener('mousedown', handleLongPressStart);
+            zone.removeEventListener('mouseup', handleLongPressEnd);
+            zone.removeEventListener('mousemove', handleLongPressMove);
+            zone.removeEventListener('touchstart', handleLongPressStart);
+            zone.removeEventListener('touchend', handleLongPressEnd);
+            zone.removeEventListener('touchmove', handleLongPressMove);
+          });
+        }
+        
+        // Clear any active timer
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+      };
+      
+      // Return cleanup to be called on unmount
+      dictionaryCleanupRef.current = cleanup;
+    }, 500); // Wait 500ms for render to complete
+    
+    // Cleanup function
+    return () => {
+      clearTimeout(timer);
+      if (dictionaryCleanupRef.current) {
+        dictionaryCleanupRef.current();
+      }
+    };
+  }, [book.id]); // Re-run when book changes
 
 
   async function goPrev() {
@@ -583,6 +801,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         onChange={onPrefsChange}
         onClose={() => setDrawerOpen(false)}
       />
+
+      {dictionaryPopup && (
+        <DictionaryPopup
+          word={dictionaryPopup.word}
+          definition={dictionaryPopup.definition}
+          position={dictionaryPopup.position}
+          onClose={() => setDictionaryPopup(null)}
+        />
+      )}
     </div>
   );
 }
