@@ -37,6 +37,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const longPressTimerRef = useRef(null);
   const longPressStartRef = useRef(null);
   const dictionaryCleanupRef = useRef(null);
+  const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -367,9 +368,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       const navZones = readerStage?.querySelectorAll('.navZone');
       
       const handleLongPressStart = (e) => {
-        console.log('[Dictionary] Mouse/touch down detected on nav zone');
+        // Reset the flag
+        longPressTriggeredRef.current = false;
         
-        // Don't interfere with navigation on very short clicks
         // Clear any existing timer
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
@@ -381,8 +382,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           y: e.clientY || (e.touches && e.touches[0].clientY),
           time: Date.now(),
         };
-        
-        console.log('[Dictionary] Starting long press timer at position:', longPressStartRef.current);
         
         // Set a timer for long press (500ms)
         longPressTimerRef.current = setTimeout(() => {
@@ -418,13 +417,23 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         }
       };
       
+      const handleClick = (e) => {
+        // Prevent navigation if long press was triggered
+        if (longPressTriggeredRef.current) {
+          e.stopPropagation();
+          e.preventDefault();
+          longPressTriggeredRef.current = false;
+          return false;
+        }
+      };
+      
       const handleLongPress = (e) => {
-        console.log('[Dictionary] Long press triggered');
+        // Mark that long press was triggered
+        longPressTriggeredRef.current = true;
         
         // Get the iframe and calculate position relative to it
         const iframe = hostRef.current?.querySelector('iframe');
         if (!iframe) {
-          console.log('[Dictionary] No iframe found');
           return;
         }
         
@@ -432,15 +441,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
         
         if (!iframeDoc) {
-          console.log('[Dictionary] Cannot access iframe document');
           return;
         }
         
         // Calculate position relative to iframe
         const relativeX = longPressStartRef.current.x - iframeRect.left;
         const relativeY = longPressStartRef.current.y - iframeRect.top;
-        
-        console.log('[Dictionary] Position relative to iframe:', relativeX, relativeY);
         
         // Get word at position
         let word = null;
@@ -478,38 +484,32 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             
             // Move end forwards to find end of word
             while (end < text.length && /[a-zA-Z]/.test(text[end])) {
-              end++;
-            }
-            
-            word = text.substring(start, end).trim();
-            console.log('[Dictionary] Word extracted:', word);
+            end++;
           }
-        }
-        
-        if (word) {
-          // Look up the word
-          const definition = lookupWord(word);
-          console.log('[Dictionary] Definition found:', definition ? 'yes' : 'no');
           
-          if (definition) {
-            const x = longPressStartRef.current.x;
-            const y = longPressStartRef.current.y + 20; // Offset below cursor
-            
-            console.log('[Dictionary] Showing popup at', x, y);
-            
-            setDictionaryPopup({
-              word: word,
-              definition: definition,
-              position: { x, y }
-            });
-          } else {
-            // Word not found in dictionary
-            onToast?.(`"${word}" not found in dictionary`);
-          }
-        } else {
-          console.log('[Dictionary] No word detected');
+          word = text.substring(start, end).trim();
         }
-      };
+      }
+      
+      if (word) {
+        // Look up the word
+        const definition = lookupWord(word);
+          
+        if (definition) {
+          const x = longPressStartRef.current.x;
+          const y = longPressStartRef.current.y + 20; // Offset below cursor
+          
+          setDictionaryPopup({
+            word: word,
+            definition: definition,
+            position: { x, y }
+          });
+        } else {
+          // Word not found in dictionary
+          onToast?.(`"${word}" not found in dictionary. Import more words in App Settings (☰ menu button) → Dictionary section.`);
+        }
+      }
+    };
       
       // Attach listeners to nav zones
       if (navZones && navZones.length > 0) {
@@ -517,14 +517,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           zone.addEventListener('mousedown', handleLongPressStart);
           zone.addEventListener('mouseup', handleLongPressEnd);
           zone.addEventListener('mousemove', handleLongPressMove);
+          zone.addEventListener('click', handleClick, true); // Capture phase to prevent navigation
           zone.addEventListener('touchstart', handleLongPressStart, { passive: true });
           zone.addEventListener('touchend', handleLongPressEnd);
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
         });
-        
-        console.log('[Dictionary] Event handlers attached to', navZones.length, 'nav zones');
-      } else {
-        console.log('[Dictionary] No nav zones found');
       }
       
       // Store cleanup function in a ref so we can call it later
@@ -534,16 +531,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             zone.removeEventListener('mousedown', handleLongPressStart);
             zone.removeEventListener('mouseup', handleLongPressEnd);
             zone.removeEventListener('mousemove', handleLongPressMove);
+            zone.removeEventListener('click', handleClick, true);
             zone.removeEventListener('touchstart', handleLongPressStart);
             zone.removeEventListener('touchend', handleLongPressEnd);
             zone.removeEventListener('touchmove', handleLongPressMove);
           });
-        }
-        
-        // Clear any active timer
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
         }
       };
       

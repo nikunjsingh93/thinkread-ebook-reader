@@ -201,6 +201,10 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
+          Tip: Long-press any word while reading to see its definition.
+        </div>
+
+        <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
           Tip: Tap the middle of the page to show/hide the reader toolbar.
         </div>
       </div>

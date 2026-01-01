@@ -1,10 +1,20 @@
 import React, { useEffect, useState, useRef } from "react";
 import { apiGetFonts, apiUploadFonts, apiDeleteFont } from "../lib/api.js";
+import { 
+  getWordCount, 
+  importDictionaryJSON, 
+  importDictionaryText,
+  saveDictionary 
+} from "../lib/dictionary.js";
 
 export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
+  const [wordCount, setWordCount] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
+  const dictInputRef = useRef(null);
 
   useEffect(() => {
     function onKey(e) {
@@ -17,6 +27,8 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
   useEffect(() => {
     if (open) {
       loadFonts();
+      setWordCount(getWordCount());
+      setImportMessage(''); // Clear any previous messages
     }
   }, [open]);
 
@@ -55,6 +67,45 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
       await loadFonts(); // Reload the font list
     } catch (err) {
       alert(err?.message || "Font delete failed");
+    }
+  }
+  
+  async function handleDictionaryImport(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setImporting(true);
+    setImportMessage('');
+    
+    try {
+      let result;
+      const fileName = file.name.toLowerCase();
+      
+      if (fileName.endsWith('.json')) {
+        result = await importDictionaryJSON(file);
+      } else if (fileName.endsWith('.txt') || fileName.endsWith('.tab') || fileName.endsWith('.dict')) {
+        result = await importDictionaryText(file);
+      } else {
+        // Try text format as default
+        result = await importDictionaryText(file);
+      }
+      
+      if (result.success) {
+        // Save to localStorage
+        saveDictionary();
+        setWordCount(getWordCount());
+        setImportMessage(`✓ Successfully imported ${result.count} words!`);
+      } else {
+        setImportMessage(`✗ Import failed: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      setImportMessage(`✗ Import failed: ${error.message}`);
+    } finally {
+      setImporting(false);
+      // Clear the file input
+      if (dictInputRef.current) {
+        dictInputRef.current.value = '';
+      }
     }
   }
 
@@ -148,6 +199,56 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
             Upload TTF, OTF, WOFF, or WOFF2 font files to use them in the reader.
+          </div>
+
+          <h4 style={{marginTop: "20px", marginBottom: "12px", color: "var(--text)"}}>Dictionary</h4>
+          
+          <div className="row">
+            <label>Dictionary Size</label>
+            <div style={{fontSize: '14px', color: 'var(--muted)'}}>
+              {wordCount.toLocaleString()} words
+            </div>
+          </div>
+          
+          <div className="row" style={{flexDirection: 'column', alignItems: 'stretch', gap: '8px'}}>
+            <label>Import Dictionary</label>
+            <input
+              ref={dictInputRef}
+              type="file"
+              accept=".json,.txt,.tab,.dict"
+              onChange={handleDictionaryImport}
+              disabled={importing}
+              style={{
+                fontSize: '14px',
+                padding: '8px',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(18,22,38,.72)',
+                color: 'var(--text)',
+                cursor: importing ? 'wait' : 'pointer'
+              }}
+            />
+            <div style={{fontSize: '12px', color: 'var(--muted)', lineHeight: '1.4'}}>
+              Supports: JSON (.json), Text/Tab-delimited (.txt, .tab, .dict)
+              <br />
+              Format: <code style={{backgroundColor: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px'}}>word{'\t'}definition</code>
+            </div>
+            {importMessage && (
+              <div style={{
+                fontSize: '13px',
+                padding: '8px',
+                borderRadius: '4px',
+                backgroundColor: importMessage.startsWith('✓') ? 'rgba(0,200,0,0.15)' : 'rgba(200,0,0,0.15)',
+                color: importMessage.startsWith('✓') ? '#50fa7b' : '#ff5555',
+                border: `1px solid ${importMessage.startsWith('✓') ? 'rgba(0,200,0,0.3)' : 'rgba(200,0,0,0.3)'}`
+              }}>
+                {importMessage}
+              </div>
+            )}
+          </div>
+
+          <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
+            Long-press any word while reading to see its definition. Import custom dictionaries to expand vocabulary.
           </div>
         </div>
       </div>

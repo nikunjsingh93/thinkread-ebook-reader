@@ -1018,3 +1018,159 @@ export function lookupWord(word) {
 export function hasWord(word) {
   return lookupWord(word) !== null;
 }
+
+/**
+ * Add words to the dictionary
+ * @param {Object} words - An object with word-definition pairs
+ */
+export function addWords(words) {
+  Object.assign(dictionary, words);
+}
+
+/**
+ * Get the total number of words in the dictionary
+ * @returns {number} - The count of words
+ */
+export function getWordCount() {
+  return Object.keys(dictionary).length;
+}
+
+/**
+ * Clear all words from the dictionary
+ */
+export function clearDictionary() {
+  Object.keys(dictionary).forEach(key => delete dictionary[key]);
+}
+
+/**
+ * Import dictionary from a JSON file
+ * @param {File} file - The JSON file containing word definitions
+ * @returns {Promise<{success: boolean, count: number, error?: string}>}
+ */
+export async function importDictionaryJSON(file) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    // Validate that it's an object with string keys and values
+    if (typeof data !== 'object' || Array.isArray(data)) {
+      return {
+        success: false,
+        count: 0,
+        error: 'Invalid format: expected an object with word-definition pairs'
+      };
+    }
+    
+    let count = 0;
+    for (const [word, definition] of Object.entries(data)) {
+      if (typeof word === 'string' && typeof definition === 'string') {
+        dictionary[word.toLowerCase()] = definition;
+        count++;
+      }
+    }
+    
+    return {
+      success: true,
+      count: count
+    };
+  } catch (error) {
+    return {
+      success: false,
+      count: 0,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Import dictionary from a StarDict tab/text file format
+ * Format: Each line is "word\tdefinition" or "word|definition"
+ * @param {File} file - The text file containing word definitions
+ * @returns {Promise<{success: boolean, count: number, error?: string}>}
+ */
+export async function importDictionaryText(file) {
+  try {
+    const text = await file.text();
+    const lines = text.split('\n');
+    
+    let count = 0;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue; // Skip empty lines and comments
+      
+      // Try tab delimiter first, then pipe, then first space
+      let word, definition;
+      if (trimmed.includes('\t')) {
+        [word, definition] = trimmed.split('\t', 2);
+      } else if (trimmed.includes('|')) {
+        [word, definition] = trimmed.split('|', 2);
+      } else {
+        const spaceIndex = trimmed.indexOf(' ');
+        if (spaceIndex > 0) {
+          word = trimmed.substring(0, spaceIndex);
+          definition = trimmed.substring(spaceIndex + 1);
+        } else {
+          continue; // Skip lines without proper format
+        }
+      }
+      
+      if (word && definition) {
+        dictionary[word.toLowerCase().trim()] = definition.trim();
+        count++;
+      }
+    }
+    
+    return {
+      success: true,
+      count: count
+    };
+  } catch (error) {
+    return {
+      success: false,
+      count: 0,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Export current dictionary to JSON
+ * @returns {string} - JSON string of the dictionary
+ */
+export function exportDictionaryJSON() {
+  return JSON.stringify(dictionary, null, 2);
+}
+
+/**
+ * Save dictionary to localStorage
+ */
+export function saveDictionary() {
+  try {
+    localStorage.setItem('customDictionary', JSON.stringify(dictionary));
+    return true;
+  } catch (error) {
+    console.error('Failed to save dictionary:', error);
+    return false;
+  }
+}
+
+/**
+ * Load dictionary from localStorage
+ */
+export function loadDictionary() {
+  try {
+    const saved = localStorage.getItem('customDictionary');
+    if (saved) {
+      const data = JSON.parse(saved);
+      Object.assign(dictionary, data);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Failed to load dictionary:', error);
+    return false;
+  }
+}
+
+// Auto-load custom dictionary on module import
+loadDictionary();
