@@ -348,6 +348,7 @@ button, input, select { font: inherit; }
   border: 1px solid rgba(255,255,255,.10);
   border-radius: 14px;
   background: rgba(255,255,255,.04);
+  margin-bottom: 12px;
 }
 .row label{ font-size: 12px; color: var(--muted); }
 .row input[type="range"]{ width: 170px; }
