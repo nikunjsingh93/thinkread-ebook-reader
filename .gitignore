@@ -37,6 +37,7 @@ data/books/*.azw3
 data/covers/
 data/fonts/
 data/state.json
+data/dictionary.json
 
 # Docker volumes and data
 docker-volumes/

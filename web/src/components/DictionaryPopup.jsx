@@ -45,8 +45,29 @@ export default function DictionaryPopup({ word, definition, position, onClose })
     setAdjustedPosition({ x, y });
   }, [position]);
 
+  // Unique ID for scrollbar styling
+  const scrollbarId = React.useId();
+
   return (
     <>
+      <style>
+        {`
+          .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar {
+            width: 6px;
+          }
+          .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 3px;
+          }
+          .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+          }
+          .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.3);
+          }
+        `}
+      </style>
       {/* Overlay to detect clicks outside */}
       <div
         style={{
@@ -72,13 +93,16 @@ export default function DictionaryPopup({ word, definition, position, onClose })
           borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
           padding: '12px 16px',
-          maxWidth: '300px',
+          maxWidth: '320px',
+          maxHeight: '400px',
+          display: 'flex',
+          flexDirection: 'column',
           zIndex: 9999,
           fontFamily: 'system-ui, -apple-system, sans-serif',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexShrink: 0 }}>
           <div style={{ 
             fontSize: '16px', 
             fontWeight: '600', 
@@ -105,11 +129,18 @@ export default function DictionaryPopup({ word, definition, position, onClose })
             ×
           </button>
         </div>
-        <div style={{ 
-          fontSize: '14px', 
-          color: '#4b5563', 
-          lineHeight: '1.5',
-        }}>
+        <div 
+          className={`dictionary-popup-content-${scrollbarId}`}
+          style={{ 
+            fontSize: '14px', 
+            color: '#4b5563', 
+            lineHeight: '1.5',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            paddingRight: '4px',
+            flex: 1,
+          }}
+        >
           {definition}
         </div>
       </div>
