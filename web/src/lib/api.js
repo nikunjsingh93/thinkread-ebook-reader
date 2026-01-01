@@ -39,3 +39,32 @@ export async function apiDeleteFont(filename) {
   if (!r.ok) throw new Error("Font delete failed");
   return r.json();
 }
+
+export async function apiGetDictionaryStatus() {
+  const r = await fetch("/api/dictionary/status");
+  if (!r.ok) throw new Error("Failed to fetch dictionary status");
+  return r.json();
+}
+
+export async function apiGetDictionary() {
+  const r = await fetch("/api/dictionary");
+  if (!r.ok) throw new Error("Failed to fetch dictionary");
+  return r.json();
+}
+
+export async function apiSaveDictionary(dictionary) {
+  const r = await fetch("/api/dictionary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dictionary),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "Dictionary save failed");
+  return data;
+}
+
+export async function apiDeleteDictionary() {
+  const r = await fetch("/api/dictionary", { method: "DELETE" });
+  if (!r.ok) throw new Error("Dictionary delete failed");
+  return r.json();
+}

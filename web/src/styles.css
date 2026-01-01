@@ -312,7 +312,27 @@ button, input, select { font: inherit; }
   padding: 14px;
   display:flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  overflow: hidden;
+}
+
+/* Custom scrollbar for drawer content */
+.drawer > div:last-child::-webkit-scrollbar {
+  width: 6px;
+}
+
+.drawer > div:last-child::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.drawer > div:last-child::-webkit-scrollbar-thumb {
+  background: rgba(124, 92, 255, 0.4);
+  border-radius: 3px;
+}
+
+.drawer > div:last-child::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 92, 255, 0.6);
 }
 .drawer h3{
   margin: 0;

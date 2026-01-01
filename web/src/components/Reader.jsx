@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
-import { lookupWord } from "../lib/dictionary.js";
+import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -358,6 +358,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
 
   // Dictionary long-press feature - set up after component mounts and epub loads
   useEffect(() => {
+    // Load dictionary from server first
+    loadDictionary().then(() => {
+      console.log('[Dictionary] Dictionary loaded, setting up feature');
+    });
+    
     // Wait for nav zones to be rendered
     const timer = setTimeout(() => {
       console.log('[Dictionary] Setting up dictionary feature');

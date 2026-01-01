@@ -75,14 +75,36 @@ book|a written or printed work consisting of pages
 computer|an electronic device for storing and processing data
 ```
 
+### 3. Compressed StarDict Format (.dict.dz)
+
+Gzip-compressed dictionary files in StarDict format. These files are automatically decompressed and parsed.
+
+**Features**:
+- Supports standard gzip compression
+- Automatically decompresses using browser's native DecompressionStream API
+- Ideal for large dictionaries (saves bandwidth and storage)
+- Same text format as .dict files, just compressed
+
+**Browser Support**:
+- Modern browsers (Chrome 80+, Firefox 65+, Safari 16.4+, Edge 80+) support native decompression
+- Falls back gracefully if decompression is not supported
+
+**Example**: Many StarDict dictionaries come as `.dict.dz` files which can be imported directly without manual decompression.
+
 ## Finding Dictionary Files
 
 ### Free Dictionary Sources
 
 1. **English Wiktionary Exports**: You can download dictionary data from Wiktionary
-2. **Custom Word Lists**: Create your own dictionary file with specialized vocabulary
-3. **Academic Dictionaries**: Many universities provide free dictionary databases
-4. **StarDict Dictionaries**: Search for "StarDict dictionary English" - many free dictionaries are available in text format
+2. **StarDict Dictionaries**: Search for "StarDict dictionary English download" - many free dictionaries are available in .dict.dz format
+3. **Custom Word Lists**: Create your own dictionary file with specialized vocabulary
+4. **Academic Dictionaries**: Many universities provide free dictionary databases
+5. **XDXF Dictionaries**: Can be converted to text format and imported
+
+**Popular StarDict Dictionary Sites**:
+- Many StarDict dictionaries are available online in compressed .dict.dz format
+- These are ideal as they contain thousands of words in a small file size
+- Simply download and import directly - no need to decompress manually!
 
 ### Creating Your Own Dictionary
 

@@ -38,11 +38,12 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   return (
     <div className="drawerBackdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0}}>
           <h3>Reading settings</h3>
           <button className="pill" onClick={onClose}>Done</button>
         </div>
 
+        <div style={{overflowY: "auto", overflowX: "hidden", flex: 1, paddingRight: "4px"}}>
         <div className="row">
           <label>Font</label>
           <select
@@ -206,6 +207,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
           Tip: Tap the middle of the page to show/hide the reader toolbar.
+        </div>
         </div>
       </div>
     </div>

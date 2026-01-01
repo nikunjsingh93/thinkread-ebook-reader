@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const { booksDir, coversDir, fontsDir, statePath } = getDataPaths(DATA_DIR);
+const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR);
 
 function getExt(originalName = "") {
   const ext = path.extname(originalName).toLowerCase();
@@ -133,7 +133,7 @@ const fontUpload = multer({
 
 const app = express();
 app.use(morgan("dev"));
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "50mb" })); // Increased for dictionary
 
 // --- API ---
 app.get("/api/health", (req, res) => {
@@ -344,6 +344,87 @@ app.delete("/api/fonts/:filename", (req, res) => {
   } catch (err) {
     console.error("Error deleting font:", err);
     res.status(500).json({ error: "Failed to delete font" });
+  }
+});
+
+// --- Dictionary API ---
+// Get dictionary status
+app.get("/api/dictionary/status", (req, res) => {
+  try {
+    if (fs.existsSync(dictionaryPath)) {
+      const stats = fs.statSync(dictionaryPath);
+      const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
+      // Count words without loading entire file into memory
+      const data = fs.readFileSync(dictionaryPath, "utf-8");
+      const dict = JSON.parse(data);
+      const wordCount = Object.keys(dict).length;
+      res.json({ 
+        exists: true, 
+        wordCount,
+        sizeInMB: parseFloat(sizeInMB)
+      });
+    } else {
+      res.json({ exists: false, wordCount: 0 });
+    }
+  } catch (err) {
+    console.error("Error checking dictionary status:", err);
+    res.json({ exists: false, wordCount: 0 });
+  }
+});
+
+// Get dictionary data
+app.get("/api/dictionary", (req, res) => {
+  try {
+    if (fs.existsSync(dictionaryPath)) {
+      const data = fs.readFileSync(dictionaryPath, "utf-8");
+      const dict = JSON.parse(data);
+      res.json(dict);
+    } else {
+      res.json({});
+    }
+  } catch (err) {
+    console.error("Error loading dictionary:", err);
+    res.status(500).json({ error: "Failed to load dictionary" });
+  }
+});
+
+// Save dictionary
+app.post("/api/dictionary", (req, res) => {
+  try {
+    const dictionary = req.body;
+    if (!dictionary || typeof dictionary !== 'object') {
+      return res.status(400).json({ error: "Invalid dictionary data" });
+    }
+
+    const wordCount = Object.keys(dictionary).length;
+    const dictString = JSON.stringify(dictionary, null, 2);
+    const sizeInMB = (Buffer.byteLength(dictString, 'utf-8') / (1024 * 1024)).toFixed(2);
+
+    // Save to file
+    fs.writeFileSync(dictionaryPath, dictString, "utf-8");
+    
+    console.log(`Dictionary saved: ${wordCount} words, ${sizeInMB}MB`);
+    res.json({ 
+      success: true, 
+      wordCount,
+      sizeInMB: parseFloat(sizeInMB)
+    });
+  } catch (err) {
+    console.error("Error saving dictionary:", err);
+    res.status(500).json({ error: "Failed to save dictionary" });
+  }
+});
+
+// Delete dictionary
+app.delete("/api/dictionary", (req, res) => {
+  try {
+    if (fs.existsSync(dictionaryPath)) {
+      fs.unlinkSync(dictionaryPath);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Error deleting dictionary:", err);
+    res.status(500).json({ error: "Failed to delete dictionary" });
   }
 });
 

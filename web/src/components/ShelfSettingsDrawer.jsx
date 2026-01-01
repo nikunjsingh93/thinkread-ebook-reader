@@ -1,20 +1,19 @@
 import React, { useEffect, useState, useRef } from "react";
-import { apiGetFonts, apiUploadFonts, apiDeleteFont } from "../lib/api.js";
+import { apiGetFonts, apiUploadFonts, apiDeleteFont, apiGetDictionaryStatus, apiDeleteDictionary } from "../lib/api.js";
 import { 
-  getWordCount, 
   importDictionaryJSON, 
-  importDictionaryText,
-  saveDictionary 
+  saveDictionary,
+  loadDictionary
 } from "../lib/dictionary.js";
 
 export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
+  const [dictionaryExists, setDictionaryExists] = useState(false);
   const [wordCount, setWordCount] = useState(0);
-  const [importing, setImporting] = useState(false);
-  const [importMessage, setImportMessage] = useState('');
-  const dictInputRef = useRef(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadMessage, setDownloadMessage] = useState('');
 
   useEffect(() => {
     function onKey(e) {
@@ -27,10 +26,20 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
   useEffect(() => {
     if (open) {
       loadFonts();
-      setWordCount(getWordCount());
-      setImportMessage(''); // Clear any previous messages
+      loadDictionaryStatus();
+      setDownloadMessage(''); // Clear any previous messages
     }
   }, [open]);
+
+  async function loadDictionaryStatus() {
+    try {
+      const status = await apiGetDictionaryStatus();
+      setDictionaryExists(status.exists);
+      setWordCount(status.exists ? status.wordCount : 0);
+    } catch (err) {
+      console.error("Failed to load dictionary status:", err);
+    }
+  }
 
   async function loadFonts() {
     try {
@@ -70,42 +79,56 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
     }
   }
   
-  async function handleDictionaryImport(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    setImporting(true);
-    setImportMessage('');
+  async function handleDictionaryDownload() {
+    setDownloading(true);
+    setDownloadMessage('Downloading Webster\'s Dictionary (27,000 words)...');
     
     try {
-      let result;
-      const fileName = file.name.toLowerCase();
-      
-      if (fileName.endsWith('.json')) {
-        result = await importDictionaryJSON(file);
-      } else if (fileName.endsWith('.txt') || fileName.endsWith('.tab') || fileName.endsWith('.dict')) {
-        result = await importDictionaryText(file);
-      } else {
-        // Try text format as default
-        result = await importDictionaryText(file);
+      // Download Webster's dictionary
+      const response = await fetch('https://raw.githubusercontent.com/matthewreagan/WebstersEnglishDictionary/master/dictionary.json');
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
       }
+      
+      setDownloadMessage('Processing dictionary...');
+      const text = await response.text();
+      const result = await importDictionaryJSON(new Blob([text], { type: 'application/json' }));
       
       if (result.success) {
-        // Save to localStorage
-        saveDictionary();
-        setWordCount(getWordCount());
-        setImportMessage(`✓ Successfully imported ${result.count} words!`);
+        setDownloadMessage('Saving dictionary to server...');
+        const saveResult = await saveDictionary();
+        
+        if (saveResult.success) {
+          setDictionaryExists(true);
+          setWordCount(saveResult.wordCount);
+          setDownloadMessage(`✓ Successfully downloaded and saved ${saveResult.wordCount.toLocaleString()} words!`);
+        } else {
+          setDownloadMessage(`✗ Failed to save: ${saveResult.error}`);
+        }
       } else {
-        setImportMessage(`✗ Import failed: ${result.error || 'Unknown error'}`);
+        setDownloadMessage(`✗ Import failed: ${result.error}`);
       }
     } catch (error) {
-      setImportMessage(`✗ Import failed: ${error.message}`);
+      setDownloadMessage(`✗ Download failed: ${error.message}`);
+      console.error('Dictionary download error:', error);
     } finally {
-      setImporting(false);
-      // Clear the file input
-      if (dictInputRef.current) {
-        dictInputRef.current.value = '';
-      }
+      setDownloading(false);
+    }
+  }
+
+  async function handleDictionaryDelete() {
+    if (!confirm("Delete the dictionary? You'll need to download it again.")) return;
+    
+    try {
+      await apiDeleteDictionary();
+      setDictionaryExists(false);
+      setWordCount(0);
+      setDownloadMessage('✓ Dictionary deleted');
+      
+      // Reload dictionary from server (empty now)
+      await loadDictionary();
+    } catch (err) {
+      alert(err?.message || "Dictionary delete failed");
     }
   }
 
@@ -114,12 +137,12 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
   return (
     <div className="drawerBackdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0}}>
           <h3>App Settings</h3>
           <button className="pill" onClick={onClose}>Done</button>
         </div>
 
-        <div style={{marginTop: "20px"}}>
+        <div style={{marginTop: "20px", overflowY: "auto", overflowX: "hidden", flex: 1, paddingRight: "4px"}}>
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Library Management</h4>
 
           <div className="row" style={{marginBottom: "20px"}}>
@@ -204,51 +227,82 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
           <h4 style={{marginTop: "20px", marginBottom: "12px", color: "var(--text)"}}>Dictionary</h4>
           
           <div className="row">
-            <label>Dictionary Size</label>
+            <label>Current Dictionary</label>
             <div style={{fontSize: '14px', color: 'var(--muted)'}}>
-              {wordCount.toLocaleString()} words
+              {dictionaryExists ? `${wordCount.toLocaleString()} words` : 'Not downloaded'}
             </div>
           </div>
           
-          <div className="row" style={{flexDirection: 'column', alignItems: 'stretch', gap: '8px'}}>
-            <label>Import Dictionary</label>
-            <input
-              ref={dictInputRef}
-              type="file"
-              accept=".json,.txt,.tab,.dict"
-              onChange={handleDictionaryImport}
-              disabled={importing}
-              style={{
-                fontSize: '14px',
-                padding: '8px',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                backgroundColor: 'rgba(18,22,38,.72)',
-                color: 'var(--text)',
-                cursor: importing ? 'wait' : 'pointer'
-              }}
-            />
-            <div style={{fontSize: '12px', color: 'var(--muted)', lineHeight: '1.4'}}>
-              Supports: JSON (.json), Text/Tab-delimited (.txt, .tab, .dict)
-              <br />
-              Format: <code style={{backgroundColor: 'rgba(0,0,0,0.3)', padding: '2px 4px', borderRadius: '2px'}}>word{'\t'}definition</code>
+          {downloadMessage && (
+            <div style={{
+              fontSize: '13px',
+              padding: '12px',
+              borderRadius: '8px',
+              marginTop: '12px',
+              backgroundColor: downloadMessage.startsWith('✓') 
+                ? 'rgba(0,200,0,0.15)' 
+                : downloadMessage.startsWith('⚠') 
+                  ? 'rgba(255,200,0,0.15)' 
+                  : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
+                    ? 'rgba(100,100,255,0.15)'
+                    : 'rgba(200,0,0,0.15)',
+              color: downloadMessage.startsWith('✓') 
+                ? '#50fa7b' 
+                : downloadMessage.startsWith('⚠') 
+                  ? '#f1fa8c' 
+                  : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
+                    ? '#8be9fd'
+                    : '#ff5555',
+              border: `1px solid ${
+                downloadMessage.startsWith('✓') 
+                  ? 'rgba(0,200,0,0.3)' 
+                  : downloadMessage.startsWith('⚠') 
+                    ? 'rgba(255,200,0,0.3)' 
+                    : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
+                      ? 'rgba(100,100,255,0.3)'
+                      : 'rgba(200,0,0,0.3)'
+              }`,
+              lineHeight: '1.5'
+            }}>
+              {downloadMessage}
             </div>
-            {importMessage && (
-              <div style={{
-                fontSize: '13px',
-                padding: '8px',
-                borderRadius: '4px',
-                backgroundColor: importMessage.startsWith('✓') ? 'rgba(0,200,0,0.15)' : 'rgba(200,0,0,0.15)',
-                color: importMessage.startsWith('✓') ? '#50fa7b' : '#ff5555',
-                border: `1px solid ${importMessage.startsWith('✓') ? 'rgba(0,200,0,0.3)' : 'rgba(200,0,0,0.3)'}`
-              }}>
-                {importMessage}
-              </div>
+          )}
+
+          <div className="row" style={{flexDirection: 'column', alignItems: 'stretch', gap: '12px', marginTop: '16px'}}>
+            {!dictionaryExists ? (
+              <button
+                onClick={handleDictionaryDownload}
+                disabled={downloading}
+                className="pill"
+                style={{
+                  fontSize: '14px',
+                  padding: '12px 24px',
+                  cursor: downloading ? 'wait' : 'pointer',
+                  width: '100%'
+                }}
+              >
+                {downloading ? 'Downloading...' : 'Download Webster\'s Dictionary (27,000 words)'}
+              </button>
+            ) : (
+              <button
+                onClick={handleDictionaryDelete}
+                disabled={downloading}
+                className="pill"
+                style={{
+                  fontSize: '14px',
+                  padding: '12px 24px',
+                  width: '100%',
+                  backgroundColor: 'rgba(255, 0, 0, 0.2)',
+                  border: '1px solid rgba(255, 0, 0, 0.4)'
+                }}
+              >
+                Remove Dictionary
+              </button>
             )}
           </div>
 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
-            Long-press any word while reading to see its definition. Import custom dictionaries to expand vocabulary.
+            Long-press any word while reading to see its definition. The dictionary is saved on the server and persists across sessions.
           </div>
         </div>
       </div>
