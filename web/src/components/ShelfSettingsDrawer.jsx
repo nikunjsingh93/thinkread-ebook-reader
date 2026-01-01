@@ -81,10 +81,10 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
   
   async function handleDictionaryDownload() {
     setDownloading(true);
-    setDownloadMessage('Downloading Webster\'s Dictionary (27,000 words)...');
+    setDownloadMessage('Downloading dictionary (100,000+ words)...');
     
     try {
-      // Download Webster's dictionary
+      // Download dictionary
       const response = await fetch('https://raw.githubusercontent.com/matthewreagan/WebstersEnglishDictionary/master/dictionary.json');
       if (!response.ok) {
         throw new Error(`Download failed: ${response.statusText}`);
@@ -281,7 +281,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
                   width: '100%'
                 }}
               >
-                {downloading ? 'Downloading...' : 'Download Webster\'s Dictionary (27,000 words)'}
+                {downloading ? 'Downloading...' : 'Download Dictionary (100,000+ words)'}
               </button>
             ) : (
               <button

@@ -394,6 +394,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         }, 500);
       };
       
+      const handleContextMenu = (e) => {
+        // Prevent context menu (right-click menu) during long press
+        if (longPressTimerRef.current || longPressTriggeredRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      };
+      
       const handleLongPressEnd = (e) => {
         // Clear the timer if the press ends before 500ms
         if (longPressTimerRef.current) {
@@ -523,6 +532,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           zone.addEventListener('mouseup', handleLongPressEnd);
           zone.addEventListener('mousemove', handleLongPressMove);
           zone.addEventListener('click', handleClick, true); // Capture phase to prevent navigation
+          zone.addEventListener('contextmenu', handleContextMenu); // Prevent context menu
           zone.addEventListener('touchstart', handleLongPressStart, { passive: true });
           zone.addEventListener('touchend', handleLongPressEnd);
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
@@ -537,6 +547,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             zone.removeEventListener('mouseup', handleLongPressEnd);
             zone.removeEventListener('mousemove', handleLongPressMove);
             zone.removeEventListener('click', handleClick, true);
+            zone.removeEventListener('contextmenu', handleContextMenu);
             zone.removeEventListener('touchstart', handleLongPressStart);
             zone.removeEventListener('touchend', handleLongPressEnd);
             zone.removeEventListener('touchmove', handleLongPressMove);
