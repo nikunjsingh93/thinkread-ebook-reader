@@ -31,7 +31,7 @@ export function defaultPrefs() {
       },
       white: {
         bg: "#ffebbd",
-        fg: "#251008"
+        fg: "#35160a"
       },
       dark: {
         bg: "rgb(54, 37, 21)",
