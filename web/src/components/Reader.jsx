@@ -211,19 +211,65 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     const saved = loadProgress(book.id);
     const startAt = saved?.cfi || undefined;
 
-    // Build locations (for percent) lazily in background
+    // Check if we have cached locations and mark as ready immediately
+    if (saved?.locations && saved.locations.length > 0) {
+      console.log('Found cached locations:', saved.locations.length);
+      locationsReadyRef.current = true;
+    }
+
+    // Build/load locations
     epub.ready
-      .then(() => epub.locations.generate(1600))
+      .then(() => {
+        // Try to restore cached locations first for instant page numbers
+        if (saved?.locations && saved.locations.length > 0) {
+          try {
+            epub.locations.load(saved.locations);
+            console.log('Loaded cached locations successfully');
+            
+            // Trigger a re-render to update the UI with cached page numbers
+            setTimeout(() => {
+              if (renditionRef.current?.location?.start?.cfi) {
+                const loc = renditionRef.current.location;
+                onRelocated(loc);
+              }
+            }, 100);
+            
+            return Promise.resolve(); // Skip generation
+          } catch (err) {
+            console.warn('Failed to load cached locations, will regenerate:', err);
+            locationsReadyRef.current = false;
+            return epub.locations.generate(1600);
+          }
+        } else {
+          console.log('No cached locations found, generating...');
+          // No cached locations, generate them
+          return epub.locations.generate(1600);
+        }
+      })
       .then(() => {
         // Mark locations as ready
         locationsReadyRef.current = true;
+        
+        // Save the generated locations for next time (only if newly generated)
+        if (epub.locations?.length() && (!saved?.locations || saved.locations.length === 0)) {
+          const locationsArray = epub.locations.save();
+          const currentProgress = loadProgress(book.id) || {};
+          saveProgress(book.id, { 
+            ...currentProgress, 
+            locations: locationsArray 
+          });
+          console.log('Saved new locations to cache:', locationsArray.length);
+        }
+        
         // Trigger a re-render to update the UI
         if (renditionRef.current?.location?.start?.cfi) {
           const loc = renditionRef.current.location;
           onRelocated(loc);
         }
       })
-      .catch(() => null);
+      .catch((err) => {
+        console.warn('Error with locations:', err);
+      });
 
     // Wait for epub to be ready before displaying
     epub.ready.then(() => {
@@ -295,7 +341,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         setLastPageInfo({ page: currentPage, percent: Math.round(p) });
       }
 
-      saveProgress(book.id, { cfi, percent: p, updatedAt: Date.now() });
+      // Save progress while preserving existing locations
+      const existingProgress = loadProgress(book.id) || {};
+      saveProgress(book.id, { 
+        ...existingProgress,
+        cfi, 
+        percent: p, 
+        updatedAt: Date.now() 
+      });
     };
 
     rendition.on("relocated", onRelocated);
@@ -313,7 +366,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
               p = epub.locations.percentageFromCfi(cfi) || 0;
             }
           } catch {}
-          saveProgress(book.id, { cfi, percent: p, updatedAt: Date.now() });
+          // Preserve existing locations when saving progress
+          const existingProgress = loadProgress(book.id) || {};
+          saveProgress(book.id, { 
+            ...existingProgress,
+            cfi, 
+            percent: p, 
+            updatedAt: Date.now() 
+          });
         }
       } catch (err) {
         console.warn("Failed to save progress:", err);
