@@ -75,13 +75,54 @@ export async function loadProgress(bookId) {
   try {
     const response = await fetch(`/api/progress/${bookId}`);
     if (!response.ok) {
-      if (response.status === 404) return null;
+      if (response.status === 404) {
+        // Check localStorage as fallback
+        try {
+          const localData = localStorage.getItem(`ser:progress:${bookId}`);
+          if (localData) {
+            const localProgress = JSON.parse(localData);
+            // Sync localStorage data back to server
+            try {
+              await saveProgress(bookId, localProgress);
+            } catch (syncErr) {
+              // If sync fails, that's okay - at least we have the local data
+              console.warn('Failed to sync localStorage progress to server:', syncErr);
+            }
+            return localProgress;
+          }
+        } catch (localErr) {
+          // Ignore localStorage errors
+        }
+        return null;
+      }
       throw new Error('Failed to load progress');
     }
     const progress = await response.json();
+    
+    // Sync server data to localStorage to keep them in sync
+    try {
+      localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
+    } catch (localErr) {
+      // Ignore localStorage errors - server data is the source of truth
+    }
+    
     return progress;
   } catch (err) {
     console.warn('Error loading progress from server:', err);
+    // Try localStorage as fallback
+    try {
+      const localData = localStorage.getItem(`ser:progress:${bookId}`);
+      if (localData) {
+        const localProgress = JSON.parse(localData);
+        // Try to sync back to server when connection is restored
+        saveProgress(bookId, localProgress).catch(() => {
+          // Ignore sync errors - will retry on next load
+        });
+        return localProgress;
+      }
+    } catch (localErr) {
+      // Ignore localStorage errors
+    }
     return null;
   }
 }
@@ -106,7 +147,17 @@ export async function saveProgress(bookId, progress) {
       throw new Error(`Failed to save progress: ${response.status} ${errorText}`);
     }
     
-    return await response.json();
+    const result = await response.json();
+    
+    // Always sync to localStorage when server save succeeds to keep them in sync
+    try {
+      localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
+    } catch (localErr) {
+      // Ignore localStorage errors - server is the source of truth
+      console.warn('Failed to sync progress to localStorage:', localErr);
+    }
+    
+    return result;
   } catch (err) {
     console.error(`Error saving progress for book ${bookId}:`, err);
     // Fallback to localStorage for offline support
