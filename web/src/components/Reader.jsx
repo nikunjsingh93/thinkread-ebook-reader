@@ -40,6 +40,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dictionaryPopup, setDictionaryPopup] = useState(null); // { word, definition, position: { x, y } }
   const [hasBookmark, setHasBookmark] = useState(false); // Track if current page has a bookmark
+  const [tocOpen, setTocOpen] = useState(false);
+  const [toc, setToc] = useState([]); // Table of contents
   const longPressTimerRef = useRef(null);
   const longPressStartRef = useRef(null);
   const longPressPreventRef = useRef(null); // Timer to start preventing default
@@ -335,6 +337,35 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Wait for epub to be ready before displaying
       epub.ready.then(() => {
         if (destroyed) return;
+
+        // Extract table of contents
+        try {
+          const navigation = epub.navigation;
+          if (navigation && navigation.toc) {
+            // Flatten the TOC tree into a list
+            const flattenToc = (items) => {
+              const result = [];
+              const processItem = (item, level = 0) => {
+                if (item.href) {
+                  result.push({
+                    label: item.label || item.title || 'Untitled',
+                    href: item.href,
+                    level: level
+                  });
+                }
+                if (item.subitems && item.subitems.length > 0) {
+                  item.subitems.forEach(subitem => processItem(subitem, level + 1));
+                }
+              };
+              items.forEach(item => processItem(item));
+              return result;
+            };
+            const tocList = flattenToc(navigation.toc);
+            setToc(tocList);
+          }
+        } catch (err) {
+          console.warn('Failed to extract TOC:', err);
+        }
 
         // Apply prefs first, then display
         applyPrefs(rendition, prefs);
@@ -634,7 +665,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const onKeyDown = (e) => {
       if (e.key === "ArrowRight") rendition.next();
       if (e.key === "ArrowLeft") rendition.prev();
-      if (e.key === "Escape") setDrawerOpen(false);
+      if (e.key === "Escape") {
+        setDrawerOpen(false);
+        setTocOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
 
@@ -1134,6 +1168,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
+  async function goToTocItem(href) {
+    if (!renditionRef.current) return;
+    
+    try {
+      setTocOpen(false);
+      await renditionRef.current.display(href);
+    } catch (err) {
+      console.warn("Failed to navigate to TOC item:", err);
+      onToast?.("Failed to navigate to chapter");
+    }
+  }
+
   async function goToLastPosition() {
     if (!originalPosition?.cfi || !renditionRef.current) return;
 
@@ -1253,6 +1299,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+          <button
+            className="pill"
+            onClick={() => setTocOpen(true)}
+            title="Table of Contents"
+            style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 3C2 2.44772 2.44772 2 3 2H13C13.5523 2 14 2.44772 14 3C14 3.55228 13.5523 4 13 4H3C2.44772 4 2 3.55228 2 3Z" fill="currentColor"/>
+              <path d="M2 7C2 6.44772 2.44772 6 3 6H13C13.5523 6 14 6.44772 14 7C14 7.55228 13.5523 8 13 8H3C2.44772 8 2 7.55228 2 7Z" fill="currentColor"/>
+              <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
+            </svg>
+          </button>
           <button
             className="pill"
             onClick={toggleFullscreen}
@@ -1383,6 +1441,62 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         onChange={onPrefsChange}
         onClose={() => setDrawerOpen(false)}
       />
+
+      {/* TOC Sidebar */}
+      {tocOpen && (
+        <div className="drawerBackdrop" onClick={() => setTocOpen(false)}>
+          <div className="drawer" onClick={(e) => e.stopPropagation()}>
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
+              <h3>Table of Contents</h3>
+              <button
+                className="pill"
+                onClick={() => setTocOpen(false)}
+                style={{padding: '6px 10px', fontSize: '14px'}}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{flex: 1, overflowY: 'auto', paddingRight: '8px'}}>
+              {toc.length === 0 ? (
+                <div style={{color: 'var(--muted)', fontSize: '12px', padding: '20px 0', textAlign: 'center'}}>
+                  No table of contents available
+                </div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                  {toc.map((item, index) => (
+                    <button
+                      key={index}
+                      onClick={() => goToTocItem(item.href)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '10px 12px',
+                        border: '1px solid var(--row-border)',
+                        borderRadius: '10px',
+                        background: 'var(--row-bg)',
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        transition: 'all 0.15s ease',
+                        paddingLeft: `${12 + (item.level || 0) * 16}px`,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.target.style.borderColor = 'rgba(124,92,255,.55)';
+                        e.target.style.background = 'var(--card-bg)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.target.style.borderColor = 'var(--row-border)';
+                        e.target.style.background = 'var(--row-bg)';
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {dictionaryPopup && (
         <DictionaryPopup
