@@ -35,21 +35,33 @@ export default function ConfirmDialog({ open, title, message, onConfirm, onCance
           gap: "20px"
         }}
       >
-        <div>
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <h3 
             id="confirm-title" 
             style={{ 
               margin: 0, 
-              marginBottom: "8px",
+              marginBottom: "12px",
               fontSize: "18px",
               fontWeight: 600,
-              letterSpacing: "0.2px"
+              letterSpacing: "0.2px",
+              flexShrink: 0
             }}
           >
             {title || "Confirm"}
           </h3>
           {message && (
-            <div style={{ color: "var(--muted)", fontSize: "14px", whiteSpace: "pre-line", lineHeight: "1.5" }}>
+            <div 
+              className="confirmMessage"
+              style={{ 
+                color: "var(--muted)", 
+                fontSize: "14px", 
+                whiteSpace: "pre-line", 
+                lineHeight: "1.5",
+                overflowY: "auto",
+                maxHeight: "200px",
+                paddingRight: "4px"
+              }}
+            >
               {message}
             </div>
           )}

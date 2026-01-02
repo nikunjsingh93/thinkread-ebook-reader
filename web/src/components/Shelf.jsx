@@ -91,10 +91,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   async function deleteSelectedBooks() {
     if (selectedBooks.size === 0) return;
 
-    const bookTitles = Array.from(selectedBooks).map(id =>
-      books.find(b => b.id === id)?.title || 'Unknown book'
-    );
-
     const performDelete = async () => {
       try {
         for (const bookId of selectedBooks) {
@@ -109,15 +105,18 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       }
     };
 
+    const count = selectedBooks.size;
+    const bookText = count === 1 ? "book" : "books";
+
     if (onConfirm) {
       onConfirm(
         "Delete Books",
-        `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`,
+        `Are you sure you want to delete ${count} ${bookText}?`,
         performDelete
       );
     } else {
       const confirmed = window.confirm(
-        `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`
+        `Are you sure you want to delete ${count} ${bookText}?`
       );
       if (confirmed) {
         await performDelete();

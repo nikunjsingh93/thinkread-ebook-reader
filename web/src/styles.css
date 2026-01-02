@@ -368,6 +368,25 @@ button, input, select {
 .drawer > div:last-child::-webkit-scrollbar-thumb:hover {
   background: rgba(124, 92, 255, 0.6);
 }
+
+/* Custom scrollbar for confirm dialog message */
+.confirmMessage::-webkit-scrollbar {
+  width: 6px;
+}
+
+.confirmMessage::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.confirmMessage::-webkit-scrollbar-thumb {
+  background: rgba(124, 92, 255, 0.4);
+  border-radius: 3px;
+}
+
+.confirmMessage::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 92, 255, 0.6);
+}
 .drawer h3{
   margin: 0;
   font-size: 14px;
