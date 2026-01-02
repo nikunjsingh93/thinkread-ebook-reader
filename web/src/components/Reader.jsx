@@ -4,7 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks } from "../lib/api.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -1029,7 +1029,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   // Check if current page has a bookmark
   const checkBookmarkForCurrentPage = async (cfi) => {
     try {
-      const { apiGetBookmarks } = await import("../lib/api.js");
       const data = await apiGetBookmarks();
       const currentBookId = currentBookIdRef.current;
       if (!currentBookId) return;
@@ -1043,7 +1042,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   };
 
-  // Add bookmark at current location
+  // Toggle bookmark at current location (add if not exists, remove if exists)
   const addBookmark = async () => {
     try {
       const loc = renditionRef.current?.location;
@@ -1053,30 +1052,44 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const currentBookId = currentBookIdRef.current;
       if (!currentBookId) return;
 
-      let currentPage = 0;
-      let p = 0;
-      try {
-        if (epubBookRef.current?.locations?.length()) {
-          p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
-          const locationIndex = epubBookRef.current.locations.locationFromCfi(cfi);
-          currentPage = locationIndex > 0 ? locationIndex : 1;
-        }
-      } catch {}
+      // Check if bookmark already exists
+      const data = await apiGetBookmarks();
+      const existingBookmark = data.bookmarks?.find(
+        b => b.bookId === currentBookId && b.cfi === cfi
+      );
 
-      const bookmark = {
-        bookId: currentBookId,
-        bookTitle: book.title,
-        cfi: cfi,
-        percent: p,
-        page: currentPage
-      };
+      if (existingBookmark) {
+        // Remove existing bookmark
+        await apiDeleteBookmark(existingBookmark.id);
+        setHasBookmark(false);
+        onToast?.("Bookmark removed");
+      } else {
+        // Add new bookmark
+        let currentPage = 0;
+        let p = 0;
+        try {
+          if (epubBookRef.current?.locations?.length()) {
+            p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
+            const locationIndex = epubBookRef.current.locations.locationFromCfi(cfi);
+            currentPage = locationIndex > 0 ? locationIndex : 1;
+          }
+        } catch {}
 
-      await apiSaveBookmark(bookmark);
-      setHasBookmark(true);
-      onToast?.("Bookmark added");
+        const bookmark = {
+          bookId: currentBookId,
+          bookTitle: book.title,
+          cfi: cfi,
+          percent: p,
+          page: currentPage
+        };
+
+        await apiSaveBookmark(bookmark);
+        setHasBookmark(true);
+        onToast?.("Bookmark added");
+      }
     } catch (err) {
-      console.error("Failed to add bookmark:", err);
-      onToast?.("Failed to add bookmark");
+      console.error("Failed to toggle bookmark:", err);
+      onToast?.("Failed to toggle bookmark");
     }
   };
 
