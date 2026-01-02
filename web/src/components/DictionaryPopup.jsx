@@ -11,6 +11,16 @@ import React from 'react';
 export default function DictionaryPopup({ word, definition, position, onClose }) {
   if (!word || !definition) return null;
 
+  // Detect current theme from CSS variables
+  const isDarkTheme = () => {
+    const root = document.documentElement;
+    const bgColor = getComputedStyle(root).getPropertyValue('--bg').trim();
+    // Check if background is dark (not white or very light)
+    return bgColor !== '#ffffff' && bgColor !== '#fafafa';
+  };
+
+  const theme = isDarkTheme() ? 'dark' : 'light';
+
   // Calculate popup position to avoid going off-screen
   const popupRef = React.useRef(null);
   const [adjustedPosition, setAdjustedPosition] = React.useState(position);
@@ -56,15 +66,15 @@ export default function DictionaryPopup({ word, definition, position, onClose })
             width: 6px;
           }
           .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.05);
+            background: ${theme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'};
             border-radius: 3px;
           }
           .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-thumb {
-            background: rgba(0, 0, 0, 0.2);
+            background: ${theme === 'dark' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'};
             border-radius: 3px;
           }
           .dictionary-popup-content-${scrollbarId}::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 0, 0, 0.3);
+            background: ${theme === 'dark' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)'};
           }
         `}
       </style>
@@ -88,10 +98,10 @@ export default function DictionaryPopup({ word, definition, position, onClose })
           position: 'fixed',
           left: `${adjustedPosition.x}px`,
           top: `${adjustedPosition.y}px`,
-          backgroundColor: '#ffffff',
-          border: '1px solid #d1d5db',
+          backgroundColor: theme === 'dark' ? 'var(--panel)' : '#ffffff',
+          border: `1px solid ${theme === 'dark' ? 'var(--border)' : '#d1d5db'}`,
           borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          boxShadow: theme === 'dark' ? '0 4px 12px rgba(0, 0, 0, 0.4)' : '0 4px 12px rgba(0, 0, 0, 0.15)',
           padding: '12px 16px',
           maxWidth: '320px',
           maxHeight: '400px',
@@ -107,10 +117,10 @@ export default function DictionaryPopup({ word, definition, position, onClose })
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }} // Prevent context menu
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexShrink: 0 }}>
-          <div style={{ 
-            fontSize: '16px', 
-            fontWeight: '600', 
-            color: '#1f2937',
+          <div style={{
+            fontSize: '16px',
+            fontWeight: '600',
+            color: theme === 'dark' ? 'var(--text)' : '#1f2937',
             marginRight: '12px',
             wordBreak: 'break-word'
           }}>
@@ -123,7 +133,7 @@ export default function DictionaryPopup({ word, definition, position, onClose })
               border: 'none',
               fontSize: '18px',
               cursor: 'pointer',
-              color: '#6b7280',
+              color: theme === 'dark' ? 'var(--muted)' : '#6b7280',
               padding: '0',
               lineHeight: '1',
               flexShrink: 0,
@@ -133,11 +143,11 @@ export default function DictionaryPopup({ word, definition, position, onClose })
             ×
           </button>
         </div>
-        <div 
+        <div
           className={`dictionary-popup-content-${scrollbarId}`}
-          style={{ 
-            fontSize: '14px', 
-            color: '#4b5563', 
+          style={{
+            fontSize: '14px',
+            color: theme === 'dark' ? 'var(--muted)' : '#4b5563',
             lineHeight: '1.5',
             overflowY: 'auto',
             overflowX: 'hidden',
