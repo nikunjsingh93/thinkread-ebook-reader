@@ -849,62 +849,83 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       </div>
 
       <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>
-        <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0}}>
-          {hasDragged && originalPosition && (
-            <button
-              className="pill"
-              onClick={goToLastPosition}
-              style={{fontSize: '10px', padding: '2px 6px', height: 'auto'}}
-              title={`Go back to Page ${originalPosition.page} (${originalPosition.percent}%)`}
-            >
-              ↺ Page {originalPosition.page}
-            </button>
-          )}
-          <span style={{fontSize: '11px', whiteSpace: 'nowrap'}}>{locationText || " "}</span>
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: '120px', width: '120px'}}>
+          <span style={{fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{locationText || " "}</span>
         </div>
 
-        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', padding: '0 20px', position: 'relative'}}>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={navigatingToPercent !== null ? navigatingToPercent : pct}
-            onChange={handleSliderChange}
-            onMouseUp={handleSliderMouseUp}
-            style={{
-              width: '100%',
-              height: '4px',
-              cursor: 'pointer',
-              background: 'rgba(255,255,255,0.2)',
-              borderRadius: '2px'
-            }}
-            title={`Navigate to position: ${navigatingToPercent !== null ? navigatingToPercent : pct}%`}
-          />
-          {hasDragged && originalPosition && (
-            <div
+        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', padding: '0 20px'}}>
+          <div style={{position: 'relative', width: '100%', display: 'flex', alignItems: 'center'}}>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={navigatingToPercent !== null ? navigatingToPercent : pct}
+              onChange={handleSliderChange}
+              onMouseUp={handleSliderMouseUp}
               style={{
-                position: 'absolute',
-                left: `${originalPosition.percent}%`,
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '8px',
-                height: '8px',
-                backgroundColor: 'var(--accent, #007acc)',
-                borderRadius: '50%',
-                border: '2px solid rgba(255,255,255,0.8)',
-                boxShadow: '0 0 4px rgba(0,122,204,0.3)',
-                pointerEvents: 'none',
-                zIndex: 10
+                width: '100%',
+                height: '4px',
+                cursor: 'pointer',
+                background: 'rgba(255,255,255,0.2)',
+                borderRadius: '2px'
               }}
-              title={`Original position: Page ${originalPosition.page} (${originalPosition.percent}%)`}
+              title={`Navigate to position: ${navigatingToPercent !== null ? navigatingToPercent : pct}%`}
             />
-          )}
+            {hasDragged && originalPosition && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `calc(${originalPosition.percent}% * (100% - 16px) / 100 + 8px)`,
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: 'var(--accent, #007acc)',
+                  borderRadius: '50%',
+                  border: '2px solid rgba(255,255,255,0.8)',
+                  boxShadow: '0 0 4px rgba(0,122,204,0.3)',
+                  pointerEvents: 'none',
+                  zIndex: 10
+                }}
+                title={`Original position: Page ${originalPosition.page} (${originalPosition.percent}%)`}
+              />
+            )}
+          </div>
         </div>
 
-        <div style={{fontSize: '11px', minWidth: '40px', textAlign: 'right'}}>
+        <div style={{fontSize: '11px', minWidth: '40px', width: '40px', textAlign: 'right'}}>
           {navigatingToPercent !== null ? navigatingToPercent : pct}%
         </div>
       </div>
+
+      {/* Floating "Go back" button popup */}
+      {hasDragged && originalPosition && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '70px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100,
+            animation: 'fadeIn 0.2s ease-in'
+          }}
+        >
+          <button
+            className="pill"
+            onClick={goToLastPosition}
+            style={{
+              fontSize: '12px',
+              padding: '8px 12px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid var(--border)',
+            }}
+            title={`Go back to Page ${originalPosition.page} (${originalPosition.percent}%)`}
+          >
+            ↺ Return to Page {originalPosition.page}
+          </button>
+        </div>
+      )}
 
       <SettingsDrawer
         open={drawerOpen}

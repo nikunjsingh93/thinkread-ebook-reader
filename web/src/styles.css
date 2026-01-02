@@ -406,3 +406,15 @@ button, input, select {
   font-size: 12px;
   z-index: 60;
 }
+
+/* Fade-in animation for floating button */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
