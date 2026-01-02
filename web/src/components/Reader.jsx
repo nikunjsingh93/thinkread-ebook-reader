@@ -1243,14 +1243,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       </div>
 
       <div className="readerStage">
-        {/* Bookmark overlay in top-left corner */}
+        {/* Bookmark overlay in top-left corner, below toolbar */}
         {hasBookmark && (
           <div
             style={{
               position: 'absolute',
-              top: '10px',
+              top: '50px',
               left: '10px',
-              zIndex: 15,
+              zIndex: 8,
               fontSize: '24px',
               pointerEvents: 'none',
               filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
