@@ -21,7 +21,8 @@ function defaultPrefs() {
       "pure-white": { bg: "#ffffff", fg: "#1a1a1a" },
       white: { bg: "#ffebbd", fg: "#35160a" },
       dark: { bg: "rgb(54, 37, 21)", fg: "#ffebbd" },
-      "pure-black": { bg: "#000000", fg: "#ffffff" }
+      "pure-black": { bg: "#000000", fg: "#ffffff" },
+      "eink": { bg: "#ffffff", fg: "#1a1a1a" }
     },
     bg: "rgb(54, 37, 21)",
     fg: "#ffebbd",
@@ -132,6 +133,38 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(0,0,0,0.8)');
     root.style.setProperty('--search-border', 'rgba(255,255,255,0.15)');
     root.style.setProperty('--progress-bg', 'rgba(255,255,255,0.3)');
+  } else if (themeMode === 'eink') {
+    // Eink theme - all UI elements black and white, reading same as pure-white
+    root.style.setProperty('--bg', '#ffffff');
+    root.style.setProperty('--panel', '#ffffff');
+    root.style.setProperty('--text', '#000000'); // Pure black text
+    root.style.setProperty('--muted', '#666666'); // Gray muted text
+    root.style.setProperty('--border', 'rgba(0,0,0,0.2)'); // Black border
+    root.style.setProperty('--accent', '#000000'); // Black accent (no colors)
+
+    // UI element backgrounds - white/black only
+    root.style.setProperty('--topbar-bg', 'rgba(255,255,255,0.95)');
+    root.style.setProperty('--card-bg', 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--pill-bg', 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--drawer-bg', 'rgba(255,255,255,0.98)');
+    root.style.setProperty('--reader-bar-bg', 'rgba(255,255,255,0.95)');
+    root.style.setProperty('--toast-bg', 'rgba(255,255,255,0.95)');
+    root.style.setProperty('--backdrop-bg', 'rgba(0,0,0,0.3)');
+
+    // Form elements - black and white only
+    root.style.setProperty('--input-bg', 'rgba(255,255,255,0.8)');
+    root.style.setProperty('--input-border', 'rgba(0,0,0,0.2)');
+    root.style.setProperty('--row-bg', 'rgba(255,255,255,1)'); // White background for eink
+    root.style.setProperty('--row-border', 'rgba(0,0,0,0.1)');
+
+    // Additional UI elements - black and white only
+    root.style.setProperty('--kebab-bg', 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--kebab-border', 'rgba(0,0,0,0.2)');
+    root.style.setProperty('--cover-border', 'rgba(0,0,0,0.1)');
+    // Search and progress bars - black and white only
+    root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--search-border', 'rgba(0,0,0,0.2)');
+    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.7)');
   } else { // dark (default)
     root.style.setProperty('--bg', '#0b0d12');
     root.style.setProperty('--panel', '#121626');

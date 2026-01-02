@@ -6,7 +6,10 @@ export async function loadPrefs() {
       return defaultPrefs();
     }
     const p = await response.json();
-    return { ...defaultPrefs(), ...p };
+    const defaults = defaultPrefs();
+    // Merge colors object to ensure all theme colors are available (especially eink)
+    const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
+    return { ...defaults, ...p, colors: mergedColors };
   } catch (err) {
     console.warn('Error loading prefs from server:', err);
     return defaultPrefs();
@@ -50,17 +53,21 @@ export function defaultPrefs() {
         bg: "#ffffff",
         fg: "#1a1a1a"
       },
-      white: {
+      "white": {
         bg: "#ffebbd",
         fg: "#35160a"
       },
-      dark: {
+      "dark": {
         bg: "rgb(54, 37, 21)",
         fg: "#ffebbd"
       },
       "pure-black": {
         bg: "#000000",
         fg: "#ffffff"
+      },
+      "eink": {
+        bg: "#ffffff",
+        fg: "#1a1a1a"
       }
     },
     // Legacy properties for backward compatibility

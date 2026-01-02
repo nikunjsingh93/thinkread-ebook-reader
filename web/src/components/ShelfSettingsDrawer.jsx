@@ -182,6 +182,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
               <option value="white">White</option>
               <option value="dark">Dark</option>
               <option value="pure-black">Pure Black</option>
+              <option value="eink">E-Ink</option>
             </select>
           </div>
 
@@ -236,7 +237,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
           </div>
 
           {fonts.length > 0 && (
-            <div style={{marginTop: "12px", padding: "8px", background: "rgba(255,255,255,0.05)", borderRadius: "4px"}}>
+            <div style={{marginTop: "12px", padding: "8px", background: "var(--row-bg)", borderRadius: "4px"}}>
               <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "8px"}}>Uploaded Fonts:</div>
               {fonts.map((font) => (
                 <div key={font.filename} style={{
@@ -285,29 +286,35 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
               padding: '12px',
               borderRadius: '8px',
               marginTop: '12px',
-              backgroundColor: downloadMessage.startsWith('✓') 
-                ? 'rgba(0,200,0,0.15)' 
-                : downloadMessage.startsWith('⚠') 
-                  ? 'rgba(255,200,0,0.15)' 
-                  : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
-                    ? 'rgba(100,100,255,0.15)'
-                    : 'rgba(200,0,0,0.15)',
-              color: downloadMessage.startsWith('✓') 
-                ? '#50fa7b' 
-                : downloadMessage.startsWith('⚠') 
-                  ? '#f1fa8c' 
-                  : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
-                    ? '#8be9fd'
-                    : '#ff5555',
-              border: `1px solid ${
-                downloadMessage.startsWith('✓') 
-                  ? 'rgba(0,200,0,0.3)' 
+              backgroundColor: prefs.themeMode === 'eink'
+                ? 'var(--row-bg)'
+                : downloadMessage.startsWith('✓') 
+                  ? 'rgba(0,200,0,0.15)' 
                   : downloadMessage.startsWith('⚠') 
-                    ? 'rgba(255,200,0,0.3)' 
+                    ? 'rgba(255,200,0,0.15)' 
                     : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
-                      ? 'rgba(100,100,255,0.3)'
-                      : 'rgba(200,0,0,0.3)'
-              }`,
+                      ? 'rgba(100,100,255,0.15)'
+                      : 'rgba(200,0,0,0.15)',
+              color: prefs.themeMode === 'eink'
+                ? 'var(--text)'
+                : downloadMessage.startsWith('✓') 
+                  ? '#50fa7b' 
+                  : downloadMessage.startsWith('⚠') 
+                    ? '#f1fa8c' 
+                    : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
+                      ? '#8be9fd'
+                      : '#ff5555',
+              border: prefs.themeMode === 'eink'
+                ? '1px solid var(--border)'
+                : `1px solid ${
+                    downloadMessage.startsWith('✓') 
+                      ? 'rgba(0,200,0,0.3)' 
+                      : downloadMessage.startsWith('⚠') 
+                        ? 'rgba(255,200,0,0.3)' 
+                        : downloadMessage.startsWith('Downloading') || downloadMessage.startsWith('Processing') || downloadMessage.startsWith('Saving')
+                          ? 'rgba(100,100,255,0.3)'
+                          : 'rgba(200,0,0,0.3)'
+                  }`,
               lineHeight: '1.5'
             }}>
               {downloadMessage}
@@ -338,8 +345,9 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
                   fontSize: '14px',
                   padding: '12px 24px',
                   width: '100%',
-                  backgroundColor: 'rgba(255, 0, 0, 0.2)',
-                  border: '1px solid rgba(255, 0, 0, 0.4)'
+                  backgroundColor: prefs.themeMode === 'eink' ? 'var(--row-bg)' : 'rgba(255, 0, 0, 0.2)',
+                  border: prefs.themeMode === 'eink' ? '1px solid var(--border)' : '1px solid rgba(255, 0, 0, 0.4)',
+                  color: prefs.themeMode === 'eink' ? 'var(--text)' : undefined
                 }}
               >
                 Remove Dictionary
