@@ -537,11 +537,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     // Apply preferences
     applyPrefs(r, prefs);
 
-    // Force font application and re-render
+    // Force re-rendering with updated preferences
     requestAnimationFrame(() => {
       setTimeout(() => {
         try {
-          // Reapply the epub.js theme to update font settings
+          // Reapply the epub.js theme to update settings
           applyPrefs(r, prefs);
 
           // Inject font CSS immediately for existing content if it's a custom font
@@ -574,9 +574,23 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             }
           }
 
-          // Force re-render by re-displaying the current page
+          // For margin/layout changes, force complete re-layout
+          // Resize first
+          r.resize();
+
+          // Force re-render with layout recalculation
           if (currentCfi) {
-            r.display(currentCfi).catch(() => {
+            // Try multiple approaches to ensure proper re-rendering
+            r.display(currentCfi).then(() => {
+              // Additional resize after display to ensure layout is correct
+              setTimeout(() => {
+                try {
+                  r.resize();
+                } catch (err) {
+                  console.warn('Secondary resize failed:', err);
+                }
+              }, 50);
+            }).catch(() => {
               // Fallback: try to get current location again and display
               try {
                 const loc = r.location?.start?.cfi;
@@ -593,9 +607,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             r.display().catch(() => {});
           }
         } catch (err) {
-          console.warn('Failed to apply font changes:', err);
+          console.warn('Failed to apply preference changes:', err);
         }
-      }, 100); // Longer delay to ensure font loads
+      }, 150); // Slightly longer delay for margin changes
     });
   }, [prefs]);
 
