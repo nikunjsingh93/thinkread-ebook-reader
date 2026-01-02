@@ -181,6 +181,8 @@ function applyTheme(prefs) {
     root.style.setProperty('--scrollbar-thumb', 'rgba(128, 128, 128, 0.4)');
     root.style.setProperty('--scrollbar-thumb-hover', 'rgba(128, 128, 128, 0.6)');
     root.style.setProperty('--scrollbar-track', 'rgba(0, 0, 0, 0.05)');
+    // Slider thumb color - black for eink
+    root.style.setProperty('--slider-thumb', '#000000');
   } else { // dark (default)
     root.style.setProperty('--bg', '#0b0d12');
     root.style.setProperty('--panel', '#121626');

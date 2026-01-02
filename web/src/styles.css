@@ -409,7 +409,37 @@ button, input, select {
   margin-bottom: 12px;
 }
 .row label{ font-size: 12px; color: var(--muted); }
-.row input[type="range"]{ width: 170px; }
+.row input[type="range"]{ 
+  width: 170px; 
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--progress-bg);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  border: 1px solid var(--border);
+}
+
+.row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-thumb, var(--accent, #007acc));
+  cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
+
+.row input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--slider-thumb, var(--accent, #007acc));
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
 .row select, .row input[type="color"]{
   border: 1px solid var(--input-border);
   background: var(--input-bg);
