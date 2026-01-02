@@ -25,6 +25,7 @@ function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",
     twoPageLayout: false,
+    lockOrientation: false,
   };
 }
 
@@ -217,10 +218,81 @@ export default function App() {
     applyTheme(prefs);
   }, [prefs.themeMode]);
 
+  // Function to lock/unlock orientation (called from user interaction)
+  const handleOrientationLock = async (shouldLock) => {
+    // Check if Screen Orientation API is available
+    if (!screen?.orientation || typeof screen.orientation.lock !== 'function') {
+      return;
+    }
+
+    try {
+      if (shouldLock) {
+        // Lock to current orientation
+        const currentType = screen.orientation.type;
+        let orientationToLock;
+        
+        // Determine orientation from current type
+        if (currentType && currentType.includes('portrait')) {
+          orientationToLock = 'portrait';
+        } else if (currentType && currentType.includes('landscape')) {
+          orientationToLock = 'landscape';
+        } else {
+          // Fallback: try to detect from window dimensions
+          orientationToLock = window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
+        }
+
+        const lockPromise = screen.orientation.lock(orientationToLock);
+        if (lockPromise && typeof lockPromise.catch === 'function') {
+          await lockPromise;
+        }
+      } else {
+        // Unlock orientation
+        const unlockPromise = screen.orientation.unlock();
+        if (unlockPromise && typeof unlockPromise.catch === 'function') {
+          await unlockPromise;
+        }
+      }
+    } catch (err) {
+      // Some browsers/devices don't allow orientation lock
+      console.warn('Orientation lock not available:', err.message);
+    }
+  };
+
+  // Handle orientation unlock when setting is disabled
+  useEffect(() => {
+    if (!prefs.lockOrientation && screen?.orientation && typeof screen.orientation.unlock === 'function') {
+      // Unlock when setting is disabled (this doesn't require user gesture)
+      const unlockPromise = screen.orientation.unlock();
+      if (unlockPromise && typeof unlockPromise.catch === 'function') {
+        unlockPromise.catch(() => {
+          // Ignore unlock errors
+        });
+      }
+    }
+
+    // Cleanup: unlock when component unmounts
+    return () => {
+      if (screen?.orientation && typeof screen.orientation.unlock === 'function') {
+        const unlockPromise = screen.orientation.unlock();
+        if (unlockPromise && typeof unlockPromise.catch === 'function') {
+          unlockPromise.catch(() => {
+            // Ignore unlock errors
+          });
+        }
+      }
+    };
+  }, [prefs.lockOrientation]);
+
 
   async function onPrefsChange(patch) {
     const next = { ...prefs, ...patch };
     setPrefs(next);
+    
+    // Handle orientation lock change (requires user gesture)
+    if ('lockOrientation' in patch) {
+      await handleOrientationLock(patch.lockOrientation);
+    }
+    
     try {
       await savePrefs(next);
     } catch (err) {

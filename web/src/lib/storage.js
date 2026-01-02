@@ -68,6 +68,7 @@ export function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
     twoPageLayout: false, // Enable two-page side-by-side layout
+    lockOrientation: false, // Lock screen orientation to current aspect ratio
   };
 }
 
