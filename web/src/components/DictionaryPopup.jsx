@@ -99,8 +99,12 @@ export default function DictionaryPopup({ word, definition, position, onClose })
           flexDirection: 'column',
           zIndex: 9999,
           fontFamily: 'system-ui, -apple-system, sans-serif',
+          WebkitUserSelect: 'none', // Prevent text selection on iOS
+          WebkitTouchCallout: 'none', // Prevent iOS callout menu
+          userSelect: 'none', // Prevent text selection
         }}
         onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }} // Prevent context menu
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexShrink: 0 }}>
           <div style={{ 

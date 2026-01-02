@@ -36,6 +36,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [dictionaryPopup, setDictionaryPopup] = useState(null); // { word, definition, position: { x, y } }
   const longPressTimerRef = useRef(null);
   const longPressStartRef = useRef(null);
+  const longPressPreventRef = useRef(null); // Timer to start preventing default
   const dictionaryCleanupRef = useRef(null);
   const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
 
@@ -373,17 +374,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       const navZones = readerStage?.querySelectorAll('.navZone');
       
       const handleLongPressStart = (e) => {
-        // Prevent default behavior for touch events (prevents context menu on mobile)
-        if (e.type === 'touchstart') {
-          e.preventDefault();
-        }
-        
         // Reset the flag
         longPressTriggeredRef.current = false;
         
-        // Clear any existing timer
+        // Clear any existing timers
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
+        }
+        if (longPressPreventRef.current) {
+          clearTimeout(longPressPreventRef.current);
         }
         
         // Store the start position and time
@@ -391,7 +390,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           x: e.clientX || (e.touches && e.touches[0].clientX),
           y: e.clientY || (e.touches && e.touches[0].clientY),
           time: Date.now(),
+          shouldPreventDefault: false // Start as false to allow normal clicks
         };
+        
+        // After 100ms (short delay), start preventing default behavior
+        // This allows quick taps to work normally
+        longPressPreventRef.current = setTimeout(() => {
+          if (longPressStartRef.current) {
+            longPressStartRef.current.shouldPreventDefault = true;
+          }
+        }, 100);
         
         // Set a timer for long press (500ms)
         longPressTimerRef.current = setTimeout(() => {
@@ -400,8 +408,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       };
       
       const handleContextMenu = (e) => {
-        // Prevent context menu (right-click menu) during long press
-        if (longPressTimerRef.current || longPressTriggeredRef.current) {
+        // Prevent context menu if we're in long press mode
+        if (longPressStartRef.current?.shouldPreventDefault || longPressTriggeredRef.current) {
           e.preventDefault();
           e.stopPropagation();
           return false;
@@ -409,10 +417,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       };
       
       const handleLongPressEnd = (e) => {
-        // Clear the timer if the press ends before 500ms
+        // Clear both timers if the press ends before completion
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
           longPressTimerRef.current = null;
+        }
+        if (longPressPreventRef.current) {
+          clearTimeout(longPressPreventRef.current);
+          longPressPreventRef.current = null;
         }
         longPressStartRef.current = null;
       };
@@ -430,6 +442,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             if (longPressTimerRef.current) {
               clearTimeout(longPressTimerRef.current);
               longPressTimerRef.current = null;
+            }
+            if (longPressPreventRef.current) {
+              clearTimeout(longPressPreventRef.current);
+              longPressPreventRef.current = null;
             }
             longPressStartRef.current = null;
           }
@@ -538,7 +554,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           zone.addEventListener('mousemove', handleLongPressMove);
           zone.addEventListener('click', handleClick, true); // Capture phase to prevent navigation
           zone.addEventListener('contextmenu', handleContextMenu); // Prevent context menu
-          zone.addEventListener('touchstart', handleLongPressStart, { passive: false }); // Non-passive to allow preventDefault
+          zone.addEventListener('touchstart', handleLongPressStart, { passive: true }); // Passive for better scroll performance
           zone.addEventListener('touchend', handleLongPressEnd);
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
         });
