@@ -1176,30 +1176,89 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       
       // Remove fragment identifier if present (e.g., "chapter1.xhtml#section1" -> "chapter1.xhtml")
       const hrefWithoutFragment = href.split('#')[0];
+      const fragment = href.includes('#') ? href.split('#')[1] : null;
       
-      // Try multiple navigation methods
-      try {
-        // Method 1: Try to get the section first (handles relative paths)
-        const section = await epubBookRef.current.getSection(hrefWithoutFragment);
-        if (section && section.href) {
-          await renditionRef.current.display(section.href);
-          return;
+      // Wait for book to be ready
+      await epubBookRef.current.ready;
+      
+      // Method 1: Find the spine item that matches the href
+      const spine = epubBookRef.current.spine;
+      if (spine) {
+        // Try to find spine item by href
+        let spineItem = null;
+        let spineIndex = -1;
+        
+        // Normalize href for comparison (handle relative paths)
+        const normalizeHref = (h) => {
+          // Remove leading slash and normalize
+          return h.replace(/^\/+/, '').split('#')[0];
+        };
+        
+        const normalizedTarget = normalizeHref(hrefWithoutFragment);
+        
+        // Search through spine items
+        for (let i = 0; i < spine.length; i++) {
+          const item = spine.get(i);
+          if (item) {
+            const itemHref = item.href || item.url || '';
+            const normalizedItemHref = normalizeHref(itemHref);
+            
+            // Check if hrefs match (exact or ends with)
+            if (normalizedItemHref === normalizedTarget || 
+                normalizedItemHref.endsWith(normalizedTarget) ||
+                normalizedTarget.endsWith(normalizedItemHref)) {
+              spineItem = item;
+              spineIndex = i;
+              break;
+            }
+          }
         }
-      } catch (sectionErr) {
-        // Continue to next method
-        console.log('getSection failed, trying direct href:', sectionErr);
+        
+        // If found in spine, navigate using the spine item
+        if (spineItem && spineIndex >= 0) {
+          try {
+            // Try using the spine item's href
+            const itemHref = spineItem.href || spineItem.url;
+            if (fragment) {
+              await renditionRef.current.display(itemHref + '#' + fragment);
+            } else {
+              await renditionRef.current.display(itemHref);
+            }
+            return;
+          } catch (spineErr) {
+            // If that fails, try using the spine index
+            try {
+              await renditionRef.current.display(spineIndex);
+              return;
+            } catch (indexErr) {
+              console.log('Spine index navigation failed:', indexErr);
+            }
+          }
+        }
       }
       
       // Method 2: Try the href directly (epub.js can handle many href formats)
       try {
-        await renditionRef.current.display(hrefWithoutFragment);
+        if (fragment) {
+          await renditionRef.current.display(hrefWithoutFragment + '#' + fragment);
+        } else {
+          await renditionRef.current.display(hrefWithoutFragment);
+        }
         return;
       } catch (directErr) {
         console.log('Direct href failed, trying original href:', directErr);
       }
       
       // Method 3: Try the original href with fragment
-      await renditionRef.current.display(href);
+      try {
+        await renditionRef.current.display(href);
+        return;
+      } catch (originalErr) {
+        console.log('Original href also failed:', originalErr);
+      }
+      
+      // If all methods fail, show error
+      throw new Error('All navigation methods failed');
       
     } catch (err) {
       console.warn("Failed to navigate to TOC item:", err);
