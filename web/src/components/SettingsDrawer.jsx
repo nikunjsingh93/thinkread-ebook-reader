@@ -47,26 +47,31 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         <div style={{overflowY: "auto", overflowX: "hidden", flex: 1, paddingRight: "4px"}}>
         <div className="row">
           <label>Font</label>
-          <select
-            value={prefs.fontFamily}
-            onChange={(e) => onChange({ fontFamily: e.target.value })}
-          >
-            <option value="serif">Serif</option>
-            <option value="sans-serif">Sans</option>
-            <option value="Georgia, serif">Georgia</option>
-            <option value="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
-            {fonts.map((font) => (
-              <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>
-                {font.fontFamily} (Custom)
-              </option>
-            ))}
-            {/* Fallback option for custom fonts that aren't loaded yet */}
-            {prefs.fontFamily && prefs.fontFamily.startsWith('custom:') && !fonts.some(font => `custom:${font.filename}:${font.fontFamily}` === prefs.fontFamily) && (
-              <option value={prefs.fontFamily}>
-                {prefs.fontFamily.split(':')[2] || 'Custom Font'} (Custom)
-              </option>
-            )}
-          </select>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
+            <select
+              value={prefs.fontFamily}
+              onChange={(e) => onChange({ fontFamily: e.target.value })}
+            >
+              <option value="serif">Serif</option>
+              <option value="sans-serif">Sans</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
+              {fonts.map((font) => (
+                <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>
+                  {font.fontFamily} (Custom)
+                </option>
+              ))}
+              {/* Fallback option for custom fonts that aren't loaded yet */}
+              {prefs.fontFamily && prefs.fontFamily.startsWith('custom:') && !fonts.some(font => `custom:${font.filename}:${font.fontFamily}` === prefs.fontFamily) && (
+                <option value={prefs.fontFamily}>
+                  {prefs.fontFamily.split(':')[2] || 'Custom Font'} (Custom)
+                </option>
+              )}
+            </select>
+            <div className="muted" style={{fontSize: 11}}>
+              Tip: Upload more fonts in app settings
+            </div>
+          </div>
         </div>
 
         <div className="row">
@@ -270,11 +275,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
-          Tip: Long-press any word while reading to see its definition.
-        </div>
-
-        <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
-          Tip: Tap the middle of the page to show/hide the reader toolbar.
+          Tip: Long-press any word while reading to see its definition. Tap the middle of the page to show/hide the reader toolbar.
         </div>
         </div>
       </div>
