@@ -1223,9 +1223,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             className="pill"
             onClick={addBookmark}
             title="Add bookmark"
-            style={{opacity: hasBookmark ? 0.8 : 1}}
+            style={{opacity: hasBookmark ? 0.8 : 1, padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
           >
-            🔖
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5"/>
+            </svg>
           </button>
         </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
@@ -1251,13 +1253,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               top: '50px',
               left: '10px',
               zIndex: 8,
-              fontSize: '24px',
               pointerEvents: 'none',
               filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
             }}
             title="Bookmarked"
           >
-            🔖
+            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="#dc2626" stroke="#dc2626" strokeWidth="0.5"/>
+            </svg>
           </div>
         )}
         {/* tap zones */}

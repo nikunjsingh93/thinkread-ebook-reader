@@ -339,10 +339,12 @@ export default function App() {
             <button
               className="pill"
               onClick={() => setShowBookmarks(true)}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px", display: 'flex', alignItems: 'center', justifyContent: 'center'}}
               title="All Bookmarks"
             >
-              🔖
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5"/>
+              </svg>
             </button>
             <button
               className="pill"
