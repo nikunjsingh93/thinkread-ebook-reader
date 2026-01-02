@@ -68,7 +68,7 @@ button, input, select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
   background: var(--topbar-bg);
