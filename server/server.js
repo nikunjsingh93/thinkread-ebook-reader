@@ -484,17 +484,22 @@ app.post("/api/bookmarks", async (req, res) => {
 app.delete("/api/bookmarks/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const state = loadState(statePath);
     
-    if (!state.bookmarks) state.bookmarks = [];
-    const index = state.bookmarks.findIndex(b => b.id === id);
+    // Use saveStateAtomic which will load current state, merge, and save atomically
+    // We need to pass a state object with the updated bookmarks array
+    const currentState = loadState(statePath);
+    if (!currentState.bookmarks) currentState.bookmarks = [];
     
+    const index = currentState.bookmarks.findIndex(b => b.id === id);
     if (index === -1) {
       return res.status(404).json({ error: "Bookmark not found" });
     }
 
-    state.bookmarks.splice(index, 1);
-    await saveStateAtomic(statePath, state);
+    // Remove the bookmark
+    currentState.bookmarks.splice(index, 1);
+    
+    // Save using atomic write
+    await saveStateAtomic(statePath, currentState);
     
     res.json({ success: true });
   } catch (err) {

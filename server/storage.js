@@ -79,19 +79,11 @@ export async function saveStateAtomic(statePath, stateObj) {
           mergedProgress = { ...mergedProgress, ...stateObj.progress };
         }
         
-        // For bookmarks, merge arrays (append new bookmarks, update existing ones)
-        let mergedBookmarks = [...(currentState.bookmarks || [])];
-        if (stateObj.bookmarks && Array.isArray(stateObj.bookmarks)) {
-          // For each new bookmark, check if it exists and update or add
-          stateObj.bookmarks.forEach(newBookmark => {
-            const existingIndex = mergedBookmarks.findIndex(b => b.id === newBookmark.id);
-            if (existingIndex !== -1) {
-              mergedBookmarks[existingIndex] = newBookmark;
-            } else {
-              mergedBookmarks.push(newBookmark);
-            }
-          });
-        }
+        // For bookmarks, if the new state has a bookmarks array, use it directly (replacement)
+        // This handles deletions properly - if a bookmark is removed, the new array won't have it
+        let mergedBookmarks = stateObj.bookmarks !== undefined && Array.isArray(stateObj.bookmarks)
+          ? stateObj.bookmarks  // Full replacement (handles deletions)
+          : (currentState.bookmarks || []);  // Keep existing if not provided
         
         // For other top-level keys, merge them too (but don't overwrite progress/bookmarks)
         const mergedState = {

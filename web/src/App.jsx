@@ -175,6 +175,7 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarkCfi, setBookmarkCfi] = useState(null);
+  const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -366,8 +367,16 @@ export default function App() {
             setSelected(book);
             setShowBookmarks(false);
           }}
-          onClose={() => setShowBookmarks(false)}
+          onClose={() => {
+            setShowBookmarks(false);
+            // Trigger bookmark check in Reader when closing bookmarks
+            setBookmarkUpdateTrigger(prev => prev + 1);
+          }}
           onToast={(t) => setToast(t)}
+          onBookmarkChange={() => {
+            // Trigger bookmark check in Reader when bookmark is deleted
+            setBookmarkUpdateTrigger(prev => prev + 1);
+          }}
         />
       ) : selected ? (
         <Reader
@@ -379,6 +388,7 @@ export default function App() {
             setBookmarkCfi(null);
           }}
           onToast={(t) => setToast(t)}
+          bookmarkUpdateTrigger={bookmarkUpdateTrigger}
           bookmarkCfi={bookmarkCfi}
         />
       ) : (

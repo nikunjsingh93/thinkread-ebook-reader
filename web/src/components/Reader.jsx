@@ -19,7 +19,7 @@ function getFontFormat(filename) {
   }
 }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -1041,6 +1041,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Ignore errors
     }
   };
+
+  // Re-check bookmarks when bookmarkUpdateTrigger changes (e.g., after deletion)
+  useEffect(() => {
+    if (bookmarkUpdateTrigger > 0 && renditionRef.current?.location?.start?.cfi) {
+      const cfi = renditionRef.current.location.start.cfi;
+      checkBookmarkForCurrentPage(cfi);
+    }
+  }, [bookmarkUpdateTrigger]);
 
   // Toggle bookmark at current location (add if not exists, remove if exists)
   const addBookmark = async () => {
