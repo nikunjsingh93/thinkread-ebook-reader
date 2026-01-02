@@ -14,6 +14,22 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
 
+  // Prevent context menu globally on touch devices
+  useEffect(() => {
+    const preventContextMenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+
+    // Add global context menu prevention with capture phase
+    document.addEventListener('contextmenu', preventContextMenu, true);
+
+    return () => {
+      document.removeEventListener('contextmenu', preventContextMenu, true);
+    };
+  }, []);
+
   useEffect(() => {
     let t;
     if (toast) t = setTimeout(() => setToast(""), 2200);

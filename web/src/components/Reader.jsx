@@ -115,6 +115,69 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         });
       }
 
+      // Prevent context menu on all iframe content for better mobile experience
+      rendition.hooks.content.register((contents) => {
+        const preventContextMenu = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          return false;
+        };
+        
+        // Add context menu prevention at multiple levels with capture phase
+        contents.document.addEventListener('contextmenu', preventContextMenu, true);
+        contents.document.body.addEventListener('contextmenu', preventContextMenu, true);
+        
+        // Prevent long press context menu on touch devices
+        let touchTimer = null;
+        const handleTouchStart = (e) => {
+          touchTimer = setTimeout(() => {
+            // This is a long press - prevent default behavior
+            if (e.cancelable) {
+              e.preventDefault();
+            }
+          }, 500);
+        };
+        
+        const handleTouchEnd = () => {
+          if (touchTimer) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+        };
+        
+        const handleTouchMove = () => {
+          if (touchTimer) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+        };
+        
+        // Add touch event listeners with capture phase
+        contents.document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+        contents.document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+        contents.document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
+        
+        // Add comprehensive CSS to prevent all selection and callout behaviors
+        const style = contents.document.createElement('style');
+        style.textContent = `
+          *, *::before, *::after {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+          }
+          body {
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+          }
+        `;
+        contents.document.head.appendChild(style);
+      });
+
       // Select the theme to apply it
       rendition.themes.select("custom");
     } catch (err) {
@@ -408,12 +471,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       };
       
       const handleContextMenu = (e) => {
-        // Prevent context menu if we're in long press mode
-        if (longPressStartRef.current?.shouldPreventDefault || longPressTriggeredRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        }
+        // Always prevent context menu on navigation zones
+        // We don't want context menus interfering with page navigation or dictionary lookups
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
       };
       
       const handleLongPressEnd = (e) => {

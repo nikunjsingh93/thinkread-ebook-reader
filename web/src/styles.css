@@ -6,11 +6,17 @@
   --border: rgba(255,255,255,.10);
   --accent: #7c5cff;
 }
-*{ box-sizing: border-box; }
+*{ 
+  box-sizing: border-box;
+}
 html, body { 
   height: 100%; 
   width: 100%;
   overflow-x: hidden;
+  /* Prevent context menu on touch devices */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 body{
   margin:0;
@@ -22,7 +28,11 @@ body{
               var(--bg);
 }
 a { color: inherit; text-decoration: none; }
-button, input, select { font: inherit; }
+button, input, select { 
+  font: inherit;
+  -webkit-user-select: none;
+  user-select: none;
+}
 
 .appShell{
   height: 100%;
