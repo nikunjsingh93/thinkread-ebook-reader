@@ -48,7 +48,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     if (!rendition) return;
     const fontSize = clamp(p.fontSize, 10, 60);
     const lineHeight = clamp(p.lineHeight, 1.0, 2.6);
-    const themeMode = p.themeMode || 'dark';
+    const themeMode = p.themeMode || 'pure-white';
     const bg = p.colors?.[themeMode]?.bg || p.bg || "#f6f1e7";
     const fg = p.colors?.[themeMode]?.fg || p.fg || "#1a1a1a";
     const fontFamily = p.fontFamily || "serif";

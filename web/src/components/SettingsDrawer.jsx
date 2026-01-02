@@ -123,7 +123,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               style={{
                 width: '32px',
                 height: '32px',
-                backgroundColor: prefs.colors?.[prefs.themeMode || 'dark']?.bg || prefs.bg,
+                backgroundColor: prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg,
                 border: '2px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
                 cursor: 'pointer',
@@ -134,13 +134,13 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 const colorInput = e.currentTarget.nextSibling;
                 if (colorInput) colorInput.click();
               }}
-              title={`Background color: ${prefs.colors?.[prefs.themeMode || 'dark']?.bg || prefs.bg}`}
+              title={`Background color: ${prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg}`}
             />
             <input
               type="color"
-              value={prefs.colors?.[prefs.themeMode || 'dark']?.bg || prefs.bg}
-              onChange={(e) => {
-                const themeMode = prefs.themeMode || 'dark';
+              value={prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg}
+                onChange={(e) => {
+                const themeMode = prefs.themeMode || 'pure-white';
                 const newColors = {
                   ...prefs.colors,
                   [themeMode]: {
@@ -159,7 +159,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               }}
             />
             <span style={{fontSize: '12px', color: 'var(--muted)'}}>
-              {prefs.colors?.[prefs.themeMode || 'dark']?.bg || prefs.bg}
+              {prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg}
             </span>
           </div>
         </div>
@@ -171,7 +171,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               style={{
                 width: '32px',
                 height: '32px',
-                backgroundColor: prefs.colors?.[prefs.themeMode || 'dark']?.fg || prefs.fg,
+                backgroundColor: prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg,
                 border: '2px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
                 cursor: 'pointer',
@@ -182,13 +182,13 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 const colorInput = e.currentTarget.nextSibling;
                 if (colorInput) colorInput.click();
               }}
-              title={`Text color: ${prefs.colors?.[prefs.themeMode || 'dark']?.fg || prefs.fg}`}
+              title={`Text color: ${prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}`}
             />
             <input
               type="color"
-              value={prefs.colors?.[prefs.themeMode || 'dark']?.fg || prefs.fg}
+              value={prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}
               onChange={(e) => {
-                const themeMode = prefs.themeMode || 'dark';
+                const themeMode = prefs.themeMode || 'pure-white';
                 const newColors = {
                   ...prefs.colors,
                   [themeMode]: {
@@ -207,7 +207,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               }}
             />
             <span style={{fontSize: '12px', color: 'var(--muted)'}}>
-              {prefs.colors?.[prefs.themeMode || 'dark']?.fg || prefs.fg}
+              {prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}
             </span>
           </div>
         </div>

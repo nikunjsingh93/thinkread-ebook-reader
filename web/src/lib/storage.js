@@ -22,16 +22,20 @@ export function defaultPrefs() {
     lineHeight: 1.6,
     verticalMargin: 30,   // px (top/bottom padding)
     horizontalMargin: 46, // px (left/right padding)
-    themeMode: "light",    // "dark", "light", "pure-black"
+    themeMode: "pure-white",    // "pure-white", "white", "dark", "pure-black"
     // Theme-specific colors
     colors: {
+      "pure-white": {
+        bg: "#ffffff",
+        fg: "#1a1a1a"
+      },
+      white: {
+        bg: "#ffebbd",
+        fg: "#251008"
+      },
       dark: {
         bg: "rgb(54, 37, 21)",
         fg: "#ffebbd"
-      },
-      light: {
-        bg: "#ffffff",
-        fg: "#1a1a1a" // Dark text for light mode
       },
       "pure-black": {
         bg: "#000000",

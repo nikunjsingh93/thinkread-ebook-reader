@@ -9,9 +9,9 @@ import { loadPrefs, savePrefs } from "./lib/storage.js";
 // Theme application function
 function applyTheme(prefs) {
   const root = document.documentElement;
-  const themeMode = prefs.themeMode || 'dark';
+  const themeMode = prefs.themeMode || 'pure-white';
 
-  if (themeMode === 'light') {
+  if (themeMode === 'pure-white') {
     // Base colors - text closer to black, light backgrounds
     root.style.setProperty('--bg', '#ffffff');
     root.style.setProperty('--panel', '#f8f9fa');
@@ -43,6 +43,39 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.15)');
     root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.3)');
+  } else if (themeMode === 'white') {
+    // White theme - cream/off-white UI with warm book colors
+    root.style.setProperty('--bg', '#fafafa'); // Off-white background
+    root.style.setProperty('--panel', '#f0ede6'); // Cream panel color
+    root.style.setProperty('--text', '#2c1810'); // Dark brown text
+    root.style.setProperty('--muted', '#8b7355'); // Muted brown
+    root.style.setProperty('--border', 'rgba(0,0,0,0.08)');
+    root.style.setProperty('--accent', '#8b4513'); // Saddle brown accent
+
+    // UI element backgrounds - cream/off-white versions
+    root.style.setProperty('--topbar-bg', 'rgba(240,237,230,0.95)');
+    root.style.setProperty('--card-bg', 'rgba(240,237,230,0.9)');
+    root.style.setProperty('--pill-bg', 'rgba(240,237,230,0.9)');
+    root.style.setProperty('--drawer-bg', 'rgba(245,242,235,0.98)');
+    root.style.setProperty('--reader-bar-bg', 'rgba(240,237,230,0.95)');
+    root.style.setProperty('--toast-bg', 'rgba(240,237,230,0.95)');
+    root.style.setProperty('--backdrop-bg', 'rgba(0,0,0,0.25)');
+
+    // Form elements - cream versions
+    root.style.setProperty('--input-bg', 'rgba(245,242,235,0.8)');
+    root.style.setProperty('--input-border', 'rgba(0,0,0,0.12)');
+    root.style.setProperty('--row-bg', 'rgba(0,0,0,0.015)');
+    root.style.setProperty('--row-border', 'rgba(0,0,0,0.06)');
+
+    // Additional UI elements - cream versions
+    root.style.setProperty('--kebab-bg', 'rgba(245,242,235,0.9)');
+    root.style.setProperty('--kebab-border', 'rgba(0,0,0,0.12)');
+    root.style.setProperty('--cover-border', 'rgba(0,0,0,0.06)');
+
+    // Search and progress bars - cream versions
+    root.style.setProperty('--search-bg', 'rgba(245,242,235,0.9)');
+    root.style.setProperty('--search-border', 'rgba(0,0,0,0.12)');
+    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.25)');
   } else if (themeMode === 'pure-black') {
     root.style.setProperty('--bg', '#000000');
     root.style.setProperty('--panel', '#000000');
