@@ -68,3 +68,26 @@ export async function apiDeleteDictionary() {
   if (!r.ok) throw new Error("Dictionary delete failed");
   return r.json();
 }
+
+export async function apiGetBookmarks() {
+  const r = await fetch("/api/bookmarks");
+  if (!r.ok) throw new Error("Failed to fetch bookmarks");
+  return r.json();
+}
+
+export async function apiSaveBookmark(bookmark) {
+  const r = await fetch("/api/bookmarks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bookmark),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "Bookmark save failed");
+  return data;
+}
+
+export async function apiDeleteBookmark(id) {
+  const r = await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("Bookmark delete failed");
+  return r.json();
+}

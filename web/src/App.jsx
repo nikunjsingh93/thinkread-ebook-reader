@@ -3,6 +3,7 @@ import Shelf from "./components/Shelf.jsx";
 import Reader from "./components/Reader.jsx";
 import Toast from "./components/Toast.jsx";
 import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
+import Bookmarks from "./components/Bookmarks.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
@@ -172,6 +173,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [bookmarkCfi, setBookmarkCfi] = useState(null);
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -335,6 +338,14 @@ export default function App() {
             )}
             <button
               className="pill"
+              onClick={() => setShowBookmarks(true)}
+              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              title="All Bookmarks"
+            >
+              🔖
+            </button>
+            <button
+              className="pill"
               onClick={() => setSettingsOpen(true)}
               style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
               title="Settings"
@@ -345,15 +356,28 @@ export default function App() {
         </div>
       )}
 
-      {selected ? (
+      {showBookmarks ? (
+        <Bookmarks
+          books={books}
+          onOpenBook={(book, cfi) => {
+            setBookmarkCfi(cfi);
+            setSelected(book);
+            setShowBookmarks(false);
+          }}
+          onClose={() => setShowBookmarks(false)}
+          onToast={(t) => setToast(t)}
+        />
+      ) : selected ? (
         <Reader
           book={selected}
           prefs={prefs}
           onPrefsChange={onPrefsChange}
           onBack={() => {
             setSelected(null);
+            setBookmarkCfi(null);
           }}
           onToast={(t) => setToast(t)}
+          bookmarkCfi={bookmarkCfi}
         />
       ) : (
         <Shelf

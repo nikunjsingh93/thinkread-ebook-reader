@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_STATE = { books: [], prefs: {}, progress: {} };
+const DEFAULT_STATE = { books: [], prefs: {}, progress: {}, bookmarks: [] };
 
 // Simple in-memory lock to prevent race conditions
 const saveLock = new Map();
@@ -36,6 +36,7 @@ export function loadState(statePath) {
     if (!Array.isArray(parsed.books)) parsed.books = [];
     if (!parsed.prefs || typeof parsed.prefs !== "object") parsed.prefs = {};
     if (!parsed.progress || typeof parsed.progress !== "object") parsed.progress = {};
+    if (!Array.isArray(parsed.bookmarks)) parsed.bookmarks = [];
     return parsed;
   } catch {
     return DEFAULT_STATE;
@@ -78,11 +79,26 @@ export async function saveStateAtomic(statePath, stateObj) {
           mergedProgress = { ...mergedProgress, ...stateObj.progress };
         }
         
-        // For other top-level keys, merge them too (but don't overwrite progress)
+        // For bookmarks, merge arrays (append new bookmarks, update existing ones)
+        let mergedBookmarks = [...(currentState.bookmarks || [])];
+        if (stateObj.bookmarks && Array.isArray(stateObj.bookmarks)) {
+          // For each new bookmark, check if it exists and update or add
+          stateObj.bookmarks.forEach(newBookmark => {
+            const existingIndex = mergedBookmarks.findIndex(b => b.id === newBookmark.id);
+            if (existingIndex !== -1) {
+              mergedBookmarks[existingIndex] = newBookmark;
+            } else {
+              mergedBookmarks.push(newBookmark);
+            }
+          });
+        }
+        
+        // For other top-level keys, merge them too (but don't overwrite progress/bookmarks)
         const mergedState = {
           ...currentState,
           ...stateObj,
-          progress: mergedProgress
+          progress: mergedProgress,
+          bookmarks: mergedBookmarks
         };
         
         // Write to temp file

@@ -4,6 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
+import { apiSaveBookmark } from "../lib/api.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -18,7 +19,7 @@ function getFontFormat(filename) {
   }
 }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -38,6 +39,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const [lastPositionTimer, setLastPositionTimer] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dictionaryPopup, setDictionaryPopup] = useState(null); // { word, definition, position: { x, y } }
+  const [hasBookmark, setHasBookmark] = useState(false); // Track if current page has a bookmark
   const longPressTimerRef = useRef(null);
   const longPressStartRef = useRef(null);
   const longPressPreventRef = useRef(null); // Timer to start preventing default
@@ -215,7 +217,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     renditionRef.current = rendition;
 
     // Declare variables in proper scope
-    let startAt = undefined;
+    // Use bookmark CFI if provided, otherwise will be set from saved progress
+    let startAt = bookmarkCfi || undefined;
     
     // Track current book ID
     currentBookIdRef.current = book.id;
@@ -239,7 +242,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       }
 
       savedProgressRef.current = parsedProgress;
-      startAt = parsedProgress?.cfi || undefined;
+      // Use bookmark CFI if provided, otherwise use saved progress CFI
+      if (!startAt) {
+        startAt = parsedProgress?.cfi || undefined;
+      }
 
       // Check if we have cached locations and mark as ready immediately
       if (parsedProgress?.locations && Array.isArray(parsedProgress.locations) && parsedProgress.locations.length > 0) {
@@ -491,6 +497,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       if (locationsReadyRef.current && currentPage > 0) {
         setLastPageInfo({ page: currentPage, percent: Math.round(p) });
       }
+
+      // Check if current page has a bookmark (we'll load bookmarks and check)
+      checkBookmarkForCurrentPage(cfi);
 
       // Don't save progress if we're still restoring the position
       if (isRestoringRef.current) {
@@ -1017,6 +1026,60 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   }, [book.id]); // Re-run when book changes
 
 
+  // Check if current page has a bookmark
+  const checkBookmarkForCurrentPage = async (cfi) => {
+    try {
+      const { apiGetBookmarks } = await import("../lib/api.js");
+      const data = await apiGetBookmarks();
+      const currentBookId = currentBookIdRef.current;
+      if (!currentBookId) return;
+      
+      const bookmark = data.bookmarks?.find(
+        b => b.bookId === currentBookId && b.cfi === cfi
+      );
+      setHasBookmark(!!bookmark);
+    } catch (err) {
+      // Ignore errors
+    }
+  };
+
+  // Add bookmark at current location
+  const addBookmark = async () => {
+    try {
+      const loc = renditionRef.current?.location;
+      if (!loc?.start?.cfi) return;
+
+      const cfi = loc.start.cfi;
+      const currentBookId = currentBookIdRef.current;
+      if (!currentBookId) return;
+
+      let currentPage = 0;
+      let p = 0;
+      try {
+        if (epubBookRef.current?.locations?.length()) {
+          p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
+          const locationIndex = epubBookRef.current.locations.locationFromCfi(cfi);
+          currentPage = locationIndex > 0 ? locationIndex : 1;
+        }
+      } catch {}
+
+      const bookmark = {
+        bookId: currentBookId,
+        bookTitle: book.title,
+        cfi: cfi,
+        percent: p,
+        page: currentPage
+      };
+
+      await apiSaveBookmark(bookmark);
+      setHasBookmark(true);
+      onToast?.("Bookmark added");
+    } catch (err) {
+      console.error("Failed to add bookmark:", err);
+      onToast?.("Failed to add bookmark");
+    }
+  };
+
   async function goPrev() {
     try { await renditionRef.current?.prev(); } catch {}
   }
@@ -1154,7 +1217,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   return (
     <div className="readerShell">
       <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
-        <button className="pill" onClick={onBack}>← Library</button>
+        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+          <button className="pill" onClick={onBack}>← Library</button>
+          <button
+            className="pill"
+            onClick={addBookmark}
+            title="Add bookmark"
+            style={{opacity: hasBookmark ? 0.8 : 1}}
+          >
+            🔖
+          </button>
+        </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
           <button
@@ -1170,6 +1243,23 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       </div>
 
       <div className="readerStage">
+        {/* Bookmark overlay in top-left corner */}
+        {hasBookmark && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '10px',
+              left: '10px',
+              zIndex: 15,
+              fontSize: '24px',
+              pointerEvents: 'none',
+              filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+            }}
+            title="Bookmarked"
+          >
+            🔖
+          </div>
+        )}
         {/* tap zones */}
         <div className="navZone navLeft" onClick={goPrev} aria-label="Previous page" />
         <div className="navZone navRight" onClick={goNext} aria-label="Next page" />

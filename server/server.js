@@ -422,6 +422,87 @@ app.delete("/api/fonts/:filename", (req, res) => {
   }
 });
 
+// --- Bookmarks API ---
+app.get("/api/bookmarks", (req, res) => {
+  try {
+    const state = loadState(statePath);
+    const bookmarks = state.bookmarks || [];
+    res.json({ bookmarks });
+  } catch (err) {
+    console.error("Error loading bookmarks:", err);
+    res.status(500).json({ error: "Failed to load bookmarks" });
+  }
+});
+
+app.post("/api/bookmarks", async (req, res) => {
+  try {
+    const bookmark = req.body;
+
+    if (!bookmark || typeof bookmark !== 'object') {
+      return res.status(400).json({ error: "Invalid bookmark data" });
+    }
+
+    if (!bookmark.bookId || !bookmark.cfi) {
+      return res.status(400).json({ error: "Book ID and CFI are required" });
+    }
+
+    // Create a state object with only the bookmark we want to update
+    const state = loadState(statePath);
+    if (!state.bookmarks) state.bookmarks = [];
+
+    // Check if bookmark already exists for this book and CFI
+    const existingIndex = state.bookmarks.findIndex(
+      b => b.bookId === bookmark.bookId && b.cfi === bookmark.cfi
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing bookmark
+      state.bookmarks[existingIndex] = {
+        ...state.bookmarks[existingIndex],
+        ...bookmark,
+        updatedAt: Date.now()
+      };
+    } else {
+      // Add new bookmark
+      const newBookmark = {
+        id: nanoid(12),
+        ...bookmark,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      state.bookmarks.push(newBookmark);
+    }
+
+    await saveStateAtomic(statePath, state);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error saving bookmark:", err);
+    res.status(500).json({ error: "Failed to save bookmark" });
+  }
+});
+
+app.delete("/api/bookmarks/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const state = loadState(statePath);
+    
+    if (!state.bookmarks) state.bookmarks = [];
+    const index = state.bookmarks.findIndex(b => b.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: "Bookmark not found" });
+    }
+
+    state.bookmarks.splice(index, 1);
+    await saveStateAtomic(statePath, state);
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting bookmark:", err);
+    res.status(500).json({ error: "Failed to delete bookmark" });
+  }
+});
+
 // --- Dictionary API ---
 // Get dictionary status
 app.get("/api/dictionary/status", (req, res) => {
