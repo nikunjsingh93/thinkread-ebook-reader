@@ -159,7 +159,7 @@ app.get("/api/prefs", (req, res) => {
   }
 });
 
-app.post("/api/prefs", (req, res) => {
+app.post("/api/prefs", async (req, res) => {
   try {
     const prefs = req.body;
     if (!prefs || typeof prefs !== 'object') {
@@ -168,7 +168,7 @@ app.post("/api/prefs", (req, res) => {
 
     const state = loadState(statePath);
     state.prefs = prefs;
-    saveStateAtomic(statePath, state);
+    await saveStateAtomic(statePath, state);
 
     res.json({ success: true });
   } catch (err) {
@@ -190,7 +190,7 @@ app.get("/api/progress/:bookId", (req, res) => {
   }
 });
 
-app.post("/api/progress/:bookId", (req, res) => {
+app.post("/api/progress/:bookId", async (req, res) => {
   try {
     const { bookId } = req.params;
     const progress = req.body;
@@ -199,14 +199,25 @@ app.post("/api/progress/:bookId", (req, res) => {
       return res.status(400).json({ error: "Invalid progress data" });
     }
 
-    const state = loadState(statePath);
-    if (!state.progress) state.progress = {};
-    state.progress[bookId] = progress;
-    saveStateAtomic(statePath, state);
+    if (!bookId) {
+      return res.status(400).json({ error: "Book ID is required" });
+    }
+
+    // Create a state object with only the progress we want to update
+    // This ensures we only update this specific book's progress
+    const stateUpdate = {
+      progress: {
+        [bookId]: progress
+      }
+    };
+    
+    // Save with proper locking to prevent race conditions
+    // The saveStateAtomic function will merge this with existing state
+    await saveStateAtomic(statePath, stateUpdate);
 
     res.json({ success: true });
   } catch (err) {
-    console.error("Error saving progress:", err);
+    console.error(`Error saving progress for book ${req.params.bookId}:`, err);
     res.status(500).json({ error: "Failed to save progress" });
   }
 });
@@ -283,18 +294,18 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
     added.push(book);
   }
 
-  saveStateAtomic(statePath, state);
+  await saveStateAtomic(statePath, state);
   res.json({ added });
 });
 
-app.delete("/api/books/:id", (req, res) => {
+app.delete("/api/books/:id", async (req, res) => {
   const { id } = req.params;
   const state = loadState(statePath);
   const idx = state.books.findIndex((b) => b.id === id);
   if (idx === -1) return res.status(404).json({ error: "Not found" });
 
   const [book] = state.books.splice(idx, 1);
-  saveStateAtomic(statePath, state);
+  await saveStateAtomic(statePath, state);
 
   // best-effort remove file
   try {

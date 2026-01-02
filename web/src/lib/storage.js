@@ -88,6 +88,11 @@ export async function loadProgress(bookId) {
 
 export async function saveProgress(bookId, progress) {
   try {
+    if (!bookId) {
+      console.error('saveProgress called without bookId');
+      return;
+    }
+    
     const response = await fetch(`/api/progress/${bookId}`, {
       method: 'POST',
       headers: {
@@ -95,16 +100,21 @@ export async function saveProgress(bookId, progress) {
       },
       body: JSON.stringify(progress),
     });
+    
     if (!response.ok) {
-      throw new Error('Failed to save progress');
+      const errorText = await response.text();
+      throw new Error(`Failed to save progress: ${response.status} ${errorText}`);
     }
+    
+    return await response.json();
   } catch (err) {
-    console.error('Error saving progress to server:', err);
+    console.error(`Error saving progress for book ${bookId}:`, err);
     // Fallback to localStorage for offline support
     try {
       localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
     } catch (localErr) {
       console.error('Failed to save to localStorage as fallback:', localErr);
     }
+    throw err; // Re-throw so caller knows it failed
   }
 }

@@ -23,6 +23,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
   const locationsReadyRef = useRef(false); // Use ref so it's accessible in event handlers
+  const savedProgressRef = useRef(null); // Use ref to store current progress so it's accessible in closures
+  const currentBookIdRef = useRef(null); // Track current book ID to ensure we're saving to the right book
+  const isRestoringRef = useRef(false); // Flag to prevent saving progress while restoring position
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uiVisible, setUiVisible] = useState(true);
   const [percent, setPercent] = useState(0);
@@ -212,19 +215,35 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     renditionRef.current = rendition;
 
     // Declare variables in proper scope
-    let saved = null;
     let startAt = undefined;
+    
+    // Track current book ID
+    currentBookIdRef.current = book.id;
 
     // Load progress asynchronously first
     loadProgress(book.id).then((progressData) => {
       if (destroyed) return;
 
-      saved = progressData;
-      startAt = saved?.cfi || undefined;
+      // Parse locations if they're stored as a string (legacy format)
+      let parsedProgress = progressData;
+      if (progressData?.locations && typeof progressData.locations === 'string') {
+        try {
+          parsedProgress = {
+            ...progressData,
+            locations: JSON.parse(progressData.locations)
+          };
+        } catch (err) {
+          console.warn('Failed to parse locations string:', err);
+          parsedProgress = { ...progressData, locations: null };
+        }
+      }
+
+      savedProgressRef.current = parsedProgress;
+      startAt = parsedProgress?.cfi || undefined;
 
       // Check if we have cached locations and mark as ready immediately
-      if (saved?.locations && saved.locations.length > 0) {
-        console.log('Found cached locations:', saved.locations.length);
+      if (parsedProgress?.locations && Array.isArray(parsedProgress.locations) && parsedProgress.locations.length > 0) {
+        console.log('Found cached locations:', parsedProgress.locations.length);
         locationsReadyRef.current = true;
       }
 
@@ -232,7 +251,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       epub.ready
         .then(() => {
           // Try to restore cached locations first for instant page numbers
-          if (saved?.locations && saved.locations.length > 0) {
+          const saved = savedProgressRef.current;
+          if (saved?.locations && Array.isArray(saved.locations) && saved.locations.length > 0) {
             try {
               epub.locations.load(saved.locations);
               console.log('Loaded cached locations successfully');
@@ -262,21 +282,38 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           locationsReadyRef.current = true;
 
           // Save the generated locations for next time (only if newly generated)
-          if (epub.locations?.length() && (!saved?.locations || saved.locations.length === 0)) {
+          const saved = savedProgressRef.current;
+          if (epub.locations?.length() && (!saved?.locations || !Array.isArray(saved.locations) || saved.locations.length === 0)) {
             const locationsArray = epub.locations.save();
-            // Update the saved variable so future progress saves include locations
-            saved = { ...saved, locations: locationsArray };
+            // Update the saved progress ref so future progress saves include locations
+            savedProgressRef.current = {
+              ...saved,
+              locations: locationsArray
+            };
             console.log('Generated new locations:', locationsArray.length);
 
-            // Save to server immediately
+            // Save to server immediately with current progress
+            const currentLoc = renditionRef.current?.location;
+            const currentCfi = currentLoc?.start?.cfi;
+            let currentPercent = 0;
+            try {
+              if (epub.locations?.length() && currentCfi) {
+                currentPercent = epub.locations.percentageFromCfi(currentCfi) || 0;
+              }
+            } catch {}
+
             const progressToSave = {
-              ...saved,
-              locations: locationsArray,
+              ...savedProgressRef.current,
+              cfi: currentCfi || saved?.cfi,
+              percent: currentPercent || saved?.percent || 0,
               updatedAt: Date.now()
             };
-            saveProgress(book.id, progressToSave).catch((err) => {
-              console.warn('Failed to save locations to server:', err);
-            });
+            const currentBookId = currentBookIdRef.current;
+            if (currentBookId) {
+              saveProgress(currentBookId, progressToSave).catch((err) => {
+                console.warn(`Failed to save locations for book ${currentBookId}:`, err);
+              });
+            }
           }
 
           // Trigger a re-render to update the UI
@@ -334,36 +371,78 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
 
         // Display after a small delay to ensure theme is registered
         setTimeout(() => {
+          const saved = savedProgressRef.current;
+          
+          // Set flag to prevent saving progress while restoring
+          isRestoringRef.current = true;
+          
           if (startAt) {
             rendition.display(startAt).then(() => {
               setIsLoading(false);
+              // Allow saving progress after a short delay to ensure position is stable
+              setTimeout(() => {
+                isRestoringRef.current = false;
+              }, 1000);
             }).catch((err) => {
-              console.warn("Failed to restore position, trying fallback methods");
+              console.warn("Failed to restore position, trying fallback methods", err);
 
                 // Try to restore by percentage if we have it
-                if (saved?.percent && saved.percent > 0) {
+                if (saved?.percent && saved.percent > 0 && epub.locations?.length()) {
                   setTimeout(() => {
                     try {
                       const cfiFromPercent = epub.locations.cfiFromPercentage(saved.percent);
                       if (cfiFromPercent) {
                         rendition.display(cfiFromPercent).then(() => {
                           setIsLoading(false);
+                          setTimeout(() => {
+                            isRestoringRef.current = false;
+                          }, 1000);
                         }).catch(() => {
-                          rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                          rendition.display().then(() => {
+                            setIsLoading(false);
+                            isRestoringRef.current = false;
+                          }).catch(() => {
+                            setIsLoading(false);
+                            isRestoringRef.current = false;
+                          });
                         });
                       } else {
-                        rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                        rendition.display().then(() => {
+                          setIsLoading(false);
+                          isRestoringRef.current = false;
+                        }).catch(() => {
+                          setIsLoading(false);
+                          isRestoringRef.current = false;
+                        });
                       }
                     } catch {
-                      rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                      rendition.display().then(() => {
+                        setIsLoading(false);
+                        isRestoringRef.current = false;
+                      }).catch(() => {
+                        setIsLoading(false);
+                        isRestoringRef.current = false;
+                      });
                     }
                   }, 500);
                 } else {
-                  rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+                  rendition.display().then(() => {
+                    setIsLoading(false);
+                    isRestoringRef.current = false;
+                  }).catch(() => {
+                    setIsLoading(false);
+                    isRestoringRef.current = false;
+                  });
                 }
               });
           } else {
-            rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
+            rendition.display().then(() => {
+              setIsLoading(false);
+              isRestoringRef.current = false;
+            }).catch(() => {
+              setIsLoading(false);
+              isRestoringRef.current = false;
+            });
           }
         }, 100);
       }).catch((err) => {
@@ -413,14 +492,57 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         setLastPageInfo({ page: currentPage, percent: Math.round(p) });
       }
 
-      // Save progress while preserving existing locations
+      // Don't save progress if we're still restoring the position
+      if (isRestoringRef.current) {
+        return;
+      }
+
+      // Get current saved progress and preserve locations
+      const saved = savedProgressRef.current || {};
+      
+      // Get current locations from epub if available, otherwise use saved ones
+      let locationsToSave = saved.locations;
+      try {
+        if (epub.locations?.length()) {
+          const currentLocations = epub.locations.save();
+          if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
+            locationsToSave = currentLocations;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to get current locations:', err);
+      }
+
+      // Save progress while preserving locations
       const progressToSave = {
-        ...saved,
         cfi,
         percent: p,
+        locations: locationsToSave,
         updatedAt: Date.now()
       };
-      saveProgress(book.id, progressToSave);
+      
+      // Preserve any other fields from saved progress
+      if (saved && typeof saved === 'object') {
+        Object.keys(saved).forEach(key => {
+          if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
+            progressToSave[key] = saved[key];
+          }
+        });
+      }
+      
+      // Update the ref so future saves have the latest data
+      savedProgressRef.current = progressToSave;
+      
+      // Get the current book ID from ref to ensure we're saving to the right book
+      const currentBookId = currentBookIdRef.current;
+      if (!currentBookId) {
+        return;
+      }
+      
+      // Save progress (fire and forget, but log errors)
+      saveProgress(currentBookId, progressToSave).catch((err) => {
+        console.error(`Failed to save progress for book ${currentBookId}:`, err);
+      });
     };
 
     rendition.on("relocated", onRelocated);
@@ -438,14 +560,51 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
               p = epub.locations.percentageFromCfi(cfi) || 0;
             }
           } catch {}
-          // Save progress while preserving existing locations
+          
+          // Get current saved progress and preserve locations
+          const saved = savedProgressRef.current || {};
+          
+          // Get current locations from epub if available, otherwise use saved ones
+          let locationsToSave = saved.locations;
+          try {
+            if (epub.locations?.length()) {
+              const currentLocations = epub.locations.save();
+              if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
+                locationsToSave = currentLocations;
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to get current locations:', err);
+          }
+          
+          // Save progress while preserving locations
           const progressToSave = {
-            ...saved,
             cfi,
             percent: p,
+            locations: locationsToSave,
             updatedAt: Date.now()
           };
-          saveProgress(book.id, progressToSave);
+          
+          // Preserve any other fields from saved progress
+          if (saved && typeof saved === 'object') {
+            Object.keys(saved).forEach(key => {
+              if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
+                progressToSave[key] = saved[key];
+              }
+            });
+          }
+          
+          // Update the ref so future saves have the latest data
+          savedProgressRef.current = progressToSave;
+          
+          // Get the current book ID from ref
+          const currentBookId = currentBookIdRef.current;
+          if (currentBookId) {
+            // Save progress (fire and forget, but log errors)
+            saveProgress(currentBookId, progressToSave).catch((err) => {
+              console.error(`Failed to save periodic progress for book ${currentBookId}:`, err);
+            });
+          }
         }
       } catch (err) {
         console.warn("Failed to save progress:", err);
@@ -500,8 +659,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     const r = renditionRef.current;
     if (!r) return;
 
-    // Get current location before applying prefs
-    const currentCfi = r.location?.start?.cfi;
+    // Don't apply prefs changes if we're still restoring position
+    if (isRestoringRef.current) {
+      return;
+    }
+
+    // Get current location before applying prefs - use actual current location
+    let currentCfi = r.location?.start?.cfi;
+    
+    // If no current location yet, the book might not be loaded - skip re-display
+    if (!currentCfi) {
+      // Still apply the prefs, but don't re-display (book will display when ready)
+      applyPrefs(r, prefs);
+      return;
+    }
 
     // Check if two-page layout changed and update spread
     const newSpread = prefs.twoPageLayout ? "auto" : "none";
@@ -579,9 +750,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           r.resize();
 
           // Force re-render with layout recalculation
-          if (currentCfi) {
+          // Use the actual current location, not the captured one (which might be stale)
+          const actualCurrentCfi = r.location?.start?.cfi || currentCfi;
+          if (actualCurrentCfi) {
             // Try multiple approaches to ensure proper re-rendering
-            r.display(currentCfi).then(() => {
+            r.display(actualCurrentCfi).then(() => {
               // Additional resize after display to ensure layout is correct
               setTimeout(() => {
                 try {
@@ -597,14 +770,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
                 if (loc) {
                   r.display(loc).catch(() => {});
                 } else {
-                  // If no location, try next/prev to trigger re-render
+                  // If no location, don't reset - just try next/prev to trigger re-render
                   r.next().catch(() => r.prev().catch(() => {}));
                 }
               } catch {}
             });
           } else {
-            // If no location, try to display first page
-            r.display().catch(() => {});
+            // If no location, don't reset to first page - just apply prefs
           }
         } catch (err) {
           console.warn('Failed to apply preference changes:', err);
