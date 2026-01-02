@@ -179,7 +179,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
               onChange={(e) => onThemeModeChange(e.target.value)}
             >
               <option value="pure-white">Pure White</option>
-              <option value="white">White</option>
+              <option value="white">Light</option>
               <option value="dark">Dark</option>
               <option value="pure-black">Pure Black</option>
               <option value="eink">E-Ink</option>
@@ -187,7 +187,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
           </div>
 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
-            Choose your preferred theme. Pure White and White are light themes, Dark uses warm colors, Pure Black is optimized for OLED displays.
+            Choose your preferred theme. Pure White and Light are light themes, Dark uses warm colors, Pure Black is optimized for OLED displays.
           </div>
 
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Library Management</h4>
