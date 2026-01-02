@@ -379,6 +379,15 @@ export default function App() {
       {!selected && (
         <div className="topbar">
           <div className="brand">
+            <img src="/logo.svg" alt="ThinkRead" style={{height: '24px', width: '24px', objectFit: 'contain'}} onError={(e) => {
+              // Fallback to PNG if SVG doesn't exist
+              if (e.target.src.endsWith('.svg')) {
+                e.target.src = '/logo.png';
+              } else {
+                // Hide logo if neither exists
+                e.target.style.display = 'none';
+              }
+            }} />
             <span>ThinkRead</span>
           </div>
           <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
