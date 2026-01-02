@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { apiGetFonts } from "../lib/api.js";
+import { defaultPrefs } from "../lib/storage.js";
 
 export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   const [fonts, setFonts] = useState([]);
@@ -210,6 +211,31 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               {prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}
             </span>
           </div>
+        </div>
+
+        <div className="row">
+          <label></label>
+          <button
+            className="pill"
+            onClick={() => {
+              const themeMode = prefs.themeMode || 'pure-white';
+              const defaultColors = defaultPrefs().colors;
+              const newColors = {
+                ...prefs.colors,
+                [themeMode]: {
+                  ...defaultColors[themeMode]
+                }
+              };
+              onChange({ colors: newColors });
+            }}
+            style={{
+              fontSize: '12px',
+              padding: '6px 12px',
+              opacity: 0.8
+            }}
+          >
+            Restore Default Colors
+          </button>
         </div>
 
         <div className="row">
