@@ -139,12 +139,13 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         case "alphabetical":
           return (a.title || a.originalName || "").localeCompare(b.title || b.originalName || "");
         case "lastOpened":
-          // Sort by last opened (books without progress first, then by last updated)
+          // Sort by last opened (most recently read first, then books never opened)
           const aProgress = progressData[a.id];
           const bProgress = progressData[b.id];
           if (!aProgress && !bProgress) return 0;
           if (!aProgress) return 1; // Books never opened go to end
-          if (!bProgress) return -1;
+          if (!bProgress) return -1; // Books never opened go to end
+          // Sort by most recent updatedAt first (descending)
           return (bProgress?.updatedAt || 0) - (aProgress?.updatedAt || 0);
         case "upload":
         default:
@@ -154,7 +155,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     });
 
     return filteredBooks;
-  }, [books, query, sortBy]);
+  }, [books, query, sortBy, progressData]);
 
   async function pickFiles() {
     inputRef.current?.click();
@@ -297,12 +298,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     display: "block",
                     width: "100%",
                     padding: "8px 16px",
-                    background: sortBy === "upload" ? "var(--row-bg)" : "none",
+                    background: sortBy === "upload" ? "var(--row-bg)" : "transparent",
                     border: "none",
-                    color: "var(--text)",
+                    color: sortBy === "upload" ? "var(--text)" : "var(--muted)",
                     textAlign: "left",
                     cursor: "pointer",
-                    fontSize: "14px"
+                    fontSize: "14px",
+                    transition: "all 0.15s ease",
+                    borderRadius: "4px"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (sortBy !== "upload") {
+                      e.target.style.background = "var(--row-bg)";
+                      e.target.style.color = "var(--text)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (sortBy !== "upload") {
+                      e.target.style.background = "transparent";
+                      e.target.style.color = "var(--muted)";
+                    }
                   }}
                 >
                   📅 Sort by Upload Date
@@ -316,12 +331,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     display: "block",
                     width: "100%",
                     padding: "8px 16px",
-                    background: sortBy === "alphabetical" ? "var(--row-bg)" : "none",
+                    background: sortBy === "alphabetical" ? "var(--row-bg)" : "transparent",
                     border: "none",
-                    color: "var(--text)",
+                    color: sortBy === "alphabetical" ? "var(--text)" : "var(--muted)",
                     textAlign: "left",
                     cursor: "pointer",
-                    fontSize: "14px"
+                    fontSize: "14px",
+                    transition: "all 0.15s ease",
+                    borderRadius: "4px"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (sortBy !== "alphabetical") {
+                      e.target.style.background = "var(--row-bg)";
+                      e.target.style.color = "var(--text)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (sortBy !== "alphabetical") {
+                      e.target.style.background = "transparent";
+                      e.target.style.color = "var(--muted)";
+                    }
                   }}
                 >
                   🔤 Sort Alphabetically
@@ -335,12 +364,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     display: "block",
                     width: "100%",
                     padding: "8px 16px",
-                    background: sortBy === "lastOpened" ? "var(--row-bg)" : "none",
+                    background: sortBy === "lastOpened" ? "var(--row-bg)" : "transparent",
                     border: "none",
-                    color: "var(--text)",
+                    color: sortBy === "lastOpened" ? "var(--text)" : "var(--muted)",
                     textAlign: "left",
                     cursor: "pointer",
-                    fontSize: "14px"
+                    fontSize: "14px",
+                    transition: "all 0.15s ease",
+                    borderRadius: "4px"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (sortBy !== "lastOpened") {
+                      e.target.style.background = "var(--row-bg)";
+                      e.target.style.color = "var(--text)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (sortBy !== "lastOpened") {
+                      e.target.style.background = "transparent";
+                      e.target.style.color = "var(--muted)";
+                    }
                   }}
                 >
                   📖 Sort by Last Opened

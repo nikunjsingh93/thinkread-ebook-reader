@@ -1169,11 +1169,38 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   }
 
   async function goToTocItem(href) {
-    if (!renditionRef.current) return;
+    if (!renditionRef.current || !epubBookRef.current) return;
     
     try {
       setTocOpen(false);
+      
+      // Remove fragment identifier if present (e.g., "chapter1.xhtml#section1" -> "chapter1.xhtml")
+      const hrefWithoutFragment = href.split('#')[0];
+      
+      // Try multiple navigation methods
+      try {
+        // Method 1: Try to get the section first (handles relative paths)
+        const section = await epubBookRef.current.getSection(hrefWithoutFragment);
+        if (section && section.href) {
+          await renditionRef.current.display(section.href);
+          return;
+        }
+      } catch (sectionErr) {
+        // Continue to next method
+        console.log('getSection failed, trying direct href:', sectionErr);
+      }
+      
+      // Method 2: Try the href directly (epub.js can handle many href formats)
+      try {
+        await renditionRef.current.display(hrefWithoutFragment);
+        return;
+      } catch (directErr) {
+        console.log('Direct href failed, trying original href:', directErr);
+      }
+      
+      // Method 3: Try the original href with fragment
       await renditionRef.current.display(href);
+      
     } catch (err) {
       console.warn("Failed to navigate to TOC item:", err);
       onToast?.("Failed to navigate to chapter");
