@@ -171,6 +171,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -217,6 +218,16 @@ export default function App() {
   useEffect(() => {
     applyTheme(prefs);
   }, [prefs.themeMode]);
+
+  // Listen for fullscreen changes
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   // Function to lock/unlock orientation (called from user interaction)
   const handleOrientationLock = async (shouldLock) => {
@@ -308,6 +319,20 @@ export default function App() {
             <span>ThinkRead</span>
           </div>
           <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+            {isFullscreen && (
+              <button
+                className="pill"
+                onClick={() => {
+                  document.exitFullscreen().catch(err => {
+                    console.warn('Failed to exit fullscreen:', err);
+                  });
+                }}
+                style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+                title="Exit Fullscreen"
+              >
+                ⛶
+              </button>
+            )}
             <button
               className="pill"
               onClick={() => setSettingsOpen(true)}
