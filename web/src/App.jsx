@@ -6,6 +6,28 @@ import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
+// Fallback function for synchronous defaults (for error cases)
+function defaultPrefs() {
+  return {
+    fontFamily: "serif",
+    fontSize: 18,
+    lineHeight: 1.6,
+    verticalMargin: 30,
+    horizontalMargin: 46,
+    themeMode: "pure-white",
+    colors: {
+      "pure-white": { bg: "#ffffff", fg: "#1a1a1a" },
+      white: { bg: "#ffebbd", fg: "#35160a" },
+      dark: { bg: "rgb(54, 37, 21)", fg: "#ffebbd" },
+      "pure-black": { bg: "#000000", fg: "#ffffff" }
+    },
+    bg: "rgb(54, 37, 21)",
+    fg: "#ffebbd",
+    sortBy: "upload",
+    twoPageLayout: false,
+  };
+}
+
 // Theme application function
 function applyTheme(prefs) {
   const root = document.documentElement;
@@ -144,7 +166,7 @@ function applyTheme(prefs) {
 export default function App() {
   const [books, setBooks] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [prefs, setPrefs] = useState(loadPrefs());
+  const [prefs, setPrefs] = useState(defaultPrefs());
   const [toast, setToast] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
@@ -180,16 +202,30 @@ export default function App() {
     reload().catch(() => setToast("API not reachable (is the server running?)"));
   }, []);
 
+  // Load preferences on mount
+  useEffect(() => {
+    loadPrefs().then((loadedPrefs) => {
+      setPrefs(loadedPrefs);
+    }).catch((err) => {
+      console.warn('Failed to load preferences:', err);
+      // Keep default prefs that are already set
+    });
+  }, []);
+
   // Apply theme when prefs change
   useEffect(() => {
     applyTheme(prefs);
   }, [prefs.themeMode]);
 
 
-  function onPrefsChange(patch) {
+  async function onPrefsChange(patch) {
     const next = { ...prefs, ...patch };
     setPrefs(next);
-    savePrefs(next);
+    try {
+      await savePrefs(next);
+    } catch (err) {
+      console.warn('Failed to save preferences:', err);
+    }
   }
 
   return (

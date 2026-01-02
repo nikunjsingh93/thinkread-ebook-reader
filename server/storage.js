@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_STATE = { books: [] };
+const DEFAULT_STATE = { books: [], prefs: {}, progress: {} };
 
 function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
@@ -29,6 +29,8 @@ export function loadState(statePath) {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return DEFAULT_STATE;
     if (!Array.isArray(parsed.books)) parsed.books = [];
+    if (!parsed.prefs || typeof parsed.prefs !== "object") parsed.prefs = {};
+    if (!parsed.progress || typeof parsed.progress !== "object") parsed.progress = {};
     return parsed;
   } catch {
     return DEFAULT_STATE;

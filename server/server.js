@@ -147,6 +147,70 @@ app.get("/api/books", (req, res) => {
   res.json({ books });
 });
 
+// --- User Preferences API ---
+app.get("/api/prefs", (req, res) => {
+  try {
+    const state = loadState(statePath);
+    const prefs = state.prefs || {};
+    res.json(prefs);
+  } catch (err) {
+    console.error("Error loading prefs:", err);
+    res.status(500).json({ error: "Failed to load preferences" });
+  }
+});
+
+app.post("/api/prefs", (req, res) => {
+  try {
+    const prefs = req.body;
+    if (!prefs || typeof prefs !== 'object') {
+      return res.status(400).json({ error: "Invalid preferences data" });
+    }
+
+    const state = loadState(statePath);
+    state.prefs = prefs;
+    saveStateAtomic(statePath, state);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error saving prefs:", err);
+    res.status(500).json({ error: "Failed to save preferences" });
+  }
+});
+
+// --- Book Progress API ---
+app.get("/api/progress/:bookId", (req, res) => {
+  try {
+    const { bookId } = req.params;
+    const state = loadState(statePath);
+    const progress = state.progress?.[bookId] || null;
+    res.json(progress);
+  } catch (err) {
+    console.error("Error loading progress:", err);
+    res.status(500).json({ error: "Failed to load progress" });
+  }
+});
+
+app.post("/api/progress/:bookId", (req, res) => {
+  try {
+    const { bookId } = req.params;
+    const progress = req.body;
+
+    if (!progress || typeof progress !== 'object') {
+      return res.status(400).json({ error: "Invalid progress data" });
+    }
+
+    const state = loadState(statePath);
+    if (!state.progress) state.progress = {};
+    state.progress[bookId] = progress;
+    saveStateAtomic(statePath, state);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error saving progress:", err);
+    res.status(500).json({ error: "Failed to save progress" });
+  }
+});
+
 app.post("/api/upload", upload.array("files", 200), async (req, res) => {
   const files = req.files || [];
   const state = loadState(statePath);

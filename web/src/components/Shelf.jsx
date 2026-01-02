@@ -22,6 +22,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
+  const [progressData, setProgressData] = useState({});
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -32,6 +33,32 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [sortDropdownOpen]);
+
+  // Load progress data for all books
+  useEffect(() => {
+    const loadAllProgress = async () => {
+      const progressPromises = books.map(async (book) => {
+        try {
+          const progress = await loadProgress(book.id);
+          return { bookId: book.id, progress };
+        } catch (err) {
+          console.warn(`Failed to load progress for book ${book.id}:`, err);
+          return { bookId: book.id, progress: null };
+        }
+      });
+
+      const results = await Promise.all(progressPromises);
+      const progressMap = {};
+      results.forEach(({ bookId, progress }) => {
+        progressMap[bookId] = progress;
+      });
+      setProgressData(progressMap);
+    };
+
+    if (books.length > 0) {
+      loadAllProgress();
+    }
+  }, [books]);
 
   function toggleBookSelection(bookId) {
     const newSelected = new Set(selectedBooks);
@@ -103,12 +130,12 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           return (a.title || a.originalName || "").localeCompare(b.title || b.originalName || "");
         case "lastOpened":
           // Sort by last opened (books without progress first, then by last updated)
-          const aProgress = loadProgress(a.id);
-          const bProgress = loadProgress(b.id);
+          const aProgress = progressData[a.id];
+          const bProgress = progressData[b.id];
           if (!aProgress && !bProgress) return 0;
           if (!aProgress) return 1; // Books never opened go to end
           if (!bProgress) return -1;
-          return (bProgress.updatedAt || 0) - (aProgress.updatedAt || 0);
+          return (bProgress?.updatedAt || 0) - (aProgress?.updatedAt || 0);
         case "upload":
         default:
           // Sort by upload date (newest first)
@@ -319,7 +346,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       ) : (
         <div className="grid">
           {filtered.map((b) => {
-            const progress = loadProgress(b.id);
+            const progress = progressData[b.id];
             const pct = progress?.percent != null ? Math.round(progress.percent * 100) : null;
             return (
               <div

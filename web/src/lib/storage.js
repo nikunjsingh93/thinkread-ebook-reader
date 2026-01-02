@@ -1,18 +1,39 @@
-const PREFS_KEY = "ser:prefs:v1";
-
-export function loadPrefs() {
+export async function loadPrefs() {
   try {
-    const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return defaultPrefs();
-    const p = JSON.parse(raw);
+    const response = await fetch('/api/prefs');
+    if (!response.ok) {
+      console.warn('Failed to load prefs from server, using defaults');
+      return defaultPrefs();
+    }
+    const p = await response.json();
     return { ...defaultPrefs(), ...p };
-  } catch {
+  } catch (err) {
+    console.warn('Error loading prefs from server:', err);
     return defaultPrefs();
   }
 }
 
-export function savePrefs(prefs) {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+export async function savePrefs(prefs) {
+  try {
+    const response = await fetch('/api/prefs', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(prefs),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save prefs');
+    }
+  } catch (err) {
+    console.error('Error saving prefs to server:', err);
+    // Fallback to localStorage for offline support
+    try {
+      localStorage.setItem("ser:prefs:v1", JSON.stringify(prefs));
+    } catch (localErr) {
+      console.error('Failed to save to localStorage as fallback:', localErr);
+    }
+  }
 }
 
 export function defaultPrefs() {
@@ -50,20 +71,40 @@ export function defaultPrefs() {
   };
 }
 
-export function progressKey(bookId) {
-  return `ser:progress:${bookId}`;
-}
-
-export function loadProgress(bookId) {
+export async function loadProgress(bookId) {
   try {
-    const raw = localStorage.getItem(progressKey(bookId));
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
+    const response = await fetch(`/api/progress/${bookId}`);
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error('Failed to load progress');
+    }
+    const progress = await response.json();
+    return progress;
+  } catch (err) {
+    console.warn('Error loading progress from server:', err);
     return null;
   }
 }
 
-export function saveProgress(bookId, progress) {
-  localStorage.setItem(progressKey(bookId), JSON.stringify(progress));
+export async function saveProgress(bookId, progress) {
+  try {
+    const response = await fetch(`/api/progress/${bookId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(progress),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save progress');
+    }
+  } catch (err) {
+    console.error('Error saving progress to server:', err);
+    // Fallback to localStorage for offline support
+    try {
+      localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
+    } catch (localErr) {
+      console.error('Failed to save to localStorage as fallback:', localErr);
+    }
+  }
 }
