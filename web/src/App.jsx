@@ -64,7 +64,7 @@ function applyTheme(prefs) {
     // Search and progress bars - light versions
     root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.15)');
-    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.3)');
+    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.7)');
   } else if (themeMode === 'white') {
     // White theme - cream/off-white UI with warm book colors
     root.style.setProperty('--bg', '#fafafa'); // Off-white background
@@ -97,7 +97,7 @@ function applyTheme(prefs) {
     // Search and progress bars - cream versions
     root.style.setProperty('--search-bg', 'rgba(245,242,235,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.12)');
-    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.25)');
+    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.6)');
   } else if (themeMode === 'pure-black') {
     root.style.setProperty('--bg', '#000000');
     root.style.setProperty('--panel', '#000000');

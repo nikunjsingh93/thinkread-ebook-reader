@@ -301,17 +301,18 @@ button, input, select {
   -webkit-appearance: none;
   appearance: none;
   background: var(--progress-bg);
-  height: 4px;
-  border-radius: 2px;
+  height: 6px;
+  border-radius: 3px;
   outline: none;
   width: 100%;
+  border: 1px solid rgba(0,0,0,0.1);
 }
 
 .bottomBar input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--accent, #007acc);
   cursor: pointer;
@@ -319,8 +320,8 @@ button, input, select {
 }
 
 .bottomBar input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--accent, #007acc);
   cursor: pointer;
