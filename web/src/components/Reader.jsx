@@ -525,7 +525,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
           });
         } else {
           // Word not found in dictionary
-          onToast?.(`"${word}" not found in dictionary. Import more words in App Settings (☰ menu button) → Dictionary section.`);
+          onToast?.(`"${word}" not found`);
         }
       }
     };
