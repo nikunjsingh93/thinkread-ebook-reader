@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { apiUploadBooks, apiDeleteBook } from "../lib/api.js";
+import { apiUploadBooks, apiDeleteBook, apiGetBookCoverUrl } from "../lib/api.js";
 import { loadProgress } from "../lib/storage.js";
 
 function formatBytes(bytes) {
@@ -14,6 +14,49 @@ function formatBytes(bytes) {
 function coverLetter(title) {
   const t = (title || "").trim();
   return (t[0] || "📘").toUpperCase();
+}
+
+function CoverImage({ book }) {
+  const [coverUrl, setCoverUrl] = useState(null);
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+
+  useEffect(() => {
+    if (book.coverImage && isElectron) {
+      apiGetBookCoverUrl(book.id)
+        .then(url => setCoverUrl(url))
+        .catch(() => setCoverUrl(null));
+    } else if (book.coverImage) {
+      setCoverUrl(`/api/books/${book.id}/cover`);
+    }
+  }, [book.id, book.coverImage, isElectron]);
+
+  if (!book.coverImage) {
+    return <div className="cover">{coverLetter(book.title)}</div>;
+  }
+
+  return (
+    <div className="cover">
+      {coverUrl ? (
+        <img
+          src={coverUrl}
+          alt={`${book.title} cover`}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius: '4px'
+          }}
+          onError={(e) => {
+            // Fallback to letter if image fails to load
+            e.target.style.display = 'none';
+            e.target.parentNode.textContent = coverLetter(book.title);
+          }}
+        />
+      ) : (
+        coverLetter(book.title)
+      )}
+    </div>
+  );
 }
 
 export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm }) {
@@ -157,8 +200,38 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     return filteredBooks;
   }, [books, query, sortBy, progressData]);
 
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+
   async function pickFiles() {
-    inputRef.current?.click();
+    if (isElectron) {
+      // Use Electron's file dialog
+      setUploading(true);
+      try {
+        const result = await window.electronAPI.showOpenDialog({
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Ebooks', extensions: ['epub', 'mobi'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
+        
+        if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+          setUploading(false);
+          return;
+        }
+        
+        await apiUploadBooks(result.filePaths);
+        onToast?.(`Uploaded ${result.filePaths.length} book(s)`);
+        await onReload?.();
+      } catch (err) {
+        onToast?.(err?.message || "Upload failed");
+      } finally {
+        setUploading(false);
+      }
+    } else {
+      // Fallback for web version
+      inputRef.current?.click();
+    }
   }
 
   async function onFileChange(e) {
@@ -167,6 +240,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     if (!files.length) return;
     setUploading(true);
     try {
+      // For web version, we need to convert File objects to file paths
+      // This won't work in Electron, so we use the file dialog instead
       await apiUploadBooks(files);
       onToast?.(`Uploaded ${files.length} book(s)`);
       await onReload?.();
@@ -441,27 +516,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     />
                   </div>
                 )}
-                <div className="cover">
-                  {b.coverImage ? (
-                    <img
-                      src={`/api/books/${b.id}/cover`}
-                      alt={`${b.title} cover`}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        borderRadius: '4px'
-                      }}
-                      onError={(e) => {
-                        // Fallback to letter if image fails to load
-                        e.target.style.display = 'none';
-                        e.target.parentNode.textContent = coverLetter(b.title);
-                      }}
-                    />
-                  ) : (
-                    coverLetter(b.title)
-                  )}
-                </div>
+                <CoverImage book={b} />
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
                   <div className="small">

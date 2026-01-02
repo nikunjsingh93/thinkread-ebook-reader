@@ -4,7 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetBookFileUrl, apiGetFontFileUrl } from "../lib/api.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -15,8 +15,22 @@ function getFontFormat(filename) {
     case 'otf': return 'opentype';
     case 'woff': return 'woff';
     case 'woff2': return 'woff2';
-    default: return 'truetype';
+  default: return 'truetype';
   }
+}
+
+// Helper to get font URL (works in both Electron and web)
+async function getFontUrl(filename) {
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  if (isElectron) {
+    try {
+      return await apiGetFontFileUrl(filename);
+    } catch (err) {
+      console.warn('Failed to get font URL, using fallback:', err);
+      return `/api/fonts/${filename}`;
+    }
+  }
+  return `/api/fonts/${filename}`;
 }
 
 export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger }) {
@@ -49,7 +63,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
 
 
-  const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
+  const [fileUrl, setFileUrl] = useState(null);
+  
+  // Load book file URL
+  useEffect(() => {
+    async function loadFileUrl() {
+      try {
+        const url = await apiGetBookFileUrl(book.id);
+        setFileUrl(url);
+      } catch (err) {
+        console.error('Failed to load book file URL:', err);
+        setFileUrl(`/api/books/${book.id}/file`); // Fallback
+      }
+    }
+    loadFileUrl();
+  }, [book.id]);
 
   // Apply theme settings to epub.js rendition
   function applyPrefs(rendition, p) {
@@ -108,11 +136,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const filename = fontFamily.substring(7).split(':')[0]; // Extract filename from 'custom:filename:fontFamily'
 
         // Wait for the rendition to be ready, then inject font-face CSS
-        rendition.hooks.content.register((contents) => {
+        rendition.hooks.content.register(async (contents) => {
+          const fontUrl = await getFontUrl(filename);
           const css = `
             @font-face {
               font-family: '${actualFontFamily}';
-              src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+              src: url('${fontUrl}') format('${getFontFormat(filename)}');
               font-display: swap;
             }
             body, p, div, span, h1, h2, h3, h4, h5, h6 {
@@ -201,6 +230,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     if (book.type !== "epub") {
       onToast?.("This simple build supports EPUB only.");
       onBack?.();
+      return;
+    }
+
+    // Wait for fileUrl to be loaded
+    if (!fileUrl) {
       return;
     }
 
@@ -373,7 +407,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // If using custom font, inject CSS directly into iframe after a short delay
         const fontFamily = prefs.fontFamily || "serif";
         if (fontFamily.startsWith('custom:')) {
-          setTimeout(() => {
+          setTimeout(async () => {
             try {
               const iframe = hostRef.current?.querySelector('iframe');
               if (iframe && iframe.contentDocument) {
@@ -385,10 +419,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 const existingStyles = doc.querySelectorAll('style[data-custom-font]');
                 existingStyles.forEach(style => style.remove());
 
+                const fontUrl = await getFontUrl(filename);
                 const css = `
                   @font-face {
                     font-family: '${actualFontFamily}';
-                    src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+                    src: url('${fontUrl}') format('${getFontFormat(filename)}');
                     font-display: swap;
                   }
                 `;
@@ -695,7 +730,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       renditionRef.current = null;
       epubBookRef.current = null;
     };
-  }, [book.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [book.id, fileUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-apply prefs when changed
   useEffect(() => {
@@ -753,7 +788,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
     // Force re-rendering with updated preferences
     requestAnimationFrame(() => {
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           // Reapply the epub.js theme to update settings
           applyPrefs(r, prefs);
@@ -771,10 +806,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               const existingStyles = doc.querySelectorAll('style[data-custom-font]');
               existingStyles.forEach(style => style.remove());
 
+              const fontUrl = await getFontUrl(filename);
               const css = `
                 @font-face {
                   font-family: '${actualFontFamily}';
-                  src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+                  src: url('${fontUrl}') format('${getFontFormat(filename)}');
                   font-display: swap;
                 }
               `;

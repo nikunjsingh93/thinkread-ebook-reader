@@ -1,4 +1,21 @@
+const isElectron = typeof window !== 'undefined' && window.electronAPI;
+
 export async function loadPrefs() {
+  if (isElectron) {
+    try {
+      const p = await window.electronAPI.getPrefs();
+      const defaults = defaultPrefs();
+      if (!p) return defaults;
+      // Merge colors object to ensure all theme colors are available (especially eink)
+      const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
+      return { ...defaults, ...p, colors: mergedColors };
+    } catch (err) {
+      console.warn('Error loading prefs from Electron:', err);
+      return defaultPrefs();
+    }
+  }
+  
+  // Fallback for web version
   try {
     const response = await fetch('/api/prefs');
     if (!response.ok) {
@@ -17,6 +34,16 @@ export async function loadPrefs() {
 }
 
 export async function savePrefs(prefs) {
+  if (isElectron) {
+    try {
+      await window.electronAPI.savePrefs(prefs);
+    } catch (err) {
+      console.error('Error saving prefs to Electron:', err);
+    }
+    return;
+  }
+  
+  // Fallback for web version
   try {
     const response = await fetch('/api/prefs', {
       method: 'POST',
@@ -80,6 +107,17 @@ export function defaultPrefs() {
 }
 
 export async function loadProgress(bookId) {
+  if (isElectron) {
+    try {
+      const progress = await window.electronAPI.getProgress(bookId);
+      return progress;
+    } catch (err) {
+      console.warn('Error loading progress from Electron:', err);
+      return null;
+    }
+  }
+  
+  // Fallback for web version
   try {
     const response = await fetch(`/api/progress/${bookId}`);
     if (!response.ok) {
@@ -136,6 +174,21 @@ export async function loadProgress(bookId) {
 }
 
 export async function saveProgress(bookId, progress) {
+  if (isElectron) {
+    try {
+      if (!bookId) {
+        console.error('saveProgress called without bookId');
+        return;
+      }
+      await window.electronAPI.saveProgress(bookId, progress);
+      return { success: true };
+    } catch (err) {
+      console.error(`Error saving progress for book ${bookId}:`, err);
+      throw err;
+    }
+  }
+  
+  // Fallback for web version
   try {
     if (!bookId) {
       console.error('saveProgress called without bookId');

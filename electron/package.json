@@ -1,0 +1,7 @@
+{
+  "name": "thinkread-electron-main",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.js"
+}
+

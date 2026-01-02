@@ -50,8 +50,37 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
     }
   }
 
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+
   async function pickFontFiles() {
-    fontInputRef.current?.click();
+    if (isElectron) {
+      // Use Electron's file dialog
+      setUploadingFonts(true);
+      try {
+        const result = await window.electronAPI.showOpenDialog({
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Fonts', extensions: ['ttf', 'otf', 'woff', 'woff2'] },
+            { name: 'All Files', extensions: ['*'] }
+          ]
+        });
+        
+        if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+          setUploadingFonts(false);
+          return;
+        }
+        
+        await apiUploadFonts(result.filePaths);
+        await loadFonts(); // Reload the font list
+      } catch (err) {
+        alert(err?.message || "Font upload failed");
+      } finally {
+        setUploadingFonts(false);
+      }
+    } else {
+      // Fallback for web version
+      fontInputRef.current?.click();
+    }
   }
 
   async function onFontFileChange(e) {
