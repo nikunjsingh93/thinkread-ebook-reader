@@ -69,6 +69,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.15)');
     root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.7)');
+    // Scrollbar colors - default purple
+    root.style.setProperty('--scrollbar-thumb', 'rgba(124, 92, 255, 0.4)');
+    root.style.setProperty('--scrollbar-thumb-hover', 'rgba(124, 92, 255, 0.6)');
+    root.style.setProperty('--scrollbar-track', 'rgba(255, 255, 255, 0.05)');
   } else if (themeMode === 'white') {
     // White theme - cream/off-white UI with warm book colors
     root.style.setProperty('--bg', '#fafafa'); // Off-white background
@@ -102,6 +106,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(245,242,235,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.12)');
     root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.6)');
+    // Scrollbar colors - default purple
+    root.style.setProperty('--scrollbar-thumb', 'rgba(124, 92, 255, 0.4)');
+    root.style.setProperty('--scrollbar-thumb-hover', 'rgba(124, 92, 255, 0.6)');
+    root.style.setProperty('--scrollbar-track', 'rgba(255, 255, 255, 0.05)');
   } else if (themeMode === 'pure-black') {
     root.style.setProperty('--bg', '#000000');
     root.style.setProperty('--panel', '#000000');
@@ -133,6 +141,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(0,0,0,0.8)');
     root.style.setProperty('--search-border', 'rgba(255,255,255,0.15)');
     root.style.setProperty('--progress-bg', 'rgba(255,255,255,0.3)');
+    // Scrollbar colors - default purple
+    root.style.setProperty('--scrollbar-thumb', 'rgba(124, 92, 255, 0.4)');
+    root.style.setProperty('--scrollbar-thumb-hover', 'rgba(124, 92, 255, 0.6)');
+    root.style.setProperty('--scrollbar-track', 'rgba(255, 255, 255, 0.05)');
   } else if (themeMode === 'eink') {
     // Eink theme - all UI elements black and white, reading same as pure-white
     root.style.setProperty('--bg', '#ffffff');
@@ -165,6 +177,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
     root.style.setProperty('--search-border', 'rgba(0,0,0,0.2)');
     root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.7)');
+    // Scrollbar colors - light gray for eink
+    root.style.setProperty('--scrollbar-thumb', 'rgba(128, 128, 128, 0.4)');
+    root.style.setProperty('--scrollbar-thumb-hover', 'rgba(128, 128, 128, 0.6)');
+    root.style.setProperty('--scrollbar-track', 'rgba(0, 0, 0, 0.05)');
   } else { // dark (default)
     root.style.setProperty('--bg', '#0b0d12');
     root.style.setProperty('--panel', '#121626');
@@ -196,6 +212,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--search-bg', 'rgba(18,22,38,.55)');
     root.style.setProperty('--search-border', 'rgba(255,255,255,.12)');
     root.style.setProperty('--progress-bg', 'rgba(255,255,255,0.2)');
+    // Scrollbar colors - default purple
+    root.style.setProperty('--scrollbar-thumb', 'rgba(124, 92, 255, 0.4)');
+    root.style.setProperty('--scrollbar-thumb-hover', 'rgba(124, 92, 255, 0.6)');
+    root.style.setProperty('--scrollbar-track', 'rgba(255, 255, 255, 0.05)');
   }
 }
 

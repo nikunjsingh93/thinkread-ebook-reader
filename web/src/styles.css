@@ -356,17 +356,22 @@ button, input, select {
 }
 
 .drawer > div:last-child::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--scrollbar-track, rgba(255, 255, 255, 0.05));
   border-radius: 3px;
 }
 
 .drawer > div:last-child::-webkit-scrollbar-thumb {
-  background: rgba(124, 92, 255, 0.4);
+  background: var(--scrollbar-thumb, rgba(124, 92, 255, 0.4));
   border-radius: 3px;
 }
 
 .drawer > div:last-child::-webkit-scrollbar-thumb:hover {
-  background: rgba(124, 92, 255, 0.6);
+  background: var(--scrollbar-thumb-hover, rgba(124, 92, 255, 0.6));
+}
+
+.drawer > div:last-child::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, rgba(255, 255, 255, 0.05));
+  border-radius: 3px;
 }
 
 /* Custom scrollbar for confirm dialog message */
@@ -375,17 +380,17 @@ button, input, select {
 }
 
 .confirmMessage::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--scrollbar-track, rgba(255, 255, 255, 0.05));
   border-radius: 3px;
 }
 
 .confirmMessage::-webkit-scrollbar-thumb {
-  background: rgba(124, 92, 255, 0.4);
+  background: var(--scrollbar-thumb, rgba(124, 92, 255, 0.4));
   border-radius: 3px;
 }
 
 .confirmMessage::-webkit-scrollbar-thumb:hover {
-  background: rgba(124, 92, 255, 0.6);
+  background: var(--scrollbar-thumb-hover, rgba(124, 92, 255, 0.6));
 }
 .drawer h3{
   margin: 0;
