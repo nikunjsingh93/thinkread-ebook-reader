@@ -39,7 +39,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   return (
     <div className="drawerBackdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0}}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0, marginBottom: "8px"}}>
           <h3>Reading settings</h3>
           <button className="pill" onClick={onClose}>Done</button>
         </div>
@@ -120,6 +120,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
             onChange={(e) => onChange({ lineHeight: Number(e.target.value) / 10 })}
           />
           <div style={{width: 42, textAlign:"right"}}>{prefs.lineHeight.toFixed(1)}</div>
+        </div>
+
+        <div className="row">
+          <label>Two Page Layout</label>
+          <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer'}}>
+            <input
+              type="checkbox"
+              checked={prefs.twoPageLayout || false}
+              onChange={(e) => onChange({ twoPageLayout: e.target.checked })}
+              style={{width: '16px', height: '16px'}}
+            />
+            <span style={{fontSize: '14px'}}>Enable side-by-side pages</span>
+          </label>
         </div>
 
         <div className="row">
@@ -241,19 +254,6 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           >
             Restore Default Colors
           </button>
-        </div>
-
-        <div className="row">
-          <label>Two Page Layout</label>
-          <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer'}}>
-            <input
-              type="checkbox"
-              checked={prefs.twoPageLayout || false}
-              onChange={(e) => onChange({ twoPageLayout: e.target.checked })}
-              style={{width: '16px', height: '16px'}}
-            />
-            <span style={{fontSize: '14px'}}>Enable side-by-side pages</span>
-          </label>
         </div>
 
         <div className="row">
