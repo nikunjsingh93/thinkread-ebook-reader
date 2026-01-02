@@ -6,7 +6,7 @@ import {
   loadDictionary
 } from "../lib/dictionary.js";
 
-export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange }) {
+export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
@@ -70,12 +70,24 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
   }
 
   async function deleteFont(filename) {
-    if (!confirm("Delete this font?")) return;
-    try {
-      await apiDeleteFont(filename);
-      await loadFonts(); // Reload the font list
-    } catch (err) {
-      alert(err?.message || "Font delete failed");
+    const performDelete = async () => {
+      try {
+        await apiDeleteFont(filename);
+        await loadFonts(); // Reload the font list
+      } catch (err) {
+        alert(err?.message || "Font delete failed");
+      }
+    };
+
+    if (onConfirm) {
+      onConfirm(
+        "Delete Font",
+        "Are you sure you want to delete this font?",
+        performDelete
+      );
+    } else {
+      if (!confirm("Delete this font?")) return;
+      await performDelete();
     }
   }
   
@@ -117,18 +129,29 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
   }
 
   async function handleDictionaryDelete() {
-    if (!confirm("Delete the dictionary? You'll need to download it again.")) return;
+    const performDelete = async () => {
+      try {
+        await apiDeleteDictionary();
+        setDictionaryExists(false);
+        setWordCount(0);
+        setDownloadMessage('✓ Dictionary deleted');
 
-    try {
-      await apiDeleteDictionary();
-      setDictionaryExists(false);
-      setWordCount(0);
-      setDownloadMessage('✓ Dictionary deleted');
+        // Reload dictionary from server (empty now)
+        await loadDictionary();
+      } catch (err) {
+        alert(err?.message || "Dictionary delete failed");
+      }
+    };
 
-      // Reload dictionary from server (empty now)
-      await loadDictionary();
-    } catch (err) {
-      alert(err?.message || "Dictionary delete failed");
+    if (onConfirm) {
+      onConfirm(
+        "Delete Dictionary",
+        "Delete the dictionary? You'll need to download it again.",
+        performDelete
+      );
+    } else {
+      if (!confirm("Delete the dictionary? You'll need to download it again.")) return;
+      await performDelete();
     }
   }
 

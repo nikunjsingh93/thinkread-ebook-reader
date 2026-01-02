@@ -4,6 +4,7 @@ import Reader from "./components/Reader.jsx";
 import Toast from "./components/Toast.jsx";
 import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
 import Bookmarks from "./components/Bookmarks.jsx";
+import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
@@ -176,6 +177,7 @@ export default function App() {
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarkCfi, setBookmarkCfi] = useState(null);
   const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
+  const [confirmDialog, setConfirmDialog] = useState(null); // { open: true, title, message, onConfirm, onCancel }
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -377,6 +379,7 @@ export default function App() {
             // Trigger bookmark check in Reader when bookmark is deleted
             setBookmarkUpdateTrigger(prev => prev + 1);
           }}
+          onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
         />
       ) : selected ? (
         <Reader
@@ -402,10 +405,24 @@ export default function App() {
           deleteMode={deleteMode}
           onEnterDeleteMode={() => setDeleteMode(true)}
           onExitDeleteMode={() => setDeleteMode(false)}
+          onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
         />
       )}
 
       <Toast text={toast} />
+      <ConfirmDialog
+        open={confirmDialog?.open || false}
+        title={confirmDialog?.title}
+        message={confirmDialog?.message}
+        onConfirm={() => {
+          if (confirmDialog?.onConfirm) confirmDialog.onConfirm();
+          setConfirmDialog(null);
+        }}
+        onCancel={() => {
+          if (confirmDialog?.onCancel) confirmDialog.onCancel();
+          setConfirmDialog(null);
+        }}
+      />
 
       <ShelfSettingsDrawer
         open={settingsOpen}
@@ -413,6 +430,7 @@ export default function App() {
         onEnterDeleteMode={() => setDeleteMode(true)}
         prefs={prefs}
         onPrefsChange={onPrefsChange}
+        onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
       />
     </div>
   );

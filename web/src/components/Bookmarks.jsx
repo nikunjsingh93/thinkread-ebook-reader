@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { apiGetBookmarks, apiDeleteBookmark } from "../lib/api.js";
 
-export default function Bookmarks({ books, onOpenBook, onClose, onToast, onBookmarkChange }) {
+export default function Bookmarks({ books, onOpenBook, onClose, onToast, onBookmarkChange, onConfirm }) {
   const [bookmarks, setBookmarks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,7 +25,28 @@ export default function Bookmarks({ books, onOpenBook, onClose, onToast, onBookm
   }
 
   async function deleteBookmark(bookmarkId) {
-    if (!confirm("Delete this bookmark?")) return;
+    if (!onConfirm) {
+      if (!confirm("Delete this bookmark?")) return;
+    } else {
+      onConfirm(
+        "Delete Bookmark",
+        "Are you sure you want to delete this bookmark?",
+        async () => {
+          try {
+            await apiDeleteBookmark(bookmarkId);
+            // Reload from server to ensure sync
+            await loadBookmarks();
+            onToast?.("Bookmark deleted");
+            // Notify parent that bookmarks changed
+            if (onBookmarkChange) onBookmarkChange();
+          } catch (err) {
+            console.error("Failed to delete bookmark:", err);
+            onToast?.("Failed to delete bookmark");
+          }
+        }
+      );
+      return;
+    }
     
     try {
       await apiDeleteBookmark(bookmarkId);

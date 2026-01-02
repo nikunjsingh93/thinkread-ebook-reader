@@ -16,7 +16,7 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
@@ -95,22 +95,33 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       books.find(b => b.id === id)?.title || 'Unknown book'
     );
 
-    const confirmed = window.confirm(
-      `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      for (const bookId of selectedBooks) {
-        await apiDeleteBook(bookId);
+    const performDelete = async () => {
+      try {
+        for (const bookId of selectedBooks) {
+          await apiDeleteBook(bookId);
+        }
+        setSelectedBooks(new Set());
+        onExitDeleteMode();
+        onReload?.();
+        onToast?.(`Deleted ${selectedBooks.size} book(s)`);
+      } catch (err) {
+        onToast?.(err?.message || "Delete failed");
       }
-      setSelectedBooks(new Set());
-      onExitDeleteMode();
-      onReload?.();
-      onToast?.(`Deleted ${selectedBooks.size} book(s)`);
-    } catch (err) {
-      onToast?.(err?.message || "Delete failed");
+    };
+
+    if (onConfirm) {
+      onConfirm(
+        "Delete Books",
+        `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`,
+        performDelete
+      );
+    } else {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete ${selectedBooks.size} book(s)?\n\n${bookTitles.join('\n')}`
+      );
+      if (confirmed) {
+        await performDelete();
+      }
     }
   }
 
@@ -167,13 +178,25 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   }
 
   async function deleteBook(id) {
-    if (!confirm("Delete this book from the shelf?")) return;
-    try {
-      await apiDeleteBook(id);
-      onToast?.("Deleted");
-      await onReload?.();
-    } catch (err) {
-      onToast?.(err?.message || "Delete failed");
+    const performDelete = async () => {
+      try {
+        await apiDeleteBook(id);
+        onToast?.("Deleted");
+        await onReload?.();
+      } catch (err) {
+        onToast?.(err?.message || "Delete failed");
+      }
+    };
+
+    if (onConfirm) {
+      onConfirm(
+        "Delete Book",
+        "Are you sure you want to delete this book from the shelf?",
+        performDelete
+      );
+    } else {
+      if (!confirm("Delete this book from the shelf?")) return;
+      await performDelete();
     }
   }
 
