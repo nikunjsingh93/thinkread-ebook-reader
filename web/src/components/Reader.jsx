@@ -881,25 +881,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
               }}
               title={`Navigate to position: ${navigatingToPercent !== null ? navigatingToPercent : pct}%`}
             />
-            {hasDragged && originalPosition && (
-              <div
-                style={{
-                  position: 'absolute',
-                  left: `calc(${originalPosition.percent}% * (100% - 16px) / 100 + 8px)`,
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: '8px',
-                  height: '8px',
-                  backgroundColor: 'var(--accent, #007acc)',
-                  borderRadius: '50%',
-                  border: '2px solid rgba(255,255,255,0.8)',
-                  boxShadow: '0 0 4px rgba(0,122,204,0.3)',
-                  pointerEvents: 'none',
-                  zIndex: 10
-                }}
-                title={`Original position: Page ${originalPosition.page} (${originalPosition.percent}%)`}
-              />
-            )}
           </div>
         </div>
 
