@@ -5,6 +5,23 @@
   --muted: #a8b0c2;
   --border: rgba(255,255,255,.10);
   --accent: #7c5cff;
+  /* UI element backgrounds */
+  --topbar-bg: rgba(11,13,18,.40);
+  --card-bg: rgba(18,22,38,.72);
+  --pill-bg: rgba(18,22,38,.72);
+  --drawer-bg: rgba(18,22,38,.96);
+  --reader-bar-bg: rgba(18,22,38,.85);
+  --toast-bg: rgba(18,22,38,.88);
+  --backdrop-bg: rgba(0,0,0,.45);
+  /* Form elements */
+  --input-bg: rgba(0,0,0,.16);
+  --input-border: rgba(255,255,255,.14);
+  --row-bg: rgba(255,255,255,.04);
+  --row-border: rgba(255,255,255,.10);
+  /* Additional UI elements */
+  --kebab-bg: rgba(0,0,0,.20);
+  --kebab-border: rgba(255,255,255,.12);
+  --cover-border: rgba(255,255,255,.08);
 }
 *{ 
   box-sizing: border-box;
@@ -23,9 +40,7 @@ body{
   padding: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
   color: var(--text);
-  background: radial-gradient(1200px 900px at 20% 10%, rgba(124,92,255,.28), transparent 60%),
-              radial-gradient(900px 700px at 80% 30%, rgba(80,170,255,.18), transparent 55%),
-              var(--bg);
+  background: var(--bg);
 }
 a { color: inherit; text-decoration: none; }
 button, input, select { 
@@ -52,7 +67,7 @@ button, input, select {
   padding: 0 14px;
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
-  background: rgba(11,13,18,.40);
+  background: var(--topbar-bg);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -69,7 +84,7 @@ button, input, select {
 }
 .pill{
   border: 1px solid var(--border);
-  background: rgba(18,22,38,.72);
+  background: var(--pill-bg);
   padding: 8px 10px;
   border-radius: 999px;
   color: var(--text);
@@ -116,7 +131,7 @@ button, input, select {
 }
 .card{
   border: 1px solid var(--border);
-  background: rgba(18,22,38,.72);
+  background: var(--card-bg);
   border-radius: 18px;
   overflow: hidden;
   cursor: pointer;
@@ -138,7 +153,7 @@ button, input, select {
     radial-gradient(800px 500px at 30% 30%, rgba(124,92,255,.55), transparent 55%),
     radial-gradient(700px 500px at 70% 40%, rgba(80,170,255,.40), transparent 55%),
     rgba(255,255,255,.06);
-  border-bottom: 1px solid rgba(255,255,255,.08);
+  border-bottom: 1px solid var(--cover-border);
 }
 .cardBody{
   padding: 10px 10px 12px 10px;
@@ -162,8 +177,8 @@ button, input, select {
   position:absolute;
   top:10px;
   right:10px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(0,0,0,.20);
+  border: 1px solid var(--kebab-border);
+  background: var(--kebab-bg);
   color: var(--text);
   border-radius: 10px;
   padding: 6px 8px;
@@ -187,7 +202,7 @@ button, input, select {
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  background: rgba(18,22,38,.85);
+  background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
   transition: transform 0.2s ease;
 }
@@ -256,7 +271,7 @@ button, input, select {
   gap: 12px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
-  background: rgba(18,22,38,.85);
+  background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
   font-size: 12px;
   color: var(--muted);
@@ -313,7 +328,7 @@ button, input, select {
 .drawerBackdrop{
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.45);
+  background: var(--backdrop-bg);
   z-index: 50;
   display:flex;
   justify-content: flex-end;
@@ -321,7 +336,7 @@ button, input, select {
 .drawer{
   width: min(360px, 92vw);
   height: 100%;
-  background: rgba(18,22,38,.96);
+  background: var(--drawer-bg);
   border-left: 1px solid var(--border);
   padding: 14px;
   display:flex;
@@ -359,16 +374,16 @@ button, input, select {
   justify-content: space-between;
   gap: 10px;
   padding: 10px;
-  border: 1px solid rgba(255,255,255,.10);
+  border: 1px solid var(--row-border);
   border-radius: 14px;
-  background: rgba(255,255,255,.04);
+  background: var(--row-bg);
   margin-bottom: 12px;
 }
 .row label{ font-size: 12px; color: var(--muted); }
 .row input[type="range"]{ width: 170px; }
 .row select, .row input[type="color"]{
-  border: 1px solid rgba(255,255,255,.14);
-  background: rgba(0,0,0,.16);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   color: var(--text);
   border-radius: 12px;
   padding: 8px 10px;
@@ -380,9 +395,9 @@ button, input, select {
   left: 50%;
   transform: translateX(-50%);
   padding: 10px 12px;
-  border: 1px solid rgba(255,255,255,.12);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(18,22,38,.88);
+  background: var(--toast-bg);
   color: var(--text);
   font-size: 12px;
   z-index: 60;

@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
 import { apiGetFonts, apiUploadFonts, apiDeleteFont, apiGetDictionaryStatus, apiDeleteDictionary } from "../lib/api.js";
-import { 
-  importDictionaryJSON, 
+import {
+  importDictionaryJSON,
   saveDictionary,
   loadDictionary
 } from "../lib/dictionary.js";
 
-export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }) {
+export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
@@ -118,18 +118,22 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
 
   async function handleDictionaryDelete() {
     if (!confirm("Delete the dictionary? You'll need to download it again.")) return;
-    
+
     try {
       await apiDeleteDictionary();
       setDictionaryExists(false);
       setWordCount(0);
       setDownloadMessage('✓ Dictionary deleted');
-      
+
       // Reload dictionary from server (empty now)
       await loadDictionary();
     } catch (err) {
       alert(err?.message || "Dictionary delete failed");
     }
+  }
+
+  function onThemeModeChange(themeMode) {
+    onPrefsChange({ themeMode });
   }
 
   if (!open) return null;
@@ -143,6 +147,24 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode }
         </div>
 
         <div style={{marginTop: "20px", overflowY: "auto", overflowX: "hidden", flex: 1, paddingRight: "4px"}}>
+          <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Appearance</h4>
+
+          <div className="row">
+            <label>Theme Mode</label>
+            <select
+              value={prefs.themeMode || 'dark'}
+              onChange={(e) => onThemeModeChange(e.target.value)}
+            >
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="pure-black">Pure Black</option>
+            </select>
+          </div>
+
+          <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
+            Choose your preferred theme. Pure Black is optimized for OLED displays.
+          </div>
+
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Library Management</h4>
 
           <div className="row" style={{marginBottom: "20px"}}>

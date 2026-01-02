@@ -22,6 +22,23 @@ export function defaultPrefs() {
     lineHeight: 1.6,
     verticalMargin: 30,   // px (top/bottom padding)
     horizontalMargin: 46, // px (left/right padding)
+    themeMode: "dark",    // "dark", "light", "pure-black"
+    // Theme-specific colors
+    colors: {
+      dark: {
+        bg: "#f6f1e7",
+        fg: "#1a1a1a"
+      },
+      light: {
+        bg: "#ffffff",
+        fg: "#1a1a1a" // Dark text for light mode
+      },
+      "pure-black": {
+        bg: "#000000",
+        fg: "#ffffff"
+      }
+    },
+    // Legacy properties for backward compatibility
     bg: "#f6f1e7",
     fg: "#1a1a1a",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
