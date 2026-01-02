@@ -206,8 +206,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               flex: 1,
               minWidth: 0,
               maxWidth: 220,
-              border: "1px solid rgba(255,255,255,.12)",
-              background: "rgba(18,22,38,.55)",
+              border: `1px solid var(--search-border)`,
+              background: "var(--search-bg)",
               color: "var(--text)",
               borderRadius: 999,
               padding: "10px 12px"

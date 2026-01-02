@@ -22,6 +22,10 @@
   --kebab-bg: rgba(0,0,0,.20);
   --kebab-border: rgba(255,255,255,.12);
   --cover-border: rgba(255,255,255,.08);
+  /* Search and progress bars */
+  --search-bg: rgba(18,22,38,.55);
+  --search-border: rgba(255,255,255,.12);
+  --progress-bg: rgba(255,255,255,0.2);
 }
 *{ 
   box-sizing: border-box;
@@ -296,7 +300,7 @@ button, input, select {
 .bottomBar input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255,255,255,0.2);
+  background: var(--progress-bg);
   height: 4px;
   border-radius: 2px;
   outline: none;

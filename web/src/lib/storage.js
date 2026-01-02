@@ -22,12 +22,12 @@ export function defaultPrefs() {
     lineHeight: 1.6,
     verticalMargin: 30,   // px (top/bottom padding)
     horizontalMargin: 46, // px (left/right padding)
-    themeMode: "dark",    // "dark", "light", "pure-black"
+    themeMode: "light",    // "dark", "light", "pure-black"
     // Theme-specific colors
     colors: {
       dark: {
-        bg: "#f6f1e7",
-        fg: "#1a1a1a"
+        bg: "rgb(54, 37, 21)",
+        fg: "#ffebbd"
       },
       light: {
         bg: "#ffffff",
@@ -39,8 +39,8 @@ export function defaultPrefs() {
       }
     },
     // Legacy properties for backward compatibility
-    bg: "#f6f1e7",
-    fg: "#1a1a1a",
+    bg: "rgb(54, 37, 21)",
+    fg: "#ffebbd",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
     twoPageLayout: false, // Enable two-page side-by-side layout
   };

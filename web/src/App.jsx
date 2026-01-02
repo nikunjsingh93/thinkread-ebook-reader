@@ -39,6 +39,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--kebab-bg', 'rgba(255,255,255,0.9)');
     root.style.setProperty('--kebab-border', 'rgba(0,0,0,0.15)');
     root.style.setProperty('--cover-border', 'rgba(0,0,0,0.08)');
+    // Search and progress bars - light versions
+    root.style.setProperty('--search-bg', 'rgba(255,255,255,0.9)');
+    root.style.setProperty('--search-border', 'rgba(0,0,0,0.15)');
+    root.style.setProperty('--progress-bg', 'rgba(0,0,0,0.3)');
   } else if (themeMode === 'pure-black') {
     root.style.setProperty('--bg', '#000000');
     root.style.setProperty('--panel', '#000000');
@@ -66,6 +70,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--kebab-bg', 'rgba(0,0,0,0.8)');
     root.style.setProperty('--kebab-border', 'rgba(255,255,255,0.15)');
     root.style.setProperty('--cover-border', 'rgba(255,255,255,0.08)');
+    // Search and progress bars - black versions
+    root.style.setProperty('--search-bg', 'rgba(0,0,0,0.8)');
+    root.style.setProperty('--search-border', 'rgba(255,255,255,0.15)');
+    root.style.setProperty('--progress-bg', 'rgba(255,255,255,0.3)');
   } else { // dark (default)
     root.style.setProperty('--bg', '#0b0d12');
     root.style.setProperty('--panel', '#121626');
@@ -93,6 +101,10 @@ function applyTheme(prefs) {
     root.style.setProperty('--kebab-bg', 'rgba(0,0,0,.20)');
     root.style.setProperty('--kebab-border', 'rgba(255,255,255,.12)');
     root.style.setProperty('--cover-border', 'rgba(255,255,255,.08)');
+    // Search and progress bars - dark versions (original)
+    root.style.setProperty('--search-bg', 'rgba(18,22,38,.55)');
+    root.style.setProperty('--search-border', 'rgba(255,255,255,.12)');
+    root.style.setProperty('--progress-bg', 'rgba(255,255,255,0.2)');
   }
 }
 
