@@ -108,6 +108,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
               src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
               font-display: swap;
             }
+            body, p, div, span, h1, h2, h3, h4, h5, h6 {
+              font-family: '${actualFontFamily}' !important;
+            }
           `;
 
           // Inject the CSS into the iframe's head
@@ -498,19 +501,44 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     // Apply preferences
     applyPrefs(r, prefs);
 
-    // Resize rendition when prefs change (for margin changes)
-    if (!spreadChanged) {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          try {
-            r.resize();
-          } catch {}
-        }, 10);
-      });
+    // Force font application and re-render
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          // Reapply the epub.js theme to update font settings
+          applyPrefs(r, prefs);
 
-      // Force re-render by re-displaying the current page
-      requestAnimationFrame(() => {
-        setTimeout(() => {
+          // Inject font CSS immediately for existing content if it's a custom font
+          const fontFamily = prefs.fontFamily || "serif";
+          if (fontFamily.startsWith('custom:')) {
+            const iframe = hostRef.current?.querySelector('iframe');
+            if (iframe && iframe.contentDocument) {
+              const doc = iframe.contentDocument;
+              const filename = fontFamily.substring(7).split(':')[0];
+              const actualFontFamily = fontFamily.substring(7).split(':')[1];
+
+              // Remove any existing custom font styles first
+              const existingStyles = doc.querySelectorAll('style[data-custom-font]');
+              existingStyles.forEach(style => style.remove());
+
+              const css = `
+                @font-face {
+                  font-family: '${actualFontFamily}';
+                  src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+                  font-display: swap;
+                }
+              `;
+
+              const style = doc.createElement('style');
+              style.setAttribute('data-custom-font', 'true');
+              style.textContent = css;
+              doc.head.appendChild(style);
+
+              console.log('Injected custom font CSS for:', actualFontFamily);
+            }
+          }
+
+          // Force re-render by re-displaying the current page
           if (currentCfi) {
             r.display(currentCfi).catch(() => {
               // Fallback: try to get current location again and display
@@ -528,9 +556,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
             // If no location, try to display first page
             r.display().catch(() => {});
           }
-        }, 50);
-      });
-    }
+        } catch (err) {
+          console.warn('Failed to apply font changes:', err);
+        }
+      }, 100); // Longer delay to ensure font loads
+    });
   }, [prefs]);
 
   // Dictionary long-press feature - set up after component mounts and epub loads
