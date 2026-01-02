@@ -75,7 +75,7 @@ function applyTheme(prefs) {
     root.style.setProperty('--scrollbar-track', 'rgba(255, 255, 255, 0.05)');
   } else if (themeMode === 'white') {
     // White theme - cream/off-white UI with warm book colors
-    root.style.setProperty('--bg', '#fafafa'); // Off-white background
+    root.style.setProperty('--bg', '#f0ede6'); // Cream background to match topbar
     root.style.setProperty('--panel', '#f0ede6'); // Cream panel color
     root.style.setProperty('--text', '#2c1810'); // Dark brown text
     root.style.setProperty('--muted', '#8b7355'); // Muted brown
