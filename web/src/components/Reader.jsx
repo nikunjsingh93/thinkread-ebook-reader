@@ -22,6 +22,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
+  const locationsReadyRef = useRef(false); // Use ref so it's accessible in event handlers
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uiVisible, setUiVisible] = useState(true);
   const [percent, setPercent] = useState(0);
@@ -210,9 +211,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     const saved = loadProgress(book.id);
     const startAt = saved?.cfi || undefined;
 
-    // Build locations (for percent) lazily
+    // Build locations (for percent) lazily in background
     epub.ready
       .then(() => epub.locations.generate(1600))
+      .then(() => {
+        // Mark locations as ready
+        locationsReadyRef.current = true;
+        // Trigger a re-render to update the UI
+        if (renditionRef.current?.location?.start?.cfi) {
+          const loc = renditionRef.current.location;
+          onRelocated(loc);
+        }
+      })
       .catch(() => null);
 
     // Wait for epub to be ready before displaying
@@ -262,18 +272,27 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
       if (destroyed) return;
       const cfi = loc?.start?.cfi;
       let p = 0;
+      let currentPage = 0;
+      let totalPages = 0;
+      
       try {
         if (epub.locations?.length()) {
           p = epub.locations.percentageFromCfi(cfi) || 0;
+          // Calculate continuous page number from locations array
+          const locationIndex = epub.locations.locationFromCfi(cfi);
+          currentPage = locationIndex > 0 ? locationIndex : 1;
+          totalPages = epub.locations.length();
         }
       } catch {}
+      
       setPercent(p);
-      const pageText = loc?.start?.displayed?.page ? `Page ${loc.start.displayed.page}` : "";
+      // Show "Loading..." until locations are ready, then show page numbers
+      const pageText = locationsReadyRef.current && totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : "Loading...";
       setLocationText(pageText);
 
       // Update last page info for the button
-      if (pageText) {
-        setLastPageInfo({ page: loc.start.displayed.page, percent: Math.round(p) });
+      if (locationsReadyRef.current && currentPage > 0) {
+        setLastPageInfo({ page: currentPage, percent: Math.round(p) });
       }
 
       saveProgress(book.id, { cfi, percent: p, updatedAt: Date.now() });
