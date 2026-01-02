@@ -709,12 +709,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
     if (!originalPosition?.cfi || !renditionRef.current) return;
 
     try {
+      // Show navigation indicator
+      setNavigatingToPercent(originalPosition.percent);
+      
       await renditionRef.current.display(originalPosition.cfi);
+      
+      // Clear navigation indicator after a short delay
+      setTimeout(() => {
+        setNavigatingToPercent(null);
+      }, 100);
+      
       clearLastPositionTimer();
       setHasDragged(false); // Hide the button after using it
       setOriginalPosition(null); // Clear the original position
     } catch (err) {
       console.warn("Failed to go to last position:", err);
+      setNavigatingToPercent(null);
     }
   }
 
