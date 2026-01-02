@@ -296,6 +296,42 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast }) 
         // Apply prefs first, then display
         applyPrefs(rendition, prefs);
 
+        // If using custom font, inject CSS directly into iframe after a short delay
+        const fontFamily = prefs.fontFamily || "serif";
+        if (fontFamily.startsWith('custom:')) {
+          setTimeout(() => {
+            try {
+              const iframe = hostRef.current?.querySelector('iframe');
+              if (iframe && iframe.contentDocument) {
+                const doc = iframe.contentDocument;
+                const filename = fontFamily.substring(7).split(':')[0];
+                const actualFontFamily = fontFamily.substring(7).split(':')[1];
+
+                // Remove any existing custom font styles first
+                const existingStyles = doc.querySelectorAll('style[data-custom-font]');
+                existingStyles.forEach(style => style.remove());
+
+                const css = `
+                  @font-face {
+                    font-family: '${actualFontFamily}';
+                    src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+                    font-display: swap;
+                  }
+                `;
+
+                const style = doc.createElement('style');
+                style.setAttribute('data-custom-font', 'true');
+                style.textContent = css;
+                doc.head.appendChild(style);
+
+                console.log('Injected custom font CSS for new book:', actualFontFamily);
+              }
+            } catch (err) {
+              console.warn('Failed to inject font CSS for new book:', err);
+            }
+          }, 200); // Delay to ensure iframe is fully loaded
+        }
+
         // Display after a small delay to ensure theme is registered
         setTimeout(() => {
           if (startAt) {
