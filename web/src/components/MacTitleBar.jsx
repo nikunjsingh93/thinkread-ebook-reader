@@ -38,22 +38,17 @@ export default function MacTitleBar() {
         left: 0,
         right: 0,
         height: '28px',
-        display: 'flex',
-        alignItems: 'center',
-        paddingLeft: '78px', // Space for traffic lights
-        paddingRight: '8px',
         zIndex: 10000,
         WebkitAppRegion: 'drag',
         appRegion: 'drag',
-        backgroundColor: 'var(--bg)', // Match app background to remove white gap
-        borderBottom: '1px solid var(--border)', // Optional: add subtle border
+        backgroundColor: 'var(--bg)',
         pointerEvents: 'none',
       }}
     >
       {/* Traffic light buttons */}
       <div
         style={{
-          position: 'fixed',
+          position: 'absolute',
           top: '8px',
           left: '12px',
           display: 'flex',
@@ -127,29 +122,6 @@ export default function MacTitleBar() {
             e.target.style.backgroundColor = '#28c940';
           }}
         />
-      </div>
-
-      {/* Title area - draggable */}
-      <div
-        style={{
-          flex: 1,
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: 'none',
-        }}
-      >
-        <span
-          style={{
-            fontSize: '13px',
-            color: 'var(--text)',
-            opacity: 0.6,
-            fontWeight: 500,
-          }}
-        >
-          ThinkRead
-        </span>
       </div>
     </div>
   );

@@ -45,7 +45,7 @@ function createWindow() {
       contextIsolation: true,
       webSecurity: true,
     },
-    titleBarStyle: 'hiddenInset', // macOS style
+    titleBarStyle: 'hiddenInset', // macOS style with native traffic lights
     backgroundColor: '#ffffff',
     show: false, // Don't show until ready
   });
@@ -285,5 +285,33 @@ ipcMain.handle('delete-dictionary', () => {
 ipcMain.handle('show-open-dialog', async (event, options) => {
   const result = await dialog.showOpenDialog(mainWindow, options);
   return result;
+});
+
+// Window controls
+ipcMain.handle('close-window', () => {
+  if (mainWindow) {
+    mainWindow.close();
+  }
+});
+
+ipcMain.handle('minimize-window', () => {
+  if (mainWindow) {
+    mainWindow.minimize();
+  }
+});
+
+ipcMain.handle('maximize-window', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  }
+});
+
+// Get window fullscreen state
+ipcMain.handle('is-window-fullscreen', () => {
+  return mainWindow ? mainWindow.isFullScreen() : false;
 });
 

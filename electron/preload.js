@@ -37,5 +37,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // File dialogs
   showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+  
+  // Window controls
+  closeWindow: () => ipcRenderer.invoke('close-window'),
+  minimizeWindow: () => ipcRenderer.invoke('minimize-window'),
+  maximizeWindow: () => ipcRenderer.invoke('maximize-window'),
+  
+  // Window state
+  isWindowFullscreen: () => ipcRenderer.invoke('is-window-fullscreen'),
+  onWindowFullscreenChanged: (callback) => {
+    ipcRenderer.on('window-fullscreen-changed', (event, isFullscreen) => {
+      callback(isFullscreen);
+    });
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeAllListeners('window-fullscreen-changed');
+    };
+  },
 });
 
