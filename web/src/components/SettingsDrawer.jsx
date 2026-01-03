@@ -42,13 +42,18 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
     (navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
      navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
   const needsTitleBarPadding = isElectron && isMac;
+  
+  // Calculate top padding: macOS title bar padding or safe area inset
+  const topPadding = needsTitleBarPadding 
+    ? '42px' 
+    : `max(12px, env(safe-area-inset-top, 12px))`;
 
   return (
     <div className="drawerBackdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div 
         className="drawer" 
         onClick={(e) => e.stopPropagation()}
-        style={needsTitleBarPadding ? { paddingTop: '42px' } : {}}
+        style={{ paddingTop: topPadding }}
       >
         <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0, marginBottom: "8px"}}>
           <h3>Reading settings</h3>
