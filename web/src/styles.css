@@ -205,7 +205,7 @@ button, input, select {
   display:flex;
   align-items:center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: max(10px, env(safe-area-inset-top, 10px)) 14px 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
@@ -271,18 +271,19 @@ button, input, select {
   left: 0;
   right: 0;
   z-index: 10;
-  height: 38px;
+  min-height: 38px;
   display:flex;
   align-items:center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 14px;
+  padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 18px) 14px;
   border-top: 1px solid var(--border);
   background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
   font-size: 12px;
   color: var(--muted);
   transition: transform 0.2s ease;
+  box-sizing: border-box;
 }
 .bottomBar.hidden {
   transform: translateY(100%);
