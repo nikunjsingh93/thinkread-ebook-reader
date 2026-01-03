@@ -190,9 +190,19 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
 
   if (!open) return null;
 
+  // Check if we're in Electron on macOS to add top padding for title bar
+  const isMac = typeof navigator !== 'undefined' && 
+    (navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
+     navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
+  const needsTitleBarPadding = isElectron() && isMac;
+
   return (
     <div className="drawerBackdrop" onClick={onClose} role="dialog" aria-modal="true">
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+      <div 
+        className="drawer" 
+        onClick={(e) => e.stopPropagation()}
+        style={needsTitleBarPadding ? { paddingTop: '42px' } : {}}
+      >
         <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0}}>
           <h3>App Settings</h3>
           <button className="pill" onClick={onClose}>Done</button>
