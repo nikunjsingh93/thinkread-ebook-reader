@@ -493,6 +493,7 @@ export default function App() {
 
       {showBookmarks ? (
         <Bookmarks
+          open={showBookmarks}
           books={books}
           onOpenBook={(book, cfi) => {
             setBookmarkCfi(cfi);
@@ -512,20 +513,24 @@ export default function App() {
           onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
         />
       ) : selected ? (
-        <Reader
-          book={selected}
-          prefs={prefs}
-          onPrefsChange={onPrefsChange}
-          onBack={() => {
-            setSelected(null);
-            setBookmarkCfi(null);
-            setReaderUiVisible(true); // Reset UI visibility when leaving reader
-          }}
-          onToast={(t) => setToast(t)}
-          bookmarkUpdateTrigger={bookmarkUpdateTrigger}
-          bookmarkCfi={bookmarkCfi}
-          onUiVisibleChange={setReaderUiVisible}
-        />
+            <Reader
+                book={selected}
+                prefs={prefs}
+                onPrefsChange={onPrefsChange}
+                onBack={() => {
+                  setSelected(null);
+                  setBookmarkCfi(null);
+                  setReaderUiVisible(true); // Reset UI visibility when leaving reader
+                }}
+                onToast={(t) => setToast(t)}
+                bookmarkUpdateTrigger={bookmarkUpdateTrigger}
+                bookmarkCfi={bookmarkCfi}
+                onUiVisibleChange={setReaderUiVisible}
+                onBookmarkChange={() => {
+                  // Trigger bookmark check in Reader when bookmark is added/deleted
+                  setBookmarkUpdateTrigger(prev => prev + 1);
+                }}
+              />
       ) : (
         <Shelf
           books={books}

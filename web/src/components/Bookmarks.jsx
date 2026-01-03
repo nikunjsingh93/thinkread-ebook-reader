@@ -1,13 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { apiGetBookmarks, apiDeleteBookmark } from "../lib/api.js";
 
-export default function Bookmarks({ books, onOpenBook, onClose, onToast, onBookmarkChange, onConfirm }) {
+export default function Bookmarks({ books, onOpenBook, onClose, onToast, onBookmarkChange, onConfirm, open }) {
   const [bookmarks, setBookmarks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadBookmarks();
   }, []);
+
+  // Reload bookmarks when component becomes visible (when opened)
+  useEffect(() => {
+    if (open) {
+      loadBookmarks();
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadBookmarks() {
     try {

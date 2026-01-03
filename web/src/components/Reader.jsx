@@ -35,7 +35,7 @@ async function getFontUrl(filename) {
   return `/api/fonts/${filename}`;
 }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger, onUiVisibleChange }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger, onUiVisibleChange, onBookmarkChange }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -1146,6 +1146,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         await apiDeleteBookmark(existingBookmark.id);
         setHasBookmark(false);
         onToast?.("Bookmark removed");
+        // Notify parent that bookmark changed
+        if (onBookmarkChange) onBookmarkChange();
       } else {
         // Add new bookmark
         let currentPage = 0;
@@ -1169,6 +1171,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         await apiSaveBookmark(bookmark);
         setHasBookmark(true);
         onToast?.("Bookmark added");
+        // Notify parent that bookmark changed
+        if (onBookmarkChange) onBookmarkChange();
       }
     } catch (err) {
       console.error("Failed to toggle bookmark:", err);

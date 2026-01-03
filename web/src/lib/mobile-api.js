@@ -510,24 +510,62 @@ export async function mobileSaveProgress(bookId, progressData) {
 
 // Bookmarks storage
 export async function mobileGetBookmarks() {
-  return await readJsonFile(`${getDataPath()}/bookmarks.json`) || [];
+  const bookmarks = await readJsonFile(`${getDataPath()}/bookmarks.json`) || [];
+  // Return in the same format as server API: {bookmarks: []}
+  return { bookmarks };
 }
 
 export async function mobileSaveBookmark(bookmark) {
-  const bookmarks = await mobileGetBookmarks();
-  const existing = bookmarks.findIndex(b => b.id === bookmark.id);
-  if (existing >= 0) {
-    bookmarks[existing] = bookmark;
-  } else {
-    bookmarks.push(bookmark);
+  if (!bookmark || typeof bookmark !== 'object') {
+    throw new Error('Invalid bookmark data');
   }
+  
+  if (!bookmark.bookId || !bookmark.cfi) {
+    throw new Error('Bookmark must have bookId and cfi');
+  }
+  
+  const bookmarks = await readJsonFile(`${getDataPath()}/bookmarks.json`) || [];
+  
+  // Check if bookmark already exists for this book and CFI (not just by ID)
+  const existingIndex = bookmarks.findIndex(
+    b => b.bookId === bookmark.bookId && b.cfi === bookmark.cfi
+  );
+  
+  const now = Date.now();
+  
+  if (existingIndex >= 0) {
+    // Update existing bookmark
+    bookmarks[existingIndex] = {
+      ...bookmarks[existingIndex],
+      ...bookmark,
+      updatedAt: now
+    };
+  } else {
+    // Add new bookmark - generate ID if not provided
+    const newBookmark = {
+      id: bookmark.id || generateId(10),
+      ...bookmark,
+      createdAt: bookmark.createdAt || now,
+      updatedAt: now
+    };
+    bookmarks.push(newBookmark);
+  }
+  
   await writeJsonFile(`${getDataPath()}/bookmarks.json`, bookmarks);
+  return { success: true };
 }
 
 export async function mobileDeleteBookmark(id) {
-  const bookmarks = await mobileGetBookmarks();
+  const bookmarks = await readJsonFile(`${getDataPath()}/bookmarks.json`) || [];
   const filtered = bookmarks.filter(b => b.id !== id);
+  
+  if (filtered.length === bookmarks.length) {
+    // Bookmark not found
+    throw new Error('Bookmark not found');
+  }
+  
   await writeJsonFile(`${getDataPath()}/bookmarks.json`, filtered);
+  return { success: true };
 }
 
 // Fonts storage

@@ -186,7 +186,9 @@ export async function apiGetBookmarks() {
   }
   const mobile = await getMobileAPI();
   if (mobile && mobile.mobileGetBookmarks) {
-    return await mobile.mobileGetBookmarks();
+    const result = await mobile.mobileGetBookmarks();
+    // Ensure we return {bookmarks: []} format
+    return Array.isArray(result) ? { bookmarks: result } : result;
   }
   const r = await fetch("/api/bookmarks");
   if (!r.ok) throw new Error("Failed to fetch bookmarks");
