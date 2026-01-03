@@ -139,6 +139,23 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
+          <label>Screen Orientation</label>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
+            <select
+              value={prefs.orientationMode || 'portrait'}
+              onChange={(e) => onChange({ orientationMode: e.target.value })}
+            >
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+              <option value="reverse-landscape">Reverse Landscape</option>
+            </select>
+            <div className="muted" style={{fontSize: 11}}>
+              Screen orientation is always locked. Select your preferred orientation.
+            </div>
+          </div>
+        </div>
+
+        <div className="row">
           <label>Two Page Layout</label>
           <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer'}}>
             <input
@@ -270,23 +287,6 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           >
             Restore Default Colors
           </button>
-        </div>
-
-        <div className="row">
-          <label>Screen Orientation</label>
-          <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
-            <select
-              value={prefs.orientationMode || 'portrait'}
-              onChange={(e) => onChange({ orientationMode: e.target.value })}
-            >
-              <option value="portrait">Portrait</option>
-              <option value="landscape">Landscape</option>
-              <option value="reverse-landscape">Reverse Landscape</option>
-            </select>
-            <div className="muted" style={{fontSize: 11}}>
-              Screen orientation is always locked. Select your preferred orientation.
-            </div>
-          </div>
         </div>
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
