@@ -562,9 +562,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 <CoverImage book={b} progressPercent={pct} />
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
-                  <div className="small">
-                    {pct != null ? `Progress: ${pct}%` : "New"} • {formatBytes(b.sizeBytes)}
-                  </div>
                 </div>
               </div>
             );
