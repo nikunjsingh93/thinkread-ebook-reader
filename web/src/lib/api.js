@@ -77,6 +77,10 @@ export async function apiGetFonts() {
   if (isElectron()) {
     return await window.electronAPI.getFonts();
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetFonts) {
+    return await mobile.mobileGetFonts();
+  }
   const r = await fetch("/api/fonts");
   if (!r.ok) throw new Error("Failed to fetch fonts");
   return r.json();
@@ -109,6 +113,10 @@ export async function apiGetDictionaryStatus() {
   if (isElectron()) {
     return await window.electronAPI.getDictionaryStatus();
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetDictionaryStatus) {
+    return await mobile.mobileGetDictionaryStatus();
+  }
   const r = await fetch("/api/dictionary/status");
   if (!r.ok) throw new Error("Failed to fetch dictionary status");
   return r.json();
@@ -118,6 +126,10 @@ export async function apiGetDictionary() {
   if (isElectron()) {
     return await window.electronAPI.getDictionary();
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetDictionary) {
+    return await mobile.mobileGetDictionary();
+  }
   const r = await fetch("/api/dictionary");
   if (!r.ok) throw new Error("Failed to fetch dictionary");
   return r.json();
@@ -126,6 +138,10 @@ export async function apiGetDictionary() {
 export async function apiSaveDictionary(dictionary) {
   if (isElectron()) {
     return await window.electronAPI.saveDictionary(dictionary);
+  }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileSaveDictionary) {
+    return await mobile.mobileSaveDictionary(dictionary);
   }
   const r = await fetch("/api/dictionary", {
     method: "POST",
@@ -141,6 +157,10 @@ export async function apiDeleteDictionary() {
   if (isElectron()) {
     return await window.electronAPI.deleteDictionary();
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileDeleteDictionary) {
+    return await mobile.mobileDeleteDictionary();
+  }
   const r = await fetch("/api/dictionary", { method: "DELETE" });
   if (!r.ok) throw new Error("Dictionary delete failed");
   return r.json();
@@ -150,6 +170,10 @@ export async function apiGetBookmarks() {
   if (isElectron()) {
     return await window.electronAPI.getBookmarks();
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetBookmarks) {
+    return await mobile.mobileGetBookmarks();
+  }
   const r = await fetch("/api/bookmarks");
   if (!r.ok) throw new Error("Failed to fetch bookmarks");
   return r.json();
@@ -158,6 +182,10 @@ export async function apiGetBookmarks() {
 export async function apiSaveBookmark(bookmark) {
   if (isElectron()) {
     return await window.electronAPI.saveBookmark(bookmark);
+  }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileSaveBookmark) {
+    return await mobile.mobileSaveBookmark(bookmark);
   }
   const r = await fetch("/api/bookmarks", {
     method: "POST",
@@ -173,6 +201,10 @@ export async function apiDeleteBookmark(id) {
   if (isElectron()) {
     return await window.electronAPI.deleteBookmark(id);
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileDeleteBookmark) {
+    return await mobile.mobileDeleteBookmark(id);
+  }
   const r = await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error("Bookmark delete failed");
   return r.json();
@@ -182,6 +214,10 @@ export async function apiDeleteBookmark(id) {
 export async function apiGetBookFileUrl(bookId) {
   if (isElectron()) {
     return await window.electronAPI.getBookFilePath(bookId);
+  }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetBookFileUrl) {
+    return await mobile.mobileGetBookFileUrl(bookId);
   }
   return `/api/books/${bookId}/file`;
 }
@@ -195,6 +231,10 @@ export async function apiGetBookCoverUrl(bookId) {
       return null; // Cover not found
     }
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetBookCoverUrl) {
+    return await mobile.mobileGetBookCoverUrl(bookId);
+  }
   return `/api/books/${bookId}/cover`;
 }
 
@@ -202,6 +242,10 @@ export async function apiGetBookCoverUrl(bookId) {
 export async function apiGetFontFileUrl(filename) {
   if (isElectron()) {
     return await window.electronAPI.getFontFilePath(filename);
+  }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetFontFileUrl) {
+    return await mobile.mobileGetFontFileUrl(filename);
   }
   return `/api/fonts/${filename}`;
 }

@@ -237,13 +237,39 @@ export async function mobileDeleteDictionary() {
 
 // File operations
 export async function mobileGetBookFileUrl(bookId) {
-  // For mobile, we'll use Capacitor's file:// protocol
+  // For mobile, we need to read the file and create a blob URL for epub.js
   const books = await mobileGetBooks();
   const book = books.find(b => b.id === bookId);
   if (!book) throw new Error('Book not found');
   
-  // Return a path that can be used with Capacitor
-  return `capacitor://localhost/${getDataPath()}/books/${book.filename}`;
+  const bookPath = `${getDataPath()}/books/${book.filename}`;
+  
+  try {
+    // Read the file as base64
+    const result = await Filesystem.readFile({
+      path: bookPath,
+      directory: Directory.Data,
+    });
+    
+    // Convert base64 to binary string
+    const base64Data = result.data;
+    const binaryString = atob(base64Data);
+    
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Create a Blob and blob URL
+    const blob = new Blob([bytes], { type: 'application/epub+zip' });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    return blobUrl;
+  } catch (err) {
+    console.error('Error reading book file:', err);
+    throw new Error(`Failed to read book file: ${err.message}`);
+  }
 }
 
 export async function mobileGetBookCoverUrl(bookId) {

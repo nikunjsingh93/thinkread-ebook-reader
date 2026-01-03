@@ -2,6 +2,30 @@ function isElectron() {
   return typeof window !== 'undefined' && window.electronAPI;
 }
 
+// Check if we're running on mobile (Capacitor)
+function isMobile() {
+  try {
+    return typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+// Import mobile API functions (lazy load to avoid errors in non-mobile environments)
+let mobileAPI = null;
+async function getMobileAPI() {
+  if (!isMobile()) return null;
+  if (!mobileAPI) {
+    try {
+      mobileAPI = await import('./mobile-api.js');
+    } catch (e) {
+      console.warn('Mobile API not available:', e);
+      return null;
+    }
+  }
+  return mobileAPI;
+}
+
 export async function loadPrefs() {
   if (isElectron()) {
     try {
@@ -13,6 +37,21 @@ export async function loadPrefs() {
       return { ...defaults, ...p, colors: mergedColors };
     } catch (err) {
       console.warn('Error loading prefs from Electron:', err);
+      return defaultPrefs();
+    }
+  }
+  
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetPrefs) {
+    try {
+      const p = await mobile.mobileGetPrefs();
+      const defaults = defaultPrefs();
+      if (!p || Object.keys(p).length === 0) return defaults;
+      // Merge colors object to ensure all theme colors are available (especially eink)
+      const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
+      return { ...defaults, ...p, colors: mergedColors };
+    } catch (err) {
+      console.warn('Error loading prefs from mobile:', err);
       return defaultPrefs();
     }
   }
@@ -43,6 +82,16 @@ export async function savePrefs(prefs) {
       console.error('Error saving prefs to Electron:', err);
     }
     return;
+  }
+  
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileSavePrefs) {
+    try {
+      await mobile.mobileSavePrefs(prefs);
+      return;
+    } catch (err) {
+      console.error('Error saving prefs to mobile:', err);
+    }
   }
   
   // Fallback for web version
@@ -119,6 +168,16 @@ export async function loadProgress(bookId) {
     }
   }
   
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileGetProgress) {
+    try {
+      return await mobile.mobileGetProgress(bookId);
+    } catch (err) {
+      console.warn('Error loading progress from mobile:', err);
+      return null;
+    }
+  }
+  
   // Fallback for web version
   try {
     const response = await fetch(`/api/progress/${bookId}`);
@@ -183,6 +242,21 @@ export async function saveProgress(bookId, progress) {
         return;
       }
       await window.electronAPI.saveProgress(bookId, progress);
+      return { success: true };
+    } catch (err) {
+      console.error(`Error saving progress for book ${bookId}:`, err);
+      throw err;
+    }
+  }
+  
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileSaveProgress) {
+    try {
+      if (!bookId) {
+        console.error('saveProgress called without bookId');
+        return;
+      }
+      await mobile.mobileSaveProgress(bookId, progress);
       return { success: true };
     } catch (err) {
       console.error(`Error saving progress for book ${bookId}:`, err);
