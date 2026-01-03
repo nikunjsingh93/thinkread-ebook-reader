@@ -250,7 +250,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         const result = await window.electronAPI.showOpenDialog({
           properties: ['openFile', 'multiSelections'],
           filters: [
-            { name: 'Ebooks', extensions: ['epub', 'mobi'] },
+            { name: 'Ebooks', extensions: ['epub'] },
             { name: 'All Files', extensions: ['*'] }
           ]
         });
@@ -358,7 +358,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             <div>
               <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
               <div className="muted" style={{fontSize: 12}}>
-                EPUB, MOBI • {books.length} book(s)
+                EPUB • {books.length} book(s)
               </div>
             </div>
 
@@ -509,7 +509,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           <input
             ref={inputRef}
             type="file"
-            accept=".epub,.mobi"
+            accept=".epub"
             multiple
             onChange={onFileChange}
             style={{display:"none"}}
@@ -521,7 +521,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
       {filtered.length === 0 ? (
         <div className="muted" style={{padding: "18px 0"}}>
-          No books yet. Click <b>Upload</b> to add EPUB or MOBI files.
+          No books yet. Click <b>Upload</b> to add EPUB files.
         </div>
       ) : (
         <div className="grid">

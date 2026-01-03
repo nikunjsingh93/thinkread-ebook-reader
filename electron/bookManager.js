@@ -1,14 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import epubParser from 'epub';
 import { nanoid } from 'nanoid';
 import sanitize from 'sanitize-filename';
 import { getDataPaths } from './storage.js';
 import { addBook, deleteBook as dbDeleteBook, getBook } from './database.js';
-
-const execAsync = promisify(exec);
 
 function getExt(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -18,7 +14,6 @@ function getExt(filename) {
 function guessTypeByExt(ext) {
   const extLower = ext.toLowerCase();
   if (extLower === 'epub') return 'epub';
-  if (extLower === 'mobi') return 'mobi';
   return 'unknown';
 }
 
@@ -73,48 +68,40 @@ export async function uploadBooks(filePaths, dataDir) {
 
     const originalName = path.basename(filePath);
     const ext = getExt(originalName);
-    let type = guessTypeByExt(ext);
-    let storedName = originalName;
-    let finalType = type;
-    let fileSize = fs.statSync(filePath).size;
-
-    // Convert MOBI to EPUB if needed
-    if (type === 'mobi') {
-      try {
-        const outputPath = path.join(booksDir, `${path.basename(filePath, path.extname(filePath))}-${nanoid(10)}.epub`);
-        
-        await execAsync(`ebook-convert "${filePath}" "${outputPath}"`);
-        
-        storedName = path.basename(outputPath);
-        finalType = 'epub';
-        
-        const stats = fs.statSync(outputPath);
-        fileSize = stats.size;
-      } catch (err) {
-        console.error('Error converting MOBI to EPUB:', err);
-        throw new Error('Failed to convert MOBI file to EPUB. Please ensure Calibre is installed.');
-      }
-    } else {
-      // Copy file to books directory
-      const safeBase = sanitize(path.basename(originalName, path.extname(originalName))) || 'book';
-      storedName = `${safeBase}-${nanoid(10)}.${ext || 'bin'}`;
-      const destPath = path.join(booksDir, storedName);
-      fs.copyFileSync(filePath, destPath);
+    const type = guessTypeByExt(ext);
+    
+    // Reject MOBI files
+    if (ext === 'mobi') {
+      throw new Error(
+        `MOBI files are not supported. Please convert "${originalName}" to EPUB format first.\n\n` +
+        `You can use Calibre (https://calibre-ebook.com) to convert MOBI to EPUB.`
+      );
     }
+    
+    // Only accept EPUB files
+    if (type !== 'epub') {
+      throw new Error(
+        `Unsupported file type: ${ext}. Only EPUB files are supported.`
+      );
+    }
+    
+    // Copy file to books directory
+    const safeBase = sanitize(path.basename(originalName, path.extname(originalName))) || 'book';
+    const storedName = `${safeBase}-${nanoid(10)}.${ext || 'bin'}`;
+    const destPath = path.join(booksDir, storedName);
+    fs.copyFileSync(filePath, destPath);
+    const fileSize = fs.statSync(destPath).size;
 
     const id = nanoid(12);
     const safeTitle = path.basename(originalName, path.extname(originalName));
 
     // Extract cover image for epub files
-    let coverImage = null;
-    if (finalType === 'epub') {
-      const epubPath = path.join(booksDir, storedName);
-      coverImage = await extractCoverImage(epubPath, id, coversDir);
-    }
+    const epubPath = path.join(booksDir, storedName);
+    const coverImage = await extractCoverImage(epubPath, id, coversDir);
 
     const book = {
       id,
-      type: finalType,
+      type: 'epub',
       title: safeTitle,
       originalName,
       storedName,
