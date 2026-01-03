@@ -1,6 +1,7 @@
 // Mobile API adapter using Capacitor plugins
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
+import JSZip from 'jszip';
 
 const isMobile = () => Capacitor.isNativePlatform();
 
@@ -92,6 +93,49 @@ export async function mobileSaveBooks(books) {
   await writeJsonFile(`${getDataPath()}/books.json`, books);
 }
 
+export async function mobileDeleteBook(id) {
+  // Load books
+  const books = await mobileGetBooks();
+  const book = books.find(b => b.id === id);
+  
+  if (!book) {
+    throw new Error('Book not found');
+  }
+  
+  try {
+    // Delete the book file
+    const bookPath = `${getDataPath()}/books/${book.filename}`;
+    await Filesystem.deleteFile({
+      path: bookPath,
+      directory: Directory.Data,
+    });
+    
+    // Delete cover image if it exists
+    if (book.coverImage) {
+      try {
+        const coverPath = `${getDataPath()}/covers/${book.coverImage}`;
+        await Filesystem.deleteFile({
+          path: coverPath,
+          directory: Directory.Data,
+        });
+      } catch (coverErr) {
+        // Cover might not exist, that's okay
+        console.warn('Failed to delete cover image:', coverErr);
+      }
+    }
+    
+    // Remove from books list
+    const filtered = books.filter(b => b.id !== id);
+    booksCache = filtered;
+    await writeJsonFile(`${getDataPath()}/books.json`, filtered);
+    
+    return { success: true };
+  } catch (err) {
+    console.error('Error deleting book:', err);
+    throw new Error(`Failed to delete book: ${err.message}`);
+  }
+}
+
 // Generate a simple ID (similar to nanoid but simpler)
 function generateId(length = 12) {
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -165,6 +209,253 @@ export async function mobileUploadBooks(files) {
         directory: Directory.Data,
       });
       
+      // Extract cover image for EPUB files using JSZip (more reliable than epubjs)
+      let coverImage = null;
+      if (ext === 'epub') {
+        try {
+          console.log('[Cover Extraction] Starting cover extraction for EPUB');
+          // Add timeout to prevent hanging
+          const coverExtractionPromise = (async () => {
+            try {
+              // Convert base64 to ArrayBuffer for JSZip
+              console.log('[Cover Extraction] Converting base64 to ArrayBuffer');
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const arrayBuffer = bytes.buffer;
+              
+              // Check if JSZip is available
+              if (!JSZip) {
+                console.error('[Cover Extraction] JSZip is not available');
+                return null;
+              }
+              
+              // Load EPUB as ZIP
+              console.log('[Cover Extraction] Loading EPUB as ZIP');
+              const zip = await JSZip.loadAsync(arrayBuffer);
+              console.log('[Cover Extraction] ZIP loaded successfully');
+              
+              // Find the OPF file (usually in META-INF/container.xml)
+              console.log('[Cover Extraction] Looking for OPF file');
+              let opfPath = null;
+              const containerFile = zip.file('META-INF/container.xml');
+              if (containerFile) {
+                console.log('[Cover Extraction] Found container.xml');
+                const containerXml = await containerFile.async('string');
+                // Parse container.xml to find OPF path
+                const opfMatch = containerXml.match(/full-path="([^"]+\.opf)"/i);
+                if (opfMatch) {
+                  opfPath = opfMatch[1];
+                  console.log('[Cover Extraction] Found OPF path from container:', opfPath);
+                }
+              }
+              
+              // If no container.xml, try to find .opf file directly
+              if (!opfPath) {
+                console.log('[Cover Extraction] Searching for .opf files directly');
+                const opfFiles = Object.keys(zip.files).filter(name => name.endsWith('.opf'));
+                if (opfFiles.length > 0) {
+                  opfPath = opfFiles[0];
+                  console.log('[Cover Extraction] Found OPF file:', opfPath);
+                }
+              }
+              
+              if (!opfPath) {
+                console.warn('[Cover Extraction] Could not find OPF file in EPUB');
+                return null;
+              }
+              
+              // Read and parse OPF file
+              console.log('[Cover Extraction] Reading OPF file:', opfPath);
+              const opfFile = zip.file(opfPath);
+              if (!opfFile) {
+                console.warn('[Cover Extraction] OPF file not found in ZIP');
+                return null;
+              }
+              
+              const opfXml = await opfFile.async('string');
+              const opfDir = opfPath.substring(0, opfPath.lastIndexOf('/') + 1);
+              console.log('[Cover Extraction] OPF directory:', opfDir);
+              
+              // Debug: Log a sample of the OPF to understand structure
+              const manifestStart = opfXml.indexOf('<manifest');
+              const manifestEnd = opfXml.indexOf('</manifest>');
+              if (manifestStart >= 0 && manifestEnd > manifestStart) {
+                const manifestSection = opfXml.substring(manifestStart, manifestEnd + 10);
+                console.log('[Cover Extraction] Manifest section (first 500 chars):', manifestSection.substring(0, 500));
+              }
+              
+              // Find cover image reference in OPF
+              console.log('[Cover Extraction] Searching for cover image in OPF');
+              let coverHref = null;
+              let coverMimeType = 'image/jpeg';
+              
+              // Method 1: Look for metadata cover property
+              const coverIdMatch = opfXml.match(/<meta[^>]*name=["']cover["'][^>]*content=["']([^"']+)["']/i);
+              if (coverIdMatch) {
+                console.log('[Cover Extraction] Found cover metadata:', coverIdMatch[1]);
+                const coverId = coverIdMatch[1];
+                // Find item with this id in manifest
+                const itemMatch = opfXml.match(new RegExp(`<item[^>]*id=["']${coverId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*href=["']([^"']+)["']`, 'i'));
+                if (itemMatch) {
+                  coverHref = itemMatch[1];
+                  console.log('[Cover Extraction] Found cover href from metadata:', coverHref);
+                  // Try to get media-type
+                  const mediaTypeMatch = opfXml.match(new RegExp(`<item[^>]*id=["']${coverId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*media-type=["']([^"']+)["']`, 'i'));
+                  if (mediaTypeMatch) {
+                    coverMimeType = mediaTypeMatch[1];
+                  }
+                }
+              }
+              
+              // Method 2: Look for item with properties="cover-image"
+              if (!coverHref) {
+                console.log('[Cover Extraction] Trying method 2: cover-image property');
+                const coverItemMatch = opfXml.match(/<item[^>]*properties=["']cover-image["'][^>]*href=["']([^"']+)["']/i);
+                if (coverItemMatch) {
+                  coverHref = coverItemMatch[1];
+                  console.log('[Cover Extraction] Found cover href from cover-image property:', coverHref);
+                  // Try to get media-type
+                  const mediaTypeMatch = opfXml.match(/<item[^>]*properties=["']cover-image["'][^>]*media-type=["']([^"']+)["']/i);
+                  if (mediaTypeMatch) {
+                    coverMimeType = mediaTypeMatch[1];
+                  }
+                }
+              }
+              
+              // Method 3: Find first image in manifest (more flexible regex)
+              if (!coverHref) {
+                console.log('[Cover Extraction] Trying method 3: first image in manifest');
+                // Try flexible regex that handles attributes in any order
+                const imageMatches = opfXml.matchAll(/<item[^>]*media-type=["']image\/(jpeg|jpg|png|gif|webp)["'][^>]*>/gi);
+                for (const match of imageMatches) {
+                  const itemTag = match[0];
+                  // Extract href from the item tag (attributes can be in any order)
+                  const hrefMatch = itemTag.match(/href=["']([^"']+)["']/i);
+                  if (hrefMatch) {
+                    coverHref = hrefMatch[1];
+                    // Extract media-type
+                    const mediaTypeMatch = itemTag.match(/media-type=["']image\/(jpeg|jpg|png|gif|webp)["']/i);
+                    if (mediaTypeMatch) {
+                      coverMimeType = `image/${mediaTypeMatch[1]}`;
+                    }
+                    console.log('[Cover Extraction] Found first image in manifest:', coverHref);
+                    break; // Use first image found
+                  }
+                }
+              }
+              
+              // Method 4: Parse all items and find images (most robust)
+              if (!coverHref) {
+                console.log('[Cover Extraction] Trying method 4: parse all items');
+                // Find all item tags
+                const allItems = opfXml.matchAll(/<item[^>]+>/gi);
+                for (const itemMatch of allItems) {
+                  const itemTag = itemMatch[0];
+                  // Check if it's an image
+                  if (itemTag.match(/media-type=["']image\//i)) {
+                    const hrefMatch = itemTag.match(/href=["']([^"']+)["']/i);
+                    if (hrefMatch) {
+                      coverHref = hrefMatch[1];
+                      const mediaTypeMatch = itemTag.match(/media-type=["']([^"']+)["']/i);
+                      if (mediaTypeMatch) {
+                        coverMimeType = mediaTypeMatch[1];
+                      }
+                      console.log('[Cover Extraction] Found image item:', coverHref);
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              if (!coverHref) {
+                console.warn('[Cover Extraction] Could not find cover image in OPF');
+                return null;
+              }
+              
+              // Resolve relative path
+              const coverPath = coverHref.startsWith('/') ? coverHref.substring(1) : (opfDir + coverHref);
+              console.log('[Cover Extraction] Resolved cover path:', coverPath);
+              
+              // Get cover image from ZIP
+              const coverFile = zip.file(coverPath);
+              if (!coverFile) {
+                console.warn(`[Cover Extraction] Cover image file not found: ${coverPath}`);
+                // Try alternative path resolution
+                const altPath = coverHref.replace(/^\.\//, '').replace(/^\//, '');
+                const altCoverFile = zip.file(altPath);
+                if (altCoverFile) {
+                  console.log(`[Cover Extraction] Found cover at alternative path: ${altPath}`);
+                  const coverBase64 = await altCoverFile.async('base64');
+                  const coverExt = coverMimeType.includes('jpeg') || coverMimeType.includes('jpg') ? 'jpg' : 
+                                  coverMimeType.includes('png') ? 'png' : 'jpg';
+                  const coverFilename = `${id}.${coverExt}`;
+                  const coverPathStorage = `${getDataPath()}/covers/${coverFilename}`;
+                  await ensureDirectory(`${getDataPath()}/covers`);
+                  await Filesystem.writeFile({
+                    path: coverPathStorage,
+                    data: coverBase64,
+                    directory: Directory.Data,
+                  });
+                  console.log('[Cover Extraction] Cover saved successfully:', coverFilename);
+                  return coverFilename;
+                }
+                return null;
+              }
+              
+              // Get cover image as base64
+              console.log('[Cover Extraction] Extracting cover image as base64');
+              const coverBase64 = await coverFile.async('base64');
+              
+              // Determine file extension
+              const coverExt = coverMimeType.includes('jpeg') || coverMimeType.includes('jpg') ? 'jpg' : 
+                              coverMimeType.includes('png') ? 'png' : 'jpg';
+              const coverFilename = `${id}.${coverExt}`;
+              const coverPathStorage = `${getDataPath()}/covers/${coverFilename}`;
+              
+              // Ensure covers directory exists
+              await ensureDirectory(`${getDataPath()}/covers`);
+              
+              // Save cover image
+              console.log('[Cover Extraction] Saving cover image to:', coverPathStorage);
+              await Filesystem.writeFile({
+                path: coverPathStorage,
+                data: coverBase64,
+                directory: Directory.Data,
+              });
+              
+              console.log('[Cover Extraction] Cover saved successfully:', coverFilename);
+              return coverFilename;
+            } catch (zipErr) {
+              console.error('[Cover Extraction] Error extracting cover with JSZip:', zipErr);
+              console.error('[Cover Extraction] Error stack:', zipErr.stack);
+              return null;
+            }
+          })();
+          
+          // Wait for cover extraction with overall timeout
+          coverImage = await Promise.race([
+            coverExtractionPromise,
+            new Promise((resolve) => {
+              setTimeout(() => {
+                console.warn('[Cover Extraction] Timeout after 10 seconds');
+                resolve(null);
+              }, 10000);
+            })
+          ]);
+          console.log('[Cover Extraction] Final result:', coverImage);
+        } catch (coverErr) {
+          console.error('[Cover Extraction] Failed to extract cover image:', coverErr);
+          console.error('[Cover Extraction] Error stack:', coverErr.stack);
+          // Continue without cover - not a critical error
+          coverImage = null;
+        }
+      } else {
+        console.log('[Cover Extraction] Skipping cover extraction for non-EPUB file');
+      }
+      
       // Create book entry
       const book = {
         id,
@@ -174,7 +465,7 @@ export async function mobileUploadBooks(files) {
         storedName,
         filename: storedName, // Alias for compatibility
         sizeBytes: file.size,
-        coverImage: null, // Cover extraction can be added later
+        coverImage: coverImage,
         addedAt: Date.now(),
       };
       
@@ -408,7 +699,38 @@ export async function mobileGetBookCoverUrl(bookId) {
   const book = books.find(b => b.id === bookId);
   if (!book || !book.coverImage) return null;
   
-  return `capacitor://localhost/${getDataPath()}/covers/${bookId}.jpg`;
+  const coverPath = `${getDataPath()}/covers/${book.coverImage}`;
+  
+  try {
+    // Read the cover image as base64
+    const result = await Filesystem.readFile({
+      path: coverPath,
+      directory: Directory.Data,
+    });
+    
+    // Convert base64 to binary string
+    const base64Data = result.data;
+    const binaryString = atob(base64Data);
+    
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Determine MIME type based on file extension
+    const ext = book.coverImage.split('.').pop().toLowerCase();
+    const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+    
+    // Create a Blob and blob URL
+    const blob = new Blob([bytes], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    return blobUrl;
+  } catch (err) {
+    console.error('Error reading cover image:', err);
+    return null;
+  }
 }
 
 export async function mobileGetFontFileUrl(filename) {

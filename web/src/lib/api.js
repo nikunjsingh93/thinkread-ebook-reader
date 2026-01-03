@@ -68,6 +68,10 @@ export async function apiDeleteBook(id) {
   if (isElectron()) {
     return await window.electronAPI.deleteBook(id);
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileDeleteBook) {
+    return await mobile.mobileDeleteBook(id);
+  }
   const r = await fetch(`/api/books/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error("Delete failed");
   return r.json();

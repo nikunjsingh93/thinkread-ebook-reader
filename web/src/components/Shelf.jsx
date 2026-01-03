@@ -19,9 +19,15 @@ function coverLetter(title) {
 function CoverImage({ book, progressPercent }) {
   const [coverUrl, setCoverUrl] = useState(null);
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
+  const isMobile = () => typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
 
   useEffect(() => {
     if (book.coverImage && isElectron()) {
+      apiGetBookCoverUrl(book.id)
+        .then(url => setCoverUrl(url))
+        .catch(() => setCoverUrl(null));
+    } else if (book.coverImage && isMobile()) {
+      // For mobile, use capacitor:// URL for covers
       apiGetBookCoverUrl(book.id)
         .then(url => setCoverUrl(url))
         .catch(() => setCoverUrl(null));
