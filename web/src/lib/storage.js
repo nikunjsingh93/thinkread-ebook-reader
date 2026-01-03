@@ -125,6 +125,7 @@ export function defaultPrefs() {
   return {
     fontFamily: "serif",
     fontSize: 18,       // px
+    fontWeight: 400,    // 300-700 (normal=400, bold=700)
     lineHeight: 1.6,
     verticalMargin: 30,   // px (top/bottom padding)
     horizontalMargin: 46, // px (left/right padding)

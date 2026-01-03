@@ -5,6 +5,8 @@ import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetBookFileUrl, apiGetFontFileUrl } from "../lib/api.js";
+import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -90,6 +92,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const bg = p.colors?.[themeMode]?.bg || p.bg || "#f6f1e7";
     const fg = p.colors?.[themeMode]?.fg || p.fg || "#1a1a1a";
     const fontFamily = p.fontFamily || "serif";
+    const fontWeight = p.fontWeight || 400;
 
     // Set container background too
     if (hostRef.current) {
@@ -114,6 +117,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         body: {
           "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
           "color": `${fg} !important`,
           "background": `${bg} !important`,
@@ -123,12 +127,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           "color": `${fg} !important`,
           "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
         },
         // Headings - apply color and font-family but preserve relative sizing
         "h1, h2, h3, h4, h5, h6": {
           "color": `${fg} !important`,
           "font-family": `${actualFontFamily} !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
         }
       });
@@ -227,6 +233,33 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       console.error("Error applying theme:", err);
     }
   }
+
+  // Handle Android back button in Reader
+  useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+
+    const backButtonListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      // If settings drawer is open, close it
+      if (drawerOpen) {
+        setDrawerOpen(false);
+        return;
+      }
+      
+      // If TOC is open, close it
+      if (tocOpen) {
+        setTocOpen(false);
+        return;
+      }
+      
+      // Otherwise, go back to library
+      onBack?.();
+    });
+
+    return () => {
+      backButtonListener.then(listener => listener.remove());
+    };
+  }, [drawerOpen, tocOpen, onBack]);
 
   useEffect(() => {
     if (book.type !== "epub") {

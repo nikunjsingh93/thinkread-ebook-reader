@@ -103,6 +103,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
+          <label>Font weight</label>
+          <input
+            type="range"
+            min="300"
+            max="700"
+            step="100"
+            value={prefs.fontWeight || 400}
+            onChange={(e) => onChange({ fontWeight: Number(e.target.value) })}
+          />
+          <div style={{width: 42, textAlign:"right"}}>{prefs.fontWeight || 400}</div>
+        </div>
+
+        <div className="row">
           <label>Vertical margins</label>
           <input
             type="range"

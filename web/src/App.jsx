@@ -10,6 +10,7 @@ import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 import { ScreenOrientation } from "@capacitor/screen-orientation";
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 
 // Register custom orientation lock plugin
 const OrientationLock = registerPlugin('OrientationLock');
@@ -19,6 +20,7 @@ function defaultPrefs() {
   return {
     fontFamily: "serif",
     fontSize: 18,
+    fontWeight: 400,
     lineHeight: 1.6,
     verticalMargin: 30,
     horizontalMargin: 46,
@@ -258,6 +260,38 @@ export default function App() {
       document.removeEventListener('contextmenu', preventContextMenu, true);
     };
   }, []);
+
+  // Handle Android back button (only when not in Reader - Reader handles its own back button)
+  useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+
+    const backButtonListener = CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+      // Don't handle back button when in Reader - let Reader component handle it
+      if (selected) {
+        return; // Reader will handle this
+      }
+      
+      // If settings drawer is open, close it
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
+      
+      // If bookmarks are open, close them
+      if (showBookmarks) {
+        setShowBookmarks(false);
+        return;
+      }
+      
+      // Otherwise, exit the app (default behavior)
+      CapacitorApp.exitApp();
+    });
+
+    return () => {
+      backButtonListener.then(listener => listener.remove());
+    };
+  }, [settingsOpen, showBookmarks, selected]);
 
   useEffect(() => {
     let t;
