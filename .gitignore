@@ -77,3 +77,81 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Android build outputs
+web/android/app/build/
+web/android/.gradle/
+web/android/build/
+web/android/app/*.keystore
+web/android/keystore.properties
+web/android/local.properties
+web/android/app/release/
+*.apk
+*.aab
+*.apks
+*.apk.idsig
+
+# Android temporary files
+web/android/app/src/main/assets/capacitor.plugins.json
+web/android/.idea/
+web/android/captures/
+web/android/externalNativeBuild/
+
+# Icon generation temporary files
+web/temp-*.png
+web/temp-*.py
+web/temp-iconset.iconset/
+web/temp-padded-logo.png
+web/temp-resized-logo.png
+web/temp-scaled-logo.png
+web/create-android-icons-from-icns.js
+
+# Capacitor sync files (generated)
+web/android/app/src/main/assets/capacitor.config.json
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+!gradle-wrapper.properties
+
+# Android Studio
+*.iml
+.gradle
+local.properties
+*.hprof
+.cxx/
+.externalNativeBuild
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Electron build artifacts
+electron/dist/
+electron/out/
+electron/build/
+
+# Temporary icon files
+build/logo.svg.png
+build/icon.iconset/
+
