@@ -33,17 +33,7 @@ export async function apiGetBooks() {
   }
   const mobile = await getMobileAPI();
   if (mobile) {
-    // On mobile, try server API first (since uploads use server API)
-    // Fall back to local storage if server is not available
-    try {
-      const r = await fetch("/api/books");
-      if (r.ok) {
-        return await r.json();
-      }
-    } catch (err) {
-      // Server not available, use local storage
-    }
-    // Fallback to local storage
+    // On mobile, use local storage (mobile upload saves locally)
     const books = await mobile.mobileGetBooks();
     // Normalize format: mobile returns array, but API should return {books: []}
     return Array.isArray(books) ? { books } : books;
@@ -58,6 +48,13 @@ export async function apiUploadBooks(filePaths) {
     // In Electron, filePaths is an array of file paths (strings)
     return await window.electronAPI.uploadBooks(filePaths);
   }
+  const mobile = await getMobileAPI();
+  if (mobile && typeof mobile.mobileUploadBooks === 'function') {
+    // On mobile, use mobile upload which saves files locally
+    console.log('Using mobile upload function');
+    return await mobile.mobileUploadBooks(filePaths);
+  }
+  console.warn('Mobile API not available, falling back to server API');
   // Fallback for web version - filePaths is an array of File objects
   const fd = new FormData();
   for (const f of filePaths) fd.append("files", f);
