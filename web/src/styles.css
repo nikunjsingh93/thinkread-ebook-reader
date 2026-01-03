@@ -209,10 +209,12 @@ button, input, select {
   border-bottom: 1px solid var(--border);
   background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
-  transition: transform 0.2s ease;
+  transition: top 0.2s ease, opacity 0.2s ease;
 }
 .readerTop.hidden {
-  transform: translateY(-100%);
+  top: -100px !important; /* Move completely off-screen */
+  opacity: 0;
+  pointer-events: none;
 }
 .readerTitle{
   font-weight: 700;

@@ -33,7 +33,7 @@ async function getFontUrl(filename) {
   return `/api/fonts/${filename}`;
 }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger, onUiVisibleChange }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -1181,7 +1181,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     try { await renditionRef.current?.next(); } catch {}
   }
   function toggleUI() {
-    setUiVisible(v => !v);
+    setUiVisible(v => {
+      const newValue = !v;
+      onUiVisibleChange?.(newValue);
+      return newValue;
+    });
   }
 
   async function goToPercent(percent, isDragging = false) {
@@ -1406,9 +1410,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const verticalMargin = clamp(prefs.verticalMargin || 30, 0, 180);
   const horizontalMargin = clamp(prefs.horizontalMargin || 46, 0, 180);
 
+  // Check if we're in Electron on macOS to add padding for title bar
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isMac = typeof navigator !== 'undefined' && 
+    (navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
+     navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
+  const needsTitleBarPadding = isElectron && isMac;
+
   return (
     <div className="readerShell">
-      <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
+      <div 
+        className={`readerTop ${!uiVisible ? 'hidden' : ''}`}
+        style={needsTitleBarPadding ? {
+          top: '28px',
+        } : {}}
+      >
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
           <button className="pill" onClick={onBack}>← Library</button>
           <button

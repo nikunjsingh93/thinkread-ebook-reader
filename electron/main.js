@@ -45,7 +45,7 @@ function createWindow() {
       contextIsolation: true,
       webSecurity: true,
     },
-    titleBarStyle: 'hiddenInset', // macOS style with native traffic lights
+    frame: process.platform === 'darwin' ? false : true, // Remove native frame on macOS, use custom MacTitleBar
     backgroundColor: '#ffffff',
     show: false, // Don't show until ready
   });
@@ -302,10 +302,10 @@ ipcMain.handle('minimize-window', () => {
 
 ipcMain.handle('maximize-window', () => {
   if (mainWindow) {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
+    if (mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
     } else {
-      mainWindow.maximize();
+      mainWindow.setFullScreen(true);
     }
   }
 });

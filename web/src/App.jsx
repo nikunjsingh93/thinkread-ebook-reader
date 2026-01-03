@@ -5,6 +5,7 @@ import Toast from "./components/Toast.jsx";
 import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
 import Bookmarks from "./components/Bookmarks.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
+import MacTitleBar from "./components/MacTitleBar.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
@@ -235,6 +236,7 @@ export default function App() {
   const [bookmarkCfi, setBookmarkCfi] = useState(null);
   const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState(null); // { open: true, title, message, onConfirm, onCancel }
+  const [readerUiVisible, setReaderUiVisible] = useState(true);
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -390,10 +392,23 @@ export default function App() {
     }
   }
 
+  // Check if we're in Electron on macOS to add padding for title bar
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isMac = typeof navigator !== 'undefined' && 
+    (navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
+     navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
+  const needsTitleBarPadding = isElectron && isMac;
+
   return (
     <div className="appShell">
+      <MacTitleBar hidden={selected && !readerUiVisible} />
       {!selected && (
-        <div className="topbar">
+        <div 
+          className="topbar"
+          style={needsTitleBarPadding ? { 
+            marginTop: '28px',
+          } : {}}
+        >
           <div className="brand">
             <img src="/logo.svg" alt="ThinkRead" style={{height: '24px', width: '24px', objectFit: 'contain'}} onError={(e) => {
               // Fallback to PNG if SVG doesn't exist
@@ -471,10 +486,12 @@ export default function App() {
           onBack={() => {
             setSelected(null);
             setBookmarkCfi(null);
+            setReaderUiVisible(true); // Reset UI visibility when leaving reader
           }}
           onToast={(t) => setToast(t)}
           bookmarkUpdateTrigger={bookmarkUpdateTrigger}
           bookmarkCfi={bookmarkCfi}
+          onUiVisibleChange={setReaderUiVisible}
         />
       ) : (
         <Shelf

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function MacTitleBar() {
+export default function MacTitleBar({ hidden = false }) {
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
   
   // Check if we're on macOS - in Electron, we can check via userAgent or platform
@@ -34,15 +34,18 @@ export default function MacTitleBar() {
     <div
       style={{
         position: 'fixed',
-        top: 0,
+        top: hidden ? '-28px' : '0',
         left: 0,
         right: 0,
         height: '28px',
         zIndex: 10000,
-        WebkitAppRegion: 'drag',
-        appRegion: 'drag',
+        WebkitAppRegion: hidden ? 'no-drag' : 'drag',
+        appRegion: hidden ? 'no-drag' : 'drag',
         backgroundColor: 'var(--bg)',
-        pointerEvents: 'none',
+        pointerEvents: hidden ? 'none' : 'auto', // Disable pointer events when hidden
+        transition: 'top 0.2s ease, opacity 0.2s ease',
+        cursor: 'default',
+        opacity: hidden ? 0 : 1, // Fade out for complete hiding
       }}
     >
       {/* Traffic light buttons */}
