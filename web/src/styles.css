@@ -64,11 +64,11 @@ button, input, select {
 
 /* top bar */
 .topbar{
-  height: 54px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: max(8px, env(safe-area-inset-top, 8px)) 18px 0 18px;
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(10px);
   background: var(--topbar-bg);
@@ -98,7 +98,7 @@ button, input, select {
 
 /* shelf */
 .page{
-  padding: 18px;
+  padding: 12px 18px;
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;

@@ -33,7 +33,20 @@ export async function apiGetBooks() {
   }
   const mobile = await getMobileAPI();
   if (mobile) {
-    return await mobile.mobileGetBooks();
+    // On mobile, try server API first (since uploads use server API)
+    // Fall back to local storage if server is not available
+    try {
+      const r = await fetch("/api/books");
+      if (r.ok) {
+        return await r.json();
+      }
+    } catch (err) {
+      // Server not available, use local storage
+    }
+    // Fallback to local storage
+    const books = await mobile.mobileGetBooks();
+    // Normalize format: mobile returns array, but API should return {books: []}
+    return Array.isArray(books) ? { books } : books;
   }
   const r = await fetch("/api/books");
   if (!r.ok) throw new Error("Failed to fetch books");
