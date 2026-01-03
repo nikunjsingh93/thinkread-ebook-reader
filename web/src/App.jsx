@@ -22,6 +22,7 @@ function defaultPrefs() {
     fontSize: 18,
     fontWeight: 400,
     lineHeight: 1.6,
+    textAlign: "justify",
     verticalMargin: 30,
     horizontalMargin: 46,
     themeMode: "pure-white",

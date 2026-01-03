@@ -93,6 +93,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const fg = p.colors?.[themeMode]?.fg || p.fg || "#1a1a1a";
     const fontFamily = p.fontFamily || "serif";
     const fontWeight = p.fontWeight || 400;
+    const textAlign = p.textAlign || "justify";
 
     // Set container background too
     if (hostRef.current) {
@@ -119,6 +120,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           "font-size": `${fontSize}px !important`,
           "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
+          "text-align": `${textAlign} !important`,
           "color": `${fg} !important`,
           "background": `${bg} !important`,
         },
@@ -129,6 +131,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           "font-size": `${fontSize}px !important`,
           "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
+          "text-align": `${textAlign} !important`,
         },
         // Headings - apply color and font-family but preserve relative sizing
         "h1, h2, h3, h4, h5, h6": {
@@ -208,6 +211,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         contents.document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
         
         // Add comprehensive CSS to prevent all selection and callout behaviors
+        // Also prevent images from being split across pages
         const style = contents.document.createElement('style');
         style.textContent = `
           *, *::before, *::after {
@@ -222,6 +226,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             -webkit-touch-callout: none !important;
             -webkit-user-select: none !important;
             user-select: none !important;
+          }
+          img {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            -webkit-column-break-inside: avoid !important;
+            display: block !important;
+            max-width: 100% !important;
+            height: auto !important;
           }
         `;
         contents.document.head.appendChild(style);

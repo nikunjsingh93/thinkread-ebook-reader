@@ -152,6 +152,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
+          <label>Text alignment</label>
+          <select
+            value={prefs.textAlign || 'justify'}
+            onChange={(e) => onChange({ textAlign: e.target.value })}
+          >
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+            <option value="justify">Justify</option>
+          </select>
+        </div>
+
+        <div className="row">
           <label>Screen Orientation</label>
           <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
             <select

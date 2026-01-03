@@ -525,12 +525,13 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         )}
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="muted" style={{padding: "18px 0"}}>
-          No books yet. Click <b>Upload</b> to add EPUB files.
-        </div>
-      ) : (
-        <div className="grid">
+      <div style={{flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0}}>
+        {filtered.length === 0 ? (
+          <div className="muted" style={{padding: "18px 0"}}>
+            No books yet. Click <b>Upload</b> to add EPUB files.
+          </div>
+        ) : (
+          <div className="grid">
           {filtered.map((b) => {
             const progress = progressData[b.id];
             // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
@@ -572,8 +573,9 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
             );
           })}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

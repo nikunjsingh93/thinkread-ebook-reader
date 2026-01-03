@@ -98,6 +98,10 @@ button, input, select {
 
 /* shelf */
 .page{
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
   padding: 12px 18px;
   max-width: 1200px;
   margin: 0 auto;

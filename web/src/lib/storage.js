@@ -127,6 +127,7 @@ export function defaultPrefs() {
     fontSize: 18,       // px
     fontWeight: 400,    // 300-700 (normal=400, bold=700)
     lineHeight: 1.6,
+    textAlign: "justify",  // "left", "center", "right", "justify"
     verticalMargin: 30,   // px (top/bottom padding)
     horizontalMargin: 46, // px (left/right padding)
     themeMode: "pure-white",    // "pure-white", "white", "dark", "pure-black"
