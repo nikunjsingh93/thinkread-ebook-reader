@@ -9,6 +9,30 @@ function getDataPath() {
   return 'data';
 }
 
+// Helper to ensure directory exists
+async function ensureDirectory(dirPath) {
+  try {
+    await Filesystem.mkdir({
+      path: dirPath,
+      directory: Directory.Data,
+      recursive: true,
+    });
+  } catch (e) {
+    // Directory might already exist, that's okay
+    // Only throw if it's not a "directory exists" error
+    if (!e.message?.includes('already exists') && !e.message?.includes('EEXIST')) {
+      console.warn(`Failed to create directory ${dirPath}:`, e);
+    }
+  }
+}
+
+// Helper to get parent directory from a file path
+function getParentDirectory(filePath) {
+  const parts = filePath.split('/');
+  parts.pop(); // Remove filename
+  return parts.join('/');
+}
+
 // Helper to read JSON file
 async function readJsonFile(path) {
   try {
@@ -30,6 +54,12 @@ async function readJsonFile(path) {
 
 // Helper to write JSON file
 async function writeJsonFile(path, data) {
+  // Ensure parent directory exists before writing
+  const parentDir = getParentDirectory(path);
+  if (parentDir) {
+    await ensureDirectory(parentDir);
+  }
+  
   await Filesystem.writeFile({
     path,
     data: JSON.stringify(data, null, 2),
@@ -84,17 +114,12 @@ export async function mobileUploadBooks(files) {
   const books = await mobileGetBooks();
   const added = [];
   
+  // Ensure base data directory exists first
+  await ensureDirectory(getDataPath());
+  
   // Ensure books directory exists
   const booksDir = `${getDataPath()}/books`;
-  try {
-    await Filesystem.mkdir({
-      path: booksDir,
-      directory: Directory.Data,
-      recursive: true,
-    });
-  } catch (e) {
-    // Directory might already exist, that's okay
-  }
+  await ensureDirectory(booksDir);
   
   for (const file of files) {
     try {
