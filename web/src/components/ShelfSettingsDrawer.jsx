@@ -5,6 +5,7 @@ import {
   saveDictionary,
   loadDictionary
 } from "../lib/dictionary.js";
+import PrivacyPolicy from "./PrivacyPolicy.jsx";
 
 export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm }) {
   const [fonts, setFonts] = useState([]);
@@ -14,6 +15,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
   const [wordCount, setWordCount] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadMessage, setDownloadMessage] = useState('');
+  const [privacyPolicyOpen, setPrivacyPolicyOpen] = useState(false);
 
   useEffect(() => {
     function onKey(e) {
@@ -402,8 +404,31 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
             Long-press any word while reading to see its definition. The dictionary is saved on the server and persists across sessions.
           </div>
+
+          <div style={{marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border)'}}>
+            <div className="row">
+              <label>About</label>
+              <div style={{display: 'flex', flexDirection: 'column', gap: '8px', width: '100%'}}>
+                <button
+                  className="pill"
+                  onClick={() => setPrivacyPolicyOpen(true)}
+                  style={{width: '100%', textAlign: 'left', justifyContent: 'flex-start'}}
+                >
+                  Privacy Policy
+                </button>
+                <div className="muted" style={{fontSize: 12}}>
+                  ThinkRead v1.1
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+      
+      <PrivacyPolicy
+        open={privacyPolicyOpen}
+        onClose={() => setPrivacyPolicyOpen(false)}
+      />
     </div>
   );
 }
