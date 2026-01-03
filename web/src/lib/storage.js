@@ -27,51 +27,55 @@ async function getMobileAPI() {
 }
 
 export async function loadPrefs() {
+  const defaults = defaultPrefs();
+  let loadedPrefs = null;
+  
   if (isElectron()) {
     try {
       const p = await window.electronAPI.getPrefs();
-      const defaults = defaultPrefs();
-      if (!p) return defaults;
-      // Merge colors object to ensure all theme colors are available (especially eink)
-      const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
-      return { ...defaults, ...p, colors: mergedColors };
+      if (p) loadedPrefs = p;
     } catch (err) {
       console.warn('Error loading prefs from Electron:', err);
-      return defaultPrefs();
+    }
+  } else {
+    const mobile = await getMobileAPI();
+    if (mobile && mobile.mobileGetPrefs) {
+      try {
+        const p = await mobile.mobileGetPrefs();
+        if (p && Object.keys(p).length > 0) loadedPrefs = p;
+      } catch (err) {
+        console.warn('Error loading prefs from mobile:', err);
+      }
+    } else {
+      // Fallback for web version
+      try {
+        const response = await fetch('/api/prefs');
+        if (response.ok) {
+          loadedPrefs = await response.json();
+        }
+      } catch (err) {
+        console.warn('Error loading prefs from server:', err);
+      }
     }
   }
   
-  const mobile = await getMobileAPI();
-  if (mobile && mobile.mobileGetPrefs) {
-    try {
-      const p = await mobile.mobileGetPrefs();
-      const defaults = defaultPrefs();
-      if (!p || Object.keys(p).length === 0) return defaults;
-      // Merge colors object to ensure all theme colors are available (especially eink)
-      const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
-      return { ...defaults, ...p, colors: mergedColors };
-    } catch (err) {
-      console.warn('Error loading prefs from mobile:', err);
-      return defaultPrefs();
-    }
+  if (!loadedPrefs) return defaults;
+  
+  // Migrate old lockOrientation boolean to orientationMode string
+  if (loadedPrefs.lockOrientation !== undefined && !loadedPrefs.orientationMode) {
+    // If lockOrientation was true, keep current orientation, otherwise default to portrait
+    loadedPrefs.orientationMode = loadedPrefs.lockOrientation ? 'portrait' : 'portrait';
+    delete loadedPrefs.lockOrientation;
   }
   
-  // Fallback for web version
-  try {
-    const response = await fetch('/api/prefs');
-    if (!response.ok) {
-      console.warn('Failed to load prefs from server, using defaults');
-      return defaultPrefs();
-    }
-    const p = await response.json();
-    const defaults = defaultPrefs();
-    // Merge colors object to ensure all theme colors are available (especially eink)
-    const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
-    return { ...defaults, ...p, colors: mergedColors };
-  } catch (err) {
-    console.warn('Error loading prefs from server:', err);
-    return defaultPrefs();
+  // Ensure orientationMode exists
+  if (!loadedPrefs.orientationMode) {
+    loadedPrefs.orientationMode = 'portrait';
   }
+  
+  // Merge colors object to ensure all theme colors are available (especially eink)
+  const mergedColors = { ...defaults.colors, ...(loadedPrefs.colors || {}) };
+  return { ...defaults, ...loadedPrefs, colors: mergedColors };
 }
 
 export async function savePrefs(prefs) {
@@ -153,7 +157,7 @@ export function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
     twoPageLayout: false, // Enable two-page side-by-side layout
-    lockOrientation: false, // Lock screen orientation to current aspect ratio
+    orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
   };
 }
 

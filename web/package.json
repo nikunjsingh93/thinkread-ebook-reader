@@ -15,6 +15,7 @@
     "@capacitor/core": "^8.0.0",
     "@capacitor/dialog": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/screen-orientation": "^8.0.0",
     "@capacitor/status-bar": "^8.0.0",
     "epubjs": "^0.3.93",
     "jszip": "^3.10.1",

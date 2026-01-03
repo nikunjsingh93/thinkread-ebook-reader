@@ -12,6 +12,7 @@ dependencies {
     implementation project(':capacitor-app')
     implementation project(':capacitor-dialog')
     implementation project(':capacitor-filesystem')
+    implementation project(':capacitor-screen-orientation')
     implementation project(':capacitor-status-bar')
 
 }

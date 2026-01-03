@@ -8,6 +8,11 @@ import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import MacTitleBar from "./components/MacTitleBar.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
+import { ScreenOrientation } from "@capacitor/screen-orientation";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
+// Register custom orientation lock plugin
+const OrientationLock = registerPlugin('OrientationLock');
 
 // Fallback function for synchronous defaults (for error cases)
 function defaultPrefs() {
@@ -29,7 +34,7 @@ function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",
     twoPageLayout: false,
-    lockOrientation: false,
+    orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
   };
 }
 
@@ -310,79 +315,107 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Function to lock/unlock orientation (called from user interaction)
-  const handleOrientationLock = async (shouldLock) => {
-    // Check if Screen Orientation API is available
-    if (!screen?.orientation || typeof screen.orientation.lock !== 'function') {
-      return;
-    }
-
+  // Handle orientation mode changes (always locked, user selects which orientation)
+  const handleOrientationChange = async (orientationMode) => {
+    const isMobile = Capacitor.isNativePlatform();
+    
     try {
-      if (shouldLock) {
-        // Lock to current orientation
-        const currentType = screen.orientation.type;
+      if (isMobile) {
+        // Use custom plugin to set orientation
+        console.log('Setting orientation to:', orientationMode);
+        try {
+          await OrientationLock.setOrientation({ orientation: orientationMode });
+        } catch (err) {
+          console.error('Failed to set orientation:', err);
+        }
+      } else {
+        // Use web Screen Orientation API for desktop/web
+        if (!screen?.orientation || typeof screen.orientation.lock !== 'function') {
+          return;
+        }
+
         let orientationToLock;
-        
-        // Determine orientation from current type
-        if (currentType && currentType.includes('portrait')) {
-          orientationToLock = 'portrait';
-        } else if (currentType && currentType.includes('landscape')) {
-          orientationToLock = 'landscape';
+        if (orientationMode === 'portrait') {
+          orientationToLock = 'portrait-primary';
+        } else if (orientationMode === 'landscape') {
+          orientationToLock = 'landscape-primary';
+        } else if (orientationMode === 'reverse-landscape') {
+          orientationToLock = 'landscape-secondary';
         } else {
-          // Fallback: try to detect from window dimensions
-          orientationToLock = window.innerHeight > window.innerWidth ? 'portrait' : 'landscape';
+          orientationToLock = 'portrait-primary';
         }
 
         const lockPromise = screen.orientation.lock(orientationToLock);
         if (lockPromise && typeof lockPromise.catch === 'function') {
           await lockPromise;
         }
-      } else {
-        // Unlock orientation
-        const unlockPromise = screen.orientation.unlock();
-        if (unlockPromise && typeof unlockPromise.catch === 'function') {
-          await unlockPromise;
-        }
       }
     } catch (err) {
-      // Some browsers/devices don't allow orientation lock
-      console.warn('Orientation lock not available:', err.message);
+      console.error('Orientation change error:', err);
     }
   };
 
-  // Handle orientation unlock when setting is disabled
+  // Apply orientation mode on mount and when preference changes
   useEffect(() => {
-    if (!prefs.lockOrientation && screen?.orientation && typeof screen.orientation.unlock === 'function') {
-      // Unlock when setting is disabled (this doesn't require user gesture)
-      const unlockPromise = screen.orientation.unlock();
-      if (unlockPromise && typeof unlockPromise.catch === 'function') {
-        unlockPromise.catch(() => {
-          // Ignore unlock errors
-        });
-      }
-    }
-
-    // Cleanup: unlock when component unmounts
-    return () => {
-      if (screen?.orientation && typeof screen.orientation.unlock === 'function') {
-        const unlockPromise = screen.orientation.unlock();
-        if (unlockPromise && typeof unlockPromise.catch === 'function') {
-          unlockPromise.catch(() => {
-            // Ignore unlock errors
-          });
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+    
+    const orientationMode = prefs.orientationMode || 'portrait';
+    
+    // Apply orientation immediately
+    const applyOrientation = async () => {
+      try {
+        if (isMobile) {
+          // Use custom plugin to set orientation
+          console.log('Setting orientation to:', orientationMode);
+          try {
+            await OrientationLock.setOrientation({ orientation: orientationMode });
+          } catch (err) {
+            console.error('Failed to set orientation:', err);
+          }
         }
+      } catch (err) {
+        console.error('Orientation change error:', err);
       }
     };
-  }, [prefs.lockOrientation]);
+    
+    applyOrientation();
+    
+    // Listen for orientation changes and re-apply if needed
+    let lockTimeout = null;
+    const orientationChangeHandler = () => {
+      // Clear any pending lock
+      if (lockTimeout) {
+        clearTimeout(lockTimeout);
+      }
+      
+      // Re-apply orientation after a short delay
+      lockTimeout = setTimeout(() => {
+        applyOrientation();
+      }, 50);
+    };
+    
+    // Listen for orientation changes
+    window.addEventListener('orientationchange', orientationChangeHandler);
+    window.addEventListener('resize', orientationChangeHandler);
+    
+    return () => {
+      if (lockTimeout) {
+        clearTimeout(lockTimeout);
+      }
+      window.removeEventListener('orientationchange', orientationChangeHandler);
+      window.removeEventListener('resize', orientationChangeHandler);
+    };
+  }, [prefs.orientationMode]);
 
 
   async function onPrefsChange(patch) {
     const next = { ...prefs, ...patch };
     setPrefs(next);
     
-    // Handle orientation lock change (requires user gesture)
-    if ('lockOrientation' in patch) {
-      await handleOrientationLock(patch.lockOrientation);
+    // Handle orientation mode change
+    if ('orientationMode' in patch) {
+      await handleOrientationChange(patch.orientationMode);
     }
     
     try {
@@ -422,7 +455,7 @@ export default function App() {
             <span>ThinkRead</span>
           </div>
           <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
-            {isFullscreen && (
+            {isFullscreen && !Capacitor.isNativePlatform() && (
               <button
                 className="pill"
                 onClick={() => {

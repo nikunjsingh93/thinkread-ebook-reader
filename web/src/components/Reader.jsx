@@ -1454,14 +1454,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
             </svg>
           </button>
-          <button
-            className="pill"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-            style={isFullscreen ? {opacity: 0.8} : {}}
-          >
-            ⛶
-          </button>
+          {!(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform()) && (
+            <button
+              className="pill"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              style={isFullscreen ? {opacity: 0.8} : {}}
+            >
+              ⛶
+            </button>
+          )}
           <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
         </div>
       </div>
