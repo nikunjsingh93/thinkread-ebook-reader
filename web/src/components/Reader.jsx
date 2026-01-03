@@ -298,6 +298,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             try {
               epub.locations.load(saved.locations);
               console.log('Loaded cached locations successfully');
+              
+              // Mark locations as ready immediately when cached locations are loaded
+              locationsReadyRef.current = true;
 
               // Trigger a re-render to update the UI with cached page numbers
               setTimeout(() => {
@@ -320,7 +323,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         })
         .then(() => {
-          // Mark locations as ready
+          // Mark locations as ready (for newly generated locations)
           locationsReadyRef.current = true;
 
           // Save the generated locations for next time (only if newly generated)

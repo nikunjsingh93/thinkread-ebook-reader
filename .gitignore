@@ -12,6 +12,15 @@ build/
 web/dist/
 web/build/
 *.log
+# Electron build outputs
+*.dmg
+*.dmg.blockmap
+*.app
+*.exe
+*.deb
+*.rpm
+*.AppImage
+*.snap
 
 # Environment variables
 .env
@@ -38,6 +47,10 @@ data/covers/
 data/fonts/
 data/state.json
 data/dictionary.json
+# Database files (user-specific data)
+data/*.db
+*.db
+thinkread.db
 
 # Docker volumes and data
 docker-volumes/

@@ -41,6 +41,7 @@ export function initDatabase(dir) {
       cfi TEXT,
       percentage REAL,
       location INTEGER,
+      locations TEXT,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
     );
@@ -166,28 +167,88 @@ export function getProgress(bookId) {
   const stmt = db.prepare('SELECT * FROM progress WHERE book_id = ?');
   const row = stmt.get(bookId);
   if (row) {
-    return {
+    // Handle both 0-1 and 0-100 formats for backward compatibility
+    let percent = row.percentage;
+    if (percent != null && percent > 1) {
+      // Old format: stored as 0-100, convert to 0-1
+      percent = percent / 100;
+    }
+    
+    const result = {
       cfi: row.cfi,
-      percentage: row.percentage,
+      percent: percent, // 0-1 format for Reader.jsx
+      percentage: percent != null ? percent * 100 : null, // 0-100 format for display
       location: row.location,
       updatedAt: row.updated_at
     };
+    
+    // Parse locations if they exist
+    if (row.locations) {
+      try {
+        result.locations = JSON.parse(row.locations);
+      } catch (err) {
+        console.warn('Failed to parse locations from database:', err);
+        result.locations = null;
+      }
+    }
+    
+    return result;
   }
   return null;
 }
 
 export function saveProgress(bookId, progress) {
   ensureDb();
+  
+  // Ensure locations column exists (for existing databases)
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(progress)").all();
+    const hasLocations = tableInfo.some(col => col.name === 'locations');
+    if (!hasLocations) {
+      db.prepare('ALTER TABLE progress ADD COLUMN locations TEXT').run();
+      console.log('Added locations column to progress table');
+    }
+  } catch (err) {
+    // Column might already exist, ignore error
+    console.warn('Error checking/adding locations column:', err);
+  }
+  
+  // Handle both 'percent' (0-1) and 'percentage' (0-100) field names
+  // Store as decimal (0-1) in database for consistency
+  let percentage = null;
+  if (progress.percent != null) {
+    percentage = progress.percent; // Already 0-1
+  } else if (progress.percentage != null) {
+    percentage = progress.percentage / 100; // Convert 0-100 to 0-1
+  }
+  
+  // Serialize locations array to JSON string
+  let locationsJson = null;
+  if (progress.locations) {
+    try {
+      if (Array.isArray(progress.locations)) {
+        locationsJson = JSON.stringify(progress.locations);
+      } else if (typeof progress.locations === 'string') {
+        // Already a JSON string, validate it
+        JSON.parse(progress.locations);
+        locationsJson = progress.locations;
+      }
+    } catch (err) {
+      console.warn('Failed to serialize locations:', err);
+    }
+  }
+  
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO progress (book_id, cfi, percentage, location, updated_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO progress (book_id, cfi, percentage, location, locations, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     bookId,
     progress.cfi || null,
-    progress.percentage || null,
+    percentage,
     progress.location || null,
-    Date.now()
+    locationsJson,
+    progress.updatedAt || Date.now()
   );
   return { success: true };
 }

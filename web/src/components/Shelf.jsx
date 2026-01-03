@@ -16,7 +16,7 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-function CoverImage({ book }) {
+function CoverImage({ book, progressPercent }) {
   const [coverUrl, setCoverUrl] = useState(null);
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
@@ -31,11 +31,33 @@ function CoverImage({ book }) {
   }, [book.id, book.coverImage]);
 
   if (!book.coverImage) {
-    return <div className="cover">{coverLetter(book.title)}</div>;
+    return (
+      <div className="cover" style={{ position: 'relative' }}>
+        {coverLetter(book.title)}
+        {progressPercent != null && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '8px',
+              right: '8px',
+              background: 'rgba(0, 0, 0, 0.7)',
+              color: 'white',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '11px',
+              fontWeight: '600',
+              backdropFilter: 'blur(4px)'
+            }}
+          >
+            {progressPercent}%
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
-    <div className="cover">
+    <div className="cover" style={{ position: 'relative' }}>
       {coverUrl ? (
         <img
           src={coverUrl}
@@ -54,6 +76,24 @@ function CoverImage({ book }) {
         />
       ) : (
         coverLetter(book.title)
+      )}
+      {progressPercent != null && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '8px',
+            right: '8px',
+            background: 'rgba(0, 0, 0, 0.7)',
+            color: 'white',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontWeight: '600',
+            backdropFilter: 'blur(4px)'
+          }}
+        >
+          {progressPercent}%
+        </div>
       )}
     </div>
   );
@@ -487,7 +527,10 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         <div className="grid">
           {filtered.map((b) => {
             const progress = progressData[b.id];
-            const pct = progress?.percent != null ? Math.round(progress.percent * 100) : null;
+            // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
+            const pct = progress?.percent != null 
+              ? Math.round(progress.percent * 100) 
+              : (progress?.percentage != null ? Math.round(progress.percentage) : null);
             return (
               <div
                 className={`card ${deleteMode ? 'multi-select' : ''}`}
@@ -516,7 +559,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     />
                   </div>
                 )}
-                <CoverImage book={b} />
+                <CoverImage book={b} progressPercent={pct} />
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
                   <div className="small">
