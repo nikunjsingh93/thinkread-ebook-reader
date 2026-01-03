@@ -4,10 +4,12 @@ import fs from 'fs';
 
 let db = null;
 let dbPath = null;
+let dataDir = null;
 
-export function initDatabase(dataDir) {
-  if (db) return;
+export function initDatabase(dir) {
+  if (db) return db;
   
+  dataDir = dir;
   dbPath = path.join(dataDir, 'thinkread.db');
   
   // Create database if it doesn't exist
@@ -68,9 +70,21 @@ export function closeDatabase() {
   }
 }
 
+// Ensure database is initialized
+// If dataDir is provided, use it; otherwise use stored dataDir
+function ensureDb(providedDataDir = null) {
+  if (!db) {
+    const dirToUse = providedDataDir || dataDir;
+    if (!dirToUse) {
+      throw new Error('Database not initialized. Please call initDatabase() first with a data directory.');
+    }
+    initDatabase(dirToUse);
+  }
+}
+
 // Books
 export function getBooks() {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('SELECT * FROM books ORDER BY added_at DESC');
   const books = stmt.all().map(row => ({
     id: row.id,
@@ -86,7 +100,7 @@ export function getBooks() {
 }
 
 export function addBook(book) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare(`
     INSERT INTO books (id, type, title, original_name, stored_name, size_bytes, cover_image, added_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -105,14 +119,14 @@ export function addBook(book) {
 }
 
 export function deleteBook(bookId) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('DELETE FROM books WHERE id = ?');
   const result = stmt.run(bookId);
   return { ok: result.changes > 0 };
 }
 
 export function getBook(bookId) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('SELECT * FROM books WHERE id = ?');
   const row = stmt.get(bookId);
   if (!row) return null;
@@ -130,7 +144,7 @@ export function getBook(bookId) {
 
 // Preferences
 export function getPrefs() {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('SELECT value FROM preferences WHERE key = ?');
   const row = stmt.get('prefs');
   if (row) {
@@ -140,7 +154,7 @@ export function getPrefs() {
 }
 
 export function savePrefs(prefs) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)');
   stmt.run('prefs', JSON.stringify(prefs));
   return { success: true };
@@ -148,7 +162,7 @@ export function savePrefs(prefs) {
 
 // Progress
 export function getProgress(bookId) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('SELECT * FROM progress WHERE book_id = ?');
   const row = stmt.get(bookId);
   if (row) {
@@ -163,7 +177,7 @@ export function getProgress(bookId) {
 }
 
 export function saveProgress(bookId, progress) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO progress (book_id, cfi, percentage, location, updated_at)
     VALUES (?, ?, ?, ?, ?)
@@ -180,7 +194,7 @@ export function saveProgress(bookId, progress) {
 
 // Bookmarks
 export function getBookmarks() {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('SELECT * FROM bookmarks ORDER BY created_at DESC');
   const bookmarks = stmt.all().map(row => ({
     id: row.id,
@@ -195,7 +209,7 @@ export function getBookmarks() {
 }
 
 export function saveBookmark(bookmark) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   
   // Check if bookmark already exists for this book and CFI
   const checkStmt = db.prepare('SELECT id FROM bookmarks WHERE book_id = ? AND cfi = ?');
@@ -236,7 +250,7 @@ export function saveBookmark(bookmark) {
 }
 
 export function deleteBookmark(bookmarkId) {
-  if (!db) throw new Error('Database not initialized');
+  ensureDb();
   const stmt = db.prepare('DELETE FROM bookmarks WHERE id = ?');
   const result = stmt.run(bookmarkId);
   return { success: result.changes > 0 };

@@ -2,6 +2,7 @@
   "name": "thinkread-electron-main",
   "version": "1.0.0",
   "type": "module",
-  "main": "main.js"
+  "main": "main.js",
+  "description": "Electron main process for ThinkRead"
 }
 

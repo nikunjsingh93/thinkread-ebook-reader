@@ -1,8 +1,10 @@
-// Check if we're running in Electron
-const isElectron = typeof window !== 'undefined' && window.electronAPI;
+// Check if we're running in Electron (dynamic check)
+function isElectron() {
+  return typeof window !== 'undefined' && window.electronAPI;
+}
 
 export async function apiGetBooks() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getBooks();
   }
   const r = await fetch("/api/books");
@@ -11,10 +13,11 @@ export async function apiGetBooks() {
 }
 
 export async function apiUploadBooks(filePaths) {
-  if (isElectron) {
+  if (isElectron()) {
+    // In Electron, filePaths is an array of file paths (strings)
     return await window.electronAPI.uploadBooks(filePaths);
   }
-  // Fallback for web version (not used in Electron branch)
+  // Fallback for web version - filePaths is an array of File objects
   const fd = new FormData();
   for (const f of filePaths) fd.append("files", f);
   const r = await fetch("/api/upload", { method: "POST", body: fd });
@@ -24,7 +27,7 @@ export async function apiUploadBooks(filePaths) {
 }
 
 export async function apiDeleteBook(id) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.deleteBook(id);
   }
   const r = await fetch(`/api/books/${id}`, { method: "DELETE" });
@@ -33,7 +36,7 @@ export async function apiDeleteBook(id) {
 }
 
 export async function apiGetFonts() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getFonts();
   }
   const r = await fetch("/api/fonts");
@@ -42,10 +45,11 @@ export async function apiGetFonts() {
 }
 
 export async function apiUploadFonts(filePaths) {
-  if (isElectron) {
+  if (isElectron()) {
+    // In Electron, filePaths is an array of file paths (strings)
     return await window.electronAPI.uploadFonts(filePaths);
   }
-  // Fallback for web version
+  // Fallback for web version - filePaths is an array of File objects
   const fd = new FormData();
   for (const f of filePaths) fd.append("fonts", f);
   const r = await fetch("/api/fonts/upload", { method: "POST", body: fd });
@@ -55,7 +59,7 @@ export async function apiUploadFonts(filePaths) {
 }
 
 export async function apiDeleteFont(filename) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.deleteFont(filename);
   }
   const r = await fetch(`/api/fonts/${filename}`, { method: "DELETE" });
@@ -64,7 +68,7 @@ export async function apiDeleteFont(filename) {
 }
 
 export async function apiGetDictionaryStatus() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getDictionaryStatus();
   }
   const r = await fetch("/api/dictionary/status");
@@ -73,7 +77,7 @@ export async function apiGetDictionaryStatus() {
 }
 
 export async function apiGetDictionary() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getDictionary();
   }
   const r = await fetch("/api/dictionary");
@@ -82,7 +86,7 @@ export async function apiGetDictionary() {
 }
 
 export async function apiSaveDictionary(dictionary) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.saveDictionary(dictionary);
   }
   const r = await fetch("/api/dictionary", {
@@ -96,7 +100,7 @@ export async function apiSaveDictionary(dictionary) {
 }
 
 export async function apiDeleteDictionary() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.deleteDictionary();
   }
   const r = await fetch("/api/dictionary", { method: "DELETE" });
@@ -105,7 +109,7 @@ export async function apiDeleteDictionary() {
 }
 
 export async function apiGetBookmarks() {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getBookmarks();
   }
   const r = await fetch("/api/bookmarks");
@@ -114,7 +118,7 @@ export async function apiGetBookmarks() {
 }
 
 export async function apiSaveBookmark(bookmark) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.saveBookmark(bookmark);
   }
   const r = await fetch("/api/bookmarks", {
@@ -128,7 +132,7 @@ export async function apiSaveBookmark(bookmark) {
 }
 
 export async function apiDeleteBookmark(id) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.deleteBookmark(id);
   }
   const r = await fetch(`/api/bookmarks/${id}`, { method: "DELETE" });
@@ -138,7 +142,7 @@ export async function apiDeleteBookmark(id) {
 
 // Helper function to get book file URL (for epub.js)
 export async function apiGetBookFileUrl(bookId) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getBookFilePath(bookId);
   }
   return `/api/books/${bookId}/file`;
@@ -146,7 +150,7 @@ export async function apiGetBookFileUrl(bookId) {
 
 // Helper function to get book cover URL
 export async function apiGetBookCoverUrl(bookId) {
-  if (isElectron) {
+  if (isElectron()) {
     try {
       return await window.electronAPI.getBookCoverPath(bookId);
     } catch (err) {
@@ -158,7 +162,7 @@ export async function apiGetBookCoverUrl(bookId) {
 
 // Helper function to get font file URL
 export async function apiGetFontFileUrl(filename) {
-  if (isElectron) {
+  if (isElectron()) {
     return await window.electronAPI.getFontFilePath(filename);
   }
   return `/api/fonts/${filename}`;

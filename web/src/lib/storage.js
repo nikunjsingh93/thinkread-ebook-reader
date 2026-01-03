@@ -1,7 +1,9 @@
-const isElectron = typeof window !== 'undefined' && window.electronAPI;
+function isElectron() {
+  return typeof window !== 'undefined' && window.electronAPI;
+}
 
 export async function loadPrefs() {
-  if (isElectron) {
+  if (isElectron()) {
     try {
       const p = await window.electronAPI.getPrefs();
       const defaults = defaultPrefs();
@@ -34,7 +36,7 @@ export async function loadPrefs() {
 }
 
 export async function savePrefs(prefs) {
-  if (isElectron) {
+  if (isElectron()) {
     try {
       await window.electronAPI.savePrefs(prefs);
     } catch (err) {
@@ -107,7 +109,7 @@ export function defaultPrefs() {
 }
 
 export async function loadProgress(bookId) {
-  if (isElectron) {
+  if (isElectron()) {
     try {
       const progress = await window.electronAPI.getProgress(bookId);
       return progress;
@@ -174,7 +176,7 @@ export async function loadProgress(bookId) {
 }
 
 export async function saveProgress(bookId, progress) {
-  if (isElectron) {
+  if (isElectron()) {
     try {
       if (!bookId) {
         console.error('saveProgress called without bookId');

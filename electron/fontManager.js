@@ -19,10 +19,12 @@ export function getFonts(dataDir) {
       const name = path.basename(filename, path.extname(filename));
       // Extract font family name from filename (remove nanoid suffix)
       const fontFamily = name.replace(/-\w+$/, '').replace(/[-_]/g, ' ');
+      const fontPath = path.join(fontsDir, filename);
+      const encodedPath = encodeURIComponent(fontPath);
       return {
         filename,
         fontFamily,
-        url: `file://${path.join(fontsDir, filename)}`,
+        url: `thinkread://${encodedPath}`,
         format: ext
       };
     });
@@ -89,6 +91,9 @@ export function getFontFilePath(filename, dataDir) {
     throw new Error('Font file not found');
   }
 
-  return `file://${fontPath}`;
+  // Return custom protocol URL for Electron (thinkread://)
+  // Encode the path to handle special characters
+  const encodedPath = encodeURIComponent(fontPath);
+  return `thinkread://${encodedPath}`;
 }
 

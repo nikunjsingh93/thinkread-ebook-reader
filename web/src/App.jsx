@@ -259,22 +259,38 @@ export default function App() {
   }, [toast]);
 
   async function reload() {
-    const data = await apiGetBooks();
-    setBooks(data.books || []);
+    try {
+      const data = await apiGetBooks();
+      setBooks(data.books || []);
+    } catch (err) {
+      console.error('Failed to load books:', err);
+      setToast(err?.message || "Failed to load books");
+      setBooks([]); // Set empty array on error
+    }
   }
 
   useEffect(() => {
-    reload().catch(() => setToast("API not reachable (is the server running?)"));
+    // Wait a bit for Electron API to be ready
+    const timer = setTimeout(() => {
+      reload();
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Load preferences on mount
   useEffect(() => {
-    loadPrefs().then((loadedPrefs) => {
-      setPrefs(loadedPrefs);
-    }).catch((err) => {
-      console.warn('Failed to load preferences:', err);
-      // Keep default prefs that are already set
-    });
+    // Wait a bit for Electron API to be ready
+    const timer = setTimeout(() => {
+      loadPrefs().then((loadedPrefs) => {
+        if (loadedPrefs) {
+          setPrefs(loadedPrefs);
+        }
+      }).catch((err) => {
+        console.warn('Failed to load preferences:', err);
+        // Keep default prefs that are already set
+      });
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Apply theme when prefs change

@@ -50,10 +50,10 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
     }
   }
 
-  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
   async function pickFontFiles() {
-    if (isElectron) {
+    if (isElectron()) {
       // Use Electron's file dialog
       setUploadingFonts(true);
       try {

@@ -180,8 +180,10 @@ export function getBookFilePath(bookId, dataDir) {
         return reject(new Error('Book file not found'));
       }
 
-      // Return file:// URL for Electron
-      resolve(`file://${filePath}`);
+      // Return custom protocol URL for Electron (thinkread://)
+      // Encode the path to handle special characters
+      const encodedPath = encodeURIComponent(filePath);
+      resolve(`thinkread://${encodedPath}`);
     } catch (err) {
       reject(err);
     }
@@ -203,8 +205,10 @@ export function getBookCoverPath(bookId, dataDir) {
         return reject(new Error('Cover file not found'));
       }
 
-      // Return file:// URL for Electron
-      resolve(`file://${coverPath}`);
+      // Return custom protocol URL for Electron (thinkread://)
+      // Encode the path to handle special characters
+      const encodedPath = encodeURIComponent(coverPath);
+      resolve(`thinkread://${encodedPath}`);
     } catch (err) {
       reject(err);
     }

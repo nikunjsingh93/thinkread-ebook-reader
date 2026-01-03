@@ -18,17 +18,17 @@ function coverLetter(title) {
 
 function CoverImage({ book }) {
   const [coverUrl, setCoverUrl] = useState(null);
-  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
   useEffect(() => {
-    if (book.coverImage && isElectron) {
+    if (book.coverImage && isElectron()) {
       apiGetBookCoverUrl(book.id)
         .then(url => setCoverUrl(url))
         .catch(() => setCoverUrl(null));
     } else if (book.coverImage) {
       setCoverUrl(`/api/books/${book.id}/cover`);
     }
-  }, [book.id, book.coverImage, isElectron]);
+  }, [book.id, book.coverImage]);
 
   if (!book.coverImage) {
     return <div className="cover">{coverLetter(book.title)}</div>;
@@ -200,10 +200,10 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     return filteredBooks;
   }, [books, query, sortBy, progressData]);
 
-  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
   async function pickFiles() {
-    if (isElectron) {
+    if (isElectron()) {
       // Use Electron's file dialog
       setUploading(true);
       try {

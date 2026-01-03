@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -31,23 +31,41 @@ function getUserDataDir() {
 }
 
 function createWindow() {
+  // Get absolute path to preload script
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('Preload script path:', preloadPath);
+  console.log('Preload script exists:', fs.existsSync(preloadPath));
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: true,
     },
     titleBarStyle: 'hiddenInset', // macOS style
     backgroundColor: '#ffffff',
+    show: false, // Don't show until ready
+  });
+
+  // Show window when ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Load the app
   if (app.isPackaged) {
-    mainWindow.loadFile(path.join(__dirname, '..', 'web', 'dist', 'index.html'));
+    mainWindow.loadFile(path.join(__dirname, '..', 'web', 'dist', 'index.html'))
+      .catch(err => {
+        console.error('Failed to load file:', err);
+      });
   } else {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:5173')
+      .catch(err => {
+        console.error('Failed to load URL:', err);
+      });
   }
 
   // Open DevTools in development
@@ -55,12 +73,68 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  // Log errors
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Failed to load:', errorCode, errorDescription, validatedURL);
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level === 3) { // error
+      console.error('Renderer error:', message, 'at', sourceId, ':', line);
+    }
+  });
+
+  mainWindow.webContents.on('preload-error', (event, preloadPath, error) => {
+    console.error('Preload script error:', preloadPath, error);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
+// Register custom protocol for serving local files
+function registerLocalFileProtocol() {
+  protocol.registerFileProtocol('thinkread', (request, callback) => {
+    try {
+      const url = request.url.substr(12); // Remove 'thinkread://' prefix
+      const filePath = decodeURIComponent(url);
+      
+      // Security check: only allow files from data directory
+      const userDataDir = getUserDataDir();
+      const { booksDir, coversDir, fontsDir } = getDataPaths(userDataDir);
+      
+      // Check if file is in allowed directories
+      const normalizedPath = path.normalize(filePath);
+      const normalizedBooksDir = path.normalize(booksDir);
+      const normalizedCoversDir = path.normalize(coversDir);
+      const normalizedFontsDir = path.normalize(fontsDir);
+      
+      if (normalizedPath.startsWith(normalizedBooksDir) ||
+          normalizedPath.startsWith(normalizedCoversDir) ||
+          normalizedPath.startsWith(normalizedFontsDir)) {
+        // Verify file exists
+        if (fs.existsSync(filePath)) {
+          callback({ path: filePath });
+        } else {
+          console.error('File not found:', filePath);
+          callback({ error: -6 }); // FILE_NOT_FOUND
+        }
+      } else {
+        console.error('Access denied to file outside data directory:', filePath);
+        callback({ error: -6 }); // FILE_NOT_FOUND
+      }
+    } catch (err) {
+      console.error('Protocol handler error:', err);
+      callback({ error: -6 }); // FILE_NOT_FOUND
+    }
+  });
+}
+
 app.whenReady().then(() => {
+  // Register custom protocol - must be done when app is ready
+  registerLocalFileProtocol();
+  
   // Initialize database
   const userDataDir = getUserDataDir();
   initDatabase(userDataDir);
@@ -83,8 +157,20 @@ app.on('window-all-closed', async () => {
 
 // IPC Handlers
 
+// Helper to ensure database is initialized
+function ensureDatabase() {
+  try {
+    const userDataDir = getUserDataDir();
+    initDatabase(userDataDir);
+  } catch (err) {
+    console.error('Failed to initialize database:', err);
+    throw err;
+  }
+}
+
 // Get books
 ipcMain.handle('get-books', () => {
+  ensureDatabase();
   return getBooks();
 });
 
@@ -138,32 +224,39 @@ ipcMain.handle('get-font-file-path', (event, filename) => {
 
 // Preferences
 ipcMain.handle('get-prefs', () => {
+  ensureDatabase();
   return getPrefs();
 });
 
 ipcMain.handle('save-prefs', (event, prefs) => {
+  ensureDatabase();
   return savePrefs(prefs);
 });
 
 // Progress
 ipcMain.handle('get-progress', (event, bookId) => {
+  ensureDatabase();
   return getProgress(bookId);
 });
 
 ipcMain.handle('save-progress', (event, bookId, progress) => {
+  ensureDatabase();
   return saveProgress(bookId, progress);
 });
 
 // Bookmarks
 ipcMain.handle('get-bookmarks', () => {
+  ensureDatabase();
   return getBookmarks();
 });
 
 ipcMain.handle('save-bookmark', (event, bookmark) => {
+  ensureDatabase();
   return saveBookmark(bookmark);
 });
 
 ipcMain.handle('delete-bookmark', (event, bookmarkId) => {
+  ensureDatabase();
   return deleteBookmark(bookmarkId);
 });
 
