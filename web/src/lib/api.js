@@ -91,6 +91,12 @@ export async function apiUploadFonts(filePaths) {
     // In Electron, filePaths is an array of file paths (strings)
     return await window.electronAPI.uploadFonts(filePaths);
   }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileUploadFonts) {
+    // On mobile, use mobile upload which saves files locally
+    console.log('Using mobile font upload function');
+    return await mobile.mobileUploadFonts(filePaths);
+  }
   // Fallback for web version - filePaths is an array of File objects
   const fd = new FormData();
   for (const f of filePaths) fd.append("fonts", f);
@@ -103,6 +109,10 @@ export async function apiUploadFonts(filePaths) {
 export async function apiDeleteFont(filename) {
   if (isElectron()) {
     return await window.electronAPI.deleteFont(filename);
+  }
+  const mobile = await getMobileAPI();
+  if (mobile && mobile.mobileDeleteFont) {
+    return await mobile.mobileDeleteFont(filename);
   }
   const r = await fetch(`/api/fonts/${filename}`, { method: "DELETE" });
   if (!r.ok) throw new Error("Font delete failed");

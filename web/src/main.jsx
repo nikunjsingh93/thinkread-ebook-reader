@@ -7,8 +7,8 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 
 // Initialize Capacitor plugins
 if (Capacitor.isNativePlatform()) {
-  // Set status bar style for mobile
-  StatusBar.setStyle({ style: Style.Dark }).catch(() => {
+  // Hide status bar for fullscreen experience
+  StatusBar.hide().catch(() => {
     // StatusBar plugin might not be available on all platforms
   });
 }

@@ -107,6 +107,22 @@ function sanitizeFilename(name) {
   return name.replace(/[^a-z0-9.-]/gi, '_').replace(/_+/g, '_');
 }
 
+// Helper to extract font family name from filename
+function extractFontFamilyFromFilename(filename) {
+  // Remove extension and clean up the name
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+  // Remove common suffixes like -Regular, -Bold, etc.
+  const cleaned = nameWithoutExt
+    .replace(/[-_](Regular|Bold|Italic|Light|Medium|SemiBold|ExtraBold|Black|Thin|ExtraLight)$/i, '')
+    .replace(/[-_]([0-9]+)$/, '') // Remove numbers at the end
+    .trim();
+  // Convert to title case
+  return cleaned
+    .split(/[-_\s]+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ') || 'Custom Font';
+}
+
 // Upload books on mobile
 export async function mobileUploadBooks(files) {
   // Clear cache to ensure we get fresh data
@@ -225,7 +241,97 @@ export async function mobileDeleteBookmark(id) {
 
 // Fonts storage
 export async function mobileGetFonts() {
-  return await readJsonFile(`${getDataPath()}/fonts.json`) || [];
+  const fonts = await readJsonFile(`${getDataPath()}/fonts.json`) || [];
+  return { fonts };
+}
+
+// Upload fonts on mobile
+export async function mobileUploadFonts(files) {
+  // Ensure base data directory exists
+  await ensureDirectory(getDataPath());
+  
+  // Ensure fonts directory exists
+  const fontsDir = `${getDataPath()}/fonts`;
+  await ensureDirectory(fontsDir);
+  
+  // Load existing fonts
+  const fontsData = await readJsonFile(`${getDataPath()}/fonts.json`) || [];
+  const existingFonts = Array.isArray(fontsData) ? fontsData : [];
+  
+  const added = [];
+  
+  for (const file of files) {
+    try {
+      // Generate ID and filename
+      const originalName = file.name;
+      const ext = originalName.split('.').pop().toLowerCase();
+      const safeBase = sanitizeFilename(originalName.replace(/\.[^/.]+$/, ''));
+      const storedName = `${safeBase}-${generateId(10)}.${ext}`;
+      const fontPath = `${fontsDir}/${storedName}`;
+      
+      // Read file as base64
+      const fileData = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      
+      // Extract base64 data (remove data:type;base64, prefix)
+      const base64Data = fileData.split(',')[1];
+      
+      // Write file to storage
+      await Filesystem.writeFile({
+        path: fontPath,
+        data: base64Data,
+        directory: Directory.Data,
+      });
+      
+      // Extract font family name from filename
+      const fontFamily = extractFontFamilyFromFilename(originalName);
+      
+      // Create font entry
+      const font = {
+        filename: storedName,
+        fontFamily: fontFamily,
+        originalName: originalName,
+        sizeBytes: file.size,
+        uploadedAt: Date.now(),
+      };
+      
+      existingFonts.push(font);
+      added.push(font);
+    } catch (err) {
+      console.error('Error uploading font:', err);
+      throw new Error(`Failed to upload ${file.name}: ${err.message}`);
+    }
+  }
+  
+  // Save updated fonts list
+  await writeJsonFile(`${getDataPath()}/fonts.json`, existingFonts);
+  
+  return { fonts: existingFonts, added };
+}
+
+// Delete font
+export async function mobileDeleteFont(filename) {
+  try {
+    // Delete the font file
+    await Filesystem.deleteFile({
+      path: `${getDataPath()}/fonts/${filename}`,
+      directory: Directory.Data,
+    });
+    
+    // Remove from fonts list
+    const fonts = await readJsonFile(`${getDataPath()}/fonts.json`) || [];
+    const filtered = fonts.filter(f => f.filename !== filename);
+    await writeJsonFile(`${getDataPath()}/fonts.json`, filtered);
+    
+    return { success: true };
+  } catch (e) {
+    console.error('Error deleting font:', e);
+    throw new Error(`Failed to delete font: ${e.message}`);
+  }
 }
 
 // Dictionary storage
@@ -306,6 +412,43 @@ export async function mobileGetBookCoverUrl(bookId) {
 }
 
 export async function mobileGetFontFileUrl(filename) {
-  return `capacitor://localhost/${getDataPath()}/fonts/${filename}`;
+  const fontPath = `${getDataPath()}/fonts/${filename}`;
+  
+  try {
+    // Read the font file as base64
+    const result = await Filesystem.readFile({
+      path: fontPath,
+      directory: Directory.Data,
+    });
+    
+    // Convert base64 to binary string
+    const base64Data = result.data;
+    const binaryString = atob(base64Data);
+    
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // Determine MIME type based on file extension
+    const ext = filename.split('.').pop().toLowerCase();
+    let mimeType = 'font/ttf';
+    switch (ext) {
+      case 'ttf': mimeType = 'font/ttf'; break;
+      case 'otf': mimeType = 'font/otf'; break;
+      case 'woff': mimeType = 'font/woff'; break;
+      case 'woff2': mimeType = 'font/woff2'; break;
+    }
+    
+    // Create a Blob and blob URL
+    const blob = new Blob([bytes], { type: mimeType });
+    const blobUrl = URL.createObjectURL(blob);
+    
+    return blobUrl;
+  } catch (err) {
+    console.error('Error reading font file:', err);
+    throw new Error(`Failed to read font file: ${err.message}`);
+  }
 }
 

@@ -19,10 +19,12 @@ function getFontFormat(filename) {
   }
 }
 
-// Helper to get font URL (works in both Electron and web)
+// Helper to get font URL (works in Electron, mobile, and web)
 async function getFontUrl(filename) {
   const isElectron = typeof window !== 'undefined' && window.electronAPI;
-  if (isElectron) {
+  const isMobile = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
+  
+  if (isElectron || isMobile) {
     try {
       return await apiGetFontFileUrl(filename);
     } catch (err) {
