@@ -36,7 +36,21 @@ function createWindow() {
   console.log('Preload script path:', preloadPath);
   console.log('Preload script exists:', fs.existsSync(preloadPath));
   
-  mainWindow = new BrowserWindow({
+  // Get icon path
+  let iconPath = null;
+  if (process.platform === 'darwin') {
+    // macOS uses ICNS
+    iconPath = path.join(__dirname, '..', 'build', 'icon.icns');
+  } else if (process.platform === 'win32') {
+    // Windows uses ICO (we'll need to create this if needed)
+    iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
+  } else {
+    // Linux uses PNG
+    iconPath = path.join(__dirname, '..', 'build', 'icon.png');
+  }
+  
+  // Only set icon if it exists
+  const windowOptions = {
     width: 1200,
     height: 800,
     webPreferences: {
@@ -48,7 +62,13 @@ function createWindow() {
     frame: process.platform === 'darwin' ? false : true, // Remove native frame on macOS, use custom MacTitleBar
     backgroundColor: '#ffffff',
     show: false, // Don't show until ready
-  });
+  };
+  
+  if (fs.existsSync(iconPath)) {
+    windowOptions.icon = iconPath;
+  }
+  
+  mainWindow = new BrowserWindow(windowOptions);
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
