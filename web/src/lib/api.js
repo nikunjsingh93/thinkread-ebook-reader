@@ -3,9 +3,37 @@ function isElectron() {
   return typeof window !== 'undefined' && window.electronAPI;
 }
 
+// Check if we're running on mobile (Capacitor)
+function isMobile() {
+  try {
+    return typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+// Import mobile API functions (lazy load to avoid errors in non-mobile environments)
+let mobileAPI = null;
+async function getMobileAPI() {
+  if (!isMobile()) return null;
+  if (!mobileAPI) {
+    try {
+      mobileAPI = await import('./mobile-api.js');
+    } catch (e) {
+      console.warn('Mobile API not available:', e);
+      return null;
+    }
+  }
+  return mobileAPI;
+}
+
 export async function apiGetBooks() {
   if (isElectron()) {
     return await window.electronAPI.getBooks();
+  }
+  const mobile = await getMobileAPI();
+  if (mobile) {
+    return await mobile.mobileGetBooks();
   }
   const r = await fetch("/api/books");
   if (!r.ok) throw new Error("Failed to fetch books");
