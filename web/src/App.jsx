@@ -390,10 +390,26 @@ export default function App() {
     }
   }
 
+  // Check if we're in Electron on macOS and in window mode (not fullscreen)
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isMac = typeof navigator !== 'undefined' && 
+    (navigator.platform.toUpperCase().indexOf('MAC') >= 0 || 
+     navigator.userAgent.toUpperCase().indexOf('MAC') >= 0);
+  const isWindowMode = isElectron && isMac && !isFullscreen;
+
   return (
     <div className="appShell">
       {!selected && (
-        <div className="topbar">
+        <div 
+          className="topbar"
+          style={{
+            ...(isWindowMode && {
+              paddingLeft: '78px', // Space for traffic lights
+              WebkitAppRegion: 'drag',
+              appRegion: 'drag',
+            })
+          }}
+        >
           <div className="brand">
             <img src="/logo.svg" alt="ThinkRead" style={{height: '24px', width: '24px', objectFit: 'contain'}} onError={(e) => {
               // Fallback to PNG if SVG doesn't exist
@@ -406,7 +422,17 @@ export default function App() {
             }} />
             <span>ThinkRead</span>
           </div>
-          <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+          <div 
+            style={{
+              display: "flex", 
+              alignItems: "center", 
+              gap: "12px",
+              ...(isWindowMode && {
+                WebkitAppRegion: 'no-drag',
+                appRegion: 'no-drag',
+              })
+            }}
+          >
             {isFullscreen && (
               <button
                 className="pill"
@@ -415,7 +441,15 @@ export default function App() {
                     console.warn('Failed to exit fullscreen:', err);
                   });
                 }}
-                style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+                style={{
+                  padding: "6px 8px", 
+                  minWidth: "auto", 
+                  fontSize: "14px",
+                  ...(isWindowMode && {
+                    WebkitAppRegion: 'no-drag',
+                    appRegion: 'no-drag',
+                  })
+                }}
                 title="Exit Fullscreen"
               >
                 ⛶
@@ -424,7 +458,18 @@ export default function App() {
             <button
               className="pill"
               onClick={() => setShowBookmarks(true)}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px", display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+              style={{
+                padding: "6px 8px", 
+                minWidth: "auto", 
+                fontSize: "14px", 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                ...(isWindowMode && {
+                  WebkitAppRegion: 'no-drag',
+                  appRegion: 'no-drag',
+                })
+              }}
               title="All Bookmarks"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -434,7 +479,15 @@ export default function App() {
             <button
               className="pill"
               onClick={() => setSettingsOpen(true)}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              style={{
+                padding: "6px 8px", 
+                minWidth: "auto", 
+                fontSize: "14px",
+                ...(isWindowMode && {
+                  WebkitAppRegion: 'no-drag',
+                  appRegion: 'no-drag',
+                })
+              }}
               title="Settings"
             >
               ☰
