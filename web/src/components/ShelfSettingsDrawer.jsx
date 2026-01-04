@@ -345,21 +345,23 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
                 {downloading ? 'Downloading...' : 'Download Dictionary (100,000+ words)'}
               </button>
             ) : (
-              <button
-                onClick={handleDictionaryDelete}
-                disabled={downloading}
-                className="pill"
-                style={{
-                  fontSize: '14px',
-                  padding: '12px 24px',
-                  width: '100%',
-                  backgroundColor: prefs.themeMode === 'eink' ? 'var(--row-bg)' : 'rgba(255, 0, 0, 0.2)',
-                  border: prefs.themeMode === 'eink' ? '1px solid var(--border)' : '1px solid rgba(255, 0, 0, 0.4)',
-                  color: prefs.themeMode === 'eink' ? 'var(--text)' : undefined
-                }}
-              >
-                Remove Dictionary
-              </button>
+              currentUser?.isAdmin && (
+                <button
+                  onClick={handleDictionaryDelete}
+                  disabled={downloading}
+                  className="pill"
+                  style={{
+                    fontSize: '14px',
+                    padding: '12px 24px',
+                    width: '100%',
+                    backgroundColor: prefs.themeMode === 'eink' ? 'var(--row-bg)' : 'rgba(255, 0, 0, 0.2)',
+                    border: prefs.themeMode === 'eink' ? '1px solid var(--border)' : '1px solid rgba(255, 0, 0, 0.4)',
+                    color: prefs.themeMode === 'eink' ? 'var(--text)' : undefined
+                  }}
+                >
+                  Remove Dictionary
+                </button>
+              )
             )}
           </div>
 

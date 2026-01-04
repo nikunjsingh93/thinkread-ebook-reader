@@ -857,6 +857,16 @@ app.post("/api/dictionary", (req, res) => {
 // Delete dictionary
 app.delete("/api/dictionary", (req, res) => {
   try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
+    if (!currentUser || !currentUser.isAdmin) {
+      return res.status(403).json({ error: "Admin access required for dictionary deletion" });
+    }
+
     if (fs.existsSync(dictionaryPath)) {
       fs.unlinkSync(dictionaryPath);
     }
