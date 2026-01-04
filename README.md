@@ -1,6 +1,6 @@
-# ThinkRead (React + Docker)
+# <img src="web/public/logo.svg" alt="ThinkRead Logo" width="32" height="32"> ThinkRead
 
-A dead‑simple self‑hosted EPUB library + reader (Kindle-ish):
+A dead‑simple self‑hosted EPUB library + reader:
 - Upload multiple **EPUB** files from your device
 - Browse them in a **shelf** view with **extracted book covers**
 - Read in-browser with **themes + typography controls** (font, size, margins, line height, colors)
