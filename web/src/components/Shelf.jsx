@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { apiUploadBooks, apiDeleteBook } from "../lib/api.js";
 import { loadProgress } from "../lib/storage.js";
+import UploadProgress from "./UploadProgress.jsx";
 
 function formatBytes(bytes) {
   if (!bytes && bytes !== 0) return "";
@@ -19,6 +20,7 @@ function coverLetter(title) {
 export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, currentUser, isOffline }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
@@ -165,15 +167,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     const files = Array.from(e.target.files || []);
     e.target.value = "";
     if (!files.length) return;
+
     setUploading(true);
+    setUploadProgress({
+      percentage: 0,
+      files: files.length,
+      uploaded: 0,
+      remaining: files.length
+    });
+
     try {
-      await apiUploadBooks(files);
-      onToast?.(`Uploaded ${files.length} book(s)`);
+      await apiUploadBooks(files, (progress) => {
+        setUploadProgress(progress);
+      });
+      onToast?.(`Successfully uploaded ${files.length} book(s)`);
       await onReload?.();
     } catch (err) {
       onToast?.(err?.message || "Upload failed");
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -498,6 +511,16 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           })}
         </div>
       )}
+
+      <UploadProgress
+        isVisible={uploading}
+        progress={uploadProgress}
+        onCancel={() => {
+          // For now, we don't support cancelling uploads as it would require
+          // modifying the XMLHttpRequest. We can add this later if needed.
+          onToast?.("Cannot cancel upload in progress");
+        }}
+      />
     </div>
   );
 }

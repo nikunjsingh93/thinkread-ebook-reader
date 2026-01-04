@@ -131,3 +131,4 @@ export function showInstallPrompt() {
 export function canInstallPWA() {
   return !!deferredPrompt;
 }
+
