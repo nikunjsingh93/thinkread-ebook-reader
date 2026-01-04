@@ -1006,114 +1006,78 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         let word = null;
         let range = null;
 
-        // iOS Safari has issues with caretRangeFromPoint in iframes
-        // Try different approaches for text selection
-        if (isIOS()) {
-          try {
-            // First try the standard approach even on iOS
-            if (iframeDoc.caretRangeFromPoint) {
-              range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
-              if (range && range.startContainer && range.startContainer.nodeType === 3) {
-                const text = range.startContainer.textContent;
-                const offset = range.startOffset;
+        // Try caretRangeFromPoint first (works on Mac, Android, and sometimes iOS)
+        if (iframeDoc.caretRangeFromPoint) {
+          range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
+        }
+        // Try caretPositionFromPoint (Firefox)
+        else if (iframeDoc.caretPositionFromPoint) {
+          const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
+          if (position) {
+            range = iframeDoc.createRange();
+            range.setStart(position.offsetNode, position.offset);
+            range.setEnd(position.offsetNode, position.offset);
+          }
+        }
 
-                // Find word boundaries
-                let start = offset;
-                let end = offset;
+        if (range && range.startContainer) {
+          // Get the text node
+          const textNode = range.startContainer;
+          if (textNode.nodeType === 3) { // TEXT_NODE
+            const text = textNode.textContent;
+            const offset = range.startOffset;
 
-                // Move start backwards to find start of word
-                while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
-                  start--;
-                }
+            // Find word boundaries
+            let start = offset;
+            let end = offset;
 
-                // Move end forwards to find end of word
-                while (end < text.length && /[a-zA-Z]/.test(text[end])) {
-                  end++;
-                }
-
-                word = text.substring(start, end).trim();
-              }
+            // Move start backwards to find start of word
+            while (start > 0 && /[a-zA-Z0-9]/.test(text[start - 1])) {
+              start--;
             }
 
-            // If that didn't work, try elementFromPoint as fallback
-            if (!word) {
-              const element = iframeDoc.elementFromPoint(relativeX, relativeY);
-              if (element) {
-                // Get all text nodes in the element and its children
-                const textNodes = [];
-                const walk = (node) => {
-                  if (node.nodeType === 3 && node.textContent.trim()) { // TEXT_NODE
-                    textNodes.push(node);
-                  } else if (node.nodeType === 1) { // ELEMENT_NODE
-                    for (let child of node.childNodes) {
-                      walk(child);
+            // Move end forwards to find end of word
+            while (end < text.length && /[a-zA-Z0-9]/.test(text[end])) {
+              end++;
+            }
+
+            word = text.substring(start, end).trim();
+          }
+        }
+        
+        // iOS fallback: if caretRangeFromPoint didn't work, try manual method
+        if (isIOS() && !word) {
+          try {
+            const absX = longPressStartRef.current.x;
+            const absY = longPressStartRef.current.y;
+            
+            // Try using window.caretRangeFromPoint with absolute coordinates
+            const iframeWindow = iframe.contentWindow;
+            if (iframeWindow && iframeWindow.caretRangeFromPoint) {
+              try {
+                range = iframeWindow.caretRangeFromPoint(absX, absY);
+                if (range && range.startContainer) {
+                  const textNode = range.startContainer;
+                  if (textNode.nodeType === 3) {
+                    const text = textNode.textContent;
+                    const offset = range.startOffset;
+                    let start = offset;
+                    let end = offset;
+                    while (start > 0 && /[a-zA-Z0-9]/.test(text[start - 1])) {
+                      start--;
                     }
-                  }
-                };
-                walk(element);
-
-                // Find the text node with the most words
-                if (textNodes.length > 0) {
-                  let bestTextNode = textNodes[0];
-                  let maxWords = 0;
-
-                  for (const textNode of textNodes) {
-                    const words = textNode.textContent.split(/\s+/).filter(w => w.length > 0);
-                    if (words.length > maxWords) {
-                      maxWords = words.length;
-                      bestTextNode = textNode;
+                    while (end < text.length && /[a-zA-Z0-9]/.test(text[end])) {
+                      end++;
                     }
-                  }
-
-                  // Extract words from the best text node
-                  const words = bestTextNode.textContent.split(/\s+/).filter(w => w.length > 2); // Only words longer than 2 chars
-                  if (words.length > 0) {
-                    word = words[0]; // Take the first substantial word
+                    word = text.substring(start, end).trim();
                   }
                 }
+              } catch (e) {
+                // Continue to manual fallback
               }
             }
           } catch (iosError) {
-            console.warn('iOS text selection failed:', iosError);
-          }
-        } else {
-          // Try caretRangeFromPoint (Chrome, Safari)
-          if (iframeDoc.caretRangeFromPoint) {
-            range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
-          }
-          // Try caretPositionFromPoint (Firefox)
-          else if (iframeDoc.caretPositionFromPoint) {
-            const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
-            if (position) {
-              range = iframeDoc.createRange();
-              range.setStart(position.offsetNode, position.offset);
-              range.setEnd(position.offsetNode, position.offset);
-            }
-          }
-
-          if (range && range.startContainer) {
-            // Get the text node
-            const textNode = range.startContainer;
-            if (textNode.nodeType === 3) { // TEXT_NODE
-              const text = textNode.textContent;
-              const offset = range.startOffset;
-
-              // Find word boundaries
-              let start = offset;
-              let end = offset;
-
-              // Move start backwards to find start of word
-              while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
-                start--;
-              }
-
-              // Move end forwards to find end of word
-              while (end < text.length && /[a-zA-Z]/.test(text[end])) {
-                end++;
-              }
-
-              word = text.substring(start, end).trim();
-            }
+            console.warn('iOS text selection fallback failed:', iosError);
           }
         }
       
