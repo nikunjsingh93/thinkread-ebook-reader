@@ -41,7 +41,7 @@ docker run -d \
   --name thinkread \
   -p 8080:8080 \
   -v ./data:/data \
-  -e DATA_DIR=/data \  # this is the data directory for the database and the files
+  -e DATA_DIR=/data \
   --restart unless-stopped \
   nikunjsingh/thinkread-ebook-reader:latest
 ```
