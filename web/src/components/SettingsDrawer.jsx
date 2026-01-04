@@ -283,24 +283,6 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           </button>
         </div>
 
-        <div className="row">
-          <label>Lock Orientation</label>
-          <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
-            <label style={{display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer'}}>
-              <input
-                type="checkbox"
-                checked={prefs.lockOrientation || false}
-                onChange={(e) => onChange({ lockOrientation: e.target.checked })}
-                style={{width: '16px', height: '16px'}}
-              />
-              <span style={{fontSize: '14px'}}>Prevent screen rotation</span>
-            </label>
-            <div className="muted" style={{fontSize: 11, paddingLeft: '24px'}}>
-              Note: Requires device support
-            </div>
-          </div>
-        </div>
-
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
           Tip: Long-press any word while reading to see its definition. Tap the middle of the page to show/hide the reader toolbar.
         </div>
