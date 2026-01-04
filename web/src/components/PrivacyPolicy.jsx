@@ -93,7 +93,7 @@ export default function PrivacyPolicy({ open, onClose }) {
             </p>
 
             <p style={{marginTop: '24px', fontSize: '12px', color: 'var(--muted)', fontStyle: 'italic'}}>
-              This privacy policy applies to ThinkRead version 1.1 and later.
+              This privacy policy applies to ThinkRead version 1.4 and later.
             </p>
           </div>
         </div>
