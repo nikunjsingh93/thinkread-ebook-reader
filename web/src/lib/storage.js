@@ -123,7 +123,7 @@ export async function savePrefs(prefs) {
 
 export function defaultPrefs() {
   return {
-    fontFamily: "serif",
+    fontFamily: "custom:Literata-Regular.ttf:Literata",
     fontSize: 18,       // px
     fontWeight: 400,    // 300-700 (normal=400, bold=700)
     lineHeight: 1.6,

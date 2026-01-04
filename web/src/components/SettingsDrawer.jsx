@@ -72,15 +72,23 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               <option value="sans-serif">Sans</option>
               <option value="Georgia, serif">Georgia</option>
               <option value="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
-              {fonts.map((font) => (
-                <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>
-                  {font.fontFamily} (Custom)
-                </option>
-              ))}
+              {fonts.map((font) => {
+                const isBuiltIn = font.filename === 'Literata-Regular.ttf';
+                return (
+                  <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>
+                    {font.fontFamily}{isBuiltIn ? '' : ' (Custom)'}
+                  </option>
+                );
+              })}
               {/* Fallback option for custom fonts that aren't loaded yet */}
               {prefs.fontFamily && prefs.fontFamily.startsWith('custom:') && !fonts.some(font => `custom:${font.filename}:${font.fontFamily}` === prefs.fontFamily) && (
                 <option value={prefs.fontFamily}>
-                  {prefs.fontFamily.split(':')[2] || 'Custom Font'} (Custom)
+                  {(() => {
+                    const fontName = prefs.fontFamily.split(':')[2] || 'Custom Font';
+                    const filename = prefs.fontFamily.split(':')[1];
+                    const isBuiltIn = filename === 'Literata-Regular.ttf';
+                    return `${fontName}${isBuiltIn ? '' : ' (Custom)'}`;
+                  })()}
                 </option>
               )}
             </select>
