@@ -27,7 +27,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - ./data:/data # this is the data directory for the database and the files
     environment:
       - DATA_DIR=/data
     restart: unless-stopped
