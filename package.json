@@ -1,6 +1,6 @@
 {
   "name": "thinkread-electron",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "description": "ThinkRead - Standalone eBook Reader for Mac",
   "main": "electron/main.js",
   "type": "module",
@@ -22,10 +22,7 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
+          "arch": ["x64", "arm64"]
         }
       ],
       "icon": "build/icon.icns",
@@ -53,7 +50,7 @@
     "concurrently": "^9.1.0",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
-    "sharp": "^0.34.5",
     "wait-on": "^8.0.1"
   }
 }
+

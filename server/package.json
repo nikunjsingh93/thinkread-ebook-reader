@@ -1,6 +1,6 @@
 {
   "name": "simple-ebook-reader-server",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "main": "server.js",
