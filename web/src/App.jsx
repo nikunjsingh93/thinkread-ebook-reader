@@ -14,6 +14,8 @@ import { App as CapacitorApp } from "@capacitor/app";
 
 // Register custom orientation lock plugin
 const OrientationLock = registerPlugin('OrientationLock');
+// Register volume key plugin
+const VolumeKey = registerPlugin('VolumeKey');
 
 // Fallback function for synchronous defaults (for error cases)
 function defaultPrefs() {
@@ -38,6 +40,7 @@ function defaultPrefs() {
     sortBy: "upload",
     twoPageLayout: false,
     orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
+    volumeKeyBehavior: "media", // "media" or "pageTurn"
   };
 }
 
@@ -326,6 +329,20 @@ export default function App() {
       loadPrefs().then((loadedPrefs) => {
         if (loadedPrefs) {
           setPrefs(loadedPrefs);
+          // Set volume key behavior after prefs are loaded
+          const isMobile = Capacitor.isNativePlatform();
+          if (isMobile && VolumeKey && VolumeKey.setBehavior) {
+            const volumeKeyBehavior = loadedPrefs.volumeKeyBehavior || "media";
+            setTimeout(() => {
+              VolumeKey.setBehavior({ behavior: volumeKeyBehavior })
+                .then(() => {
+                  console.log('Volume key behavior initialized:', volumeKeyBehavior);
+                })
+                .catch(err => {
+                  console.warn('Failed to initialize volume key behavior:', err);
+                });
+            }, 1500); // Wait for Capacitor bridge to be fully ready
+          }
         }
       }).catch((err) => {
         console.warn('Failed to load preferences:', err);
@@ -339,6 +356,65 @@ export default function App() {
   useEffect(() => {
     applyTheme(prefs);
   }, [prefs.themeMode]);
+
+  // Set volume key behavior when prefs change (for Android)
+  useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+
+    // Wait a bit for bridge to be ready
+    const timer = setTimeout(() => {
+      const volumeKeyBehavior = prefs.volumeKeyBehavior || "media";
+      console.log('Setting volume key behavior in App:', volumeKeyBehavior);
+      
+      // Try plugin first
+      if (VolumeKey && typeof VolumeKey.setBehavior === 'function') {
+        VolumeKey.setBehavior({ behavior: volumeKeyBehavior })
+          .then(() => {
+            console.log('Volume key behavior set via plugin in App:', volumeKeyBehavior);
+          })
+          .catch(err => {
+            console.warn('Failed to set volume key behavior via plugin, using injection:', err);
+            setVolumeKeyBehaviorViaInjection(volumeKeyBehavior);
+          });
+      } else {
+        // Use JavaScript injection as fallback
+        setVolumeKeyBehaviorViaInjection(volumeKeyBehavior);
+      }
+    }, 1500); // Wait 1.5 seconds for Capacitor bridge to be ready
+
+    return () => clearTimeout(timer);
+  }, [prefs.volumeKeyBehavior]);
+
+  // Fallback: Set volume key behavior via JavaScript injection
+  function setVolumeKeyBehaviorViaInjection(behavior) {
+    try {
+      // Try multiple times with delays
+      const trySet = (attempt = 0) => {
+        if (window.VolumeKeyNative && typeof window.VolumeKeyNative.setBehavior === 'function') {
+          window.VolumeKeyNative.setBehavior(behavior);
+          console.log('Volume key behavior set via JavaScript interface in App:', behavior);
+          return;
+        }
+        
+        if (window.setVolumeKeyBehavior && typeof window.setVolumeKeyBehavior === 'function') {
+          window.setVolumeKeyBehavior(behavior);
+          console.log('Volume key behavior set via global function in App:', behavior);
+          return;
+        }
+        
+        if (attempt < 5) {
+          setTimeout(() => trySet(attempt + 1), 500);
+        } else {
+          console.warn('VolumeKeyNative interface not available in App after multiple attempts');
+        }
+      };
+      
+      trySet();
+    } catch (err) {
+      console.warn('Failed to set volume key behavior via injection:', err);
+    }
+  }
 
   // Listen for fullscreen changes
   useEffect(() => {

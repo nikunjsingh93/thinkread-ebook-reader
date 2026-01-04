@@ -5,8 +5,11 @@ import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetBookFileUrl, apiGetFontFileUrl } from "../lib/api.js";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
+
+// Register volume key plugin
+const VolumeKey = registerPlugin('VolumeKey');
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -278,6 +281,126 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       backButtonListener.then(listener => listener.remove());
     };
   }, [drawerOpen, tocOpen, onBack]);
+
+  // Handle volume key behavior setting
+  useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+
+    const volumeKeyBehavior = prefs.volumeKeyBehavior || "media";
+    console.log('Setting volume key behavior to:', volumeKeyBehavior);
+    
+    // Store in global variable for MainActivity to read
+    window.__volumeKeyBehavior = volumeKeyBehavior;
+    
+    // Try to use the plugin if available
+    if (VolumeKey && typeof VolumeKey.setBehavior === 'function') {
+      VolumeKey.setBehavior({ behavior: volumeKeyBehavior })
+        .then(() => {
+          console.log('Volume key behavior set successfully via plugin:', volumeKeyBehavior);
+        })
+        .catch(err => {
+          console.warn('Failed to set volume key behavior via plugin, using fallback:', err);
+          // Fallback: use JavaScript injection
+          setVolumeKeyBehaviorFallback(volumeKeyBehavior);
+        });
+    } else {
+      console.warn('VolumeKey plugin not available, using fallback');
+      // Fallback: use JavaScript injection
+      setVolumeKeyBehaviorFallback(volumeKeyBehavior);
+    }
+  }, [prefs.volumeKeyBehavior]);
+
+  // Fallback method to set volume key behavior via JavaScript injection
+  function setVolumeKeyBehaviorFallback(behavior) {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+    
+    // Store in global variable as backup
+    window.__volumeKeyBehavior = behavior;
+    
+    // Try to call the interface with retries
+    const trySet = (attempt = 0) => {
+      try {
+        if (window.VolumeKeyNative && typeof window.VolumeKeyNative.setBehavior === 'function') {
+          window.VolumeKeyNative.setBehavior(behavior);
+          console.log('Volume key behavior set via JavaScript interface:', behavior);
+          return true;
+        }
+        
+        if (window.setVolumeKeyBehavior && typeof window.setVolumeKeyBehavior === 'function') {
+          window.setVolumeKeyBehavior(behavior);
+          console.log('Volume key behavior set via global function:', behavior);
+          return true;
+        }
+        
+        if (attempt < 10) {
+          setTimeout(() => trySet(attempt + 1), 200);
+        } else {
+          console.warn('VolumeKeyNative interface not available after multiple attempts, using global variable fallback');
+        }
+      } catch (err) {
+        console.warn('Error setting volume key behavior:', err);
+      }
+      return false;
+    };
+    
+    trySet();
+  }
+
+  // Listen for volume key presses from native Android
+  useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    if (!isMobile) return;
+
+    let volumeKeyListener = null;
+    
+    // Try plugin listener first
+    if (VolumeKey && typeof VolumeKey.addListener === 'function') {
+      try {
+        volumeKeyListener = VolumeKey.addListener('volumeKeyPressed', (data) => {
+          const rendition = renditionRef.current;
+          if (!rendition) return;
+
+          if (data.key === 'volumeUp') {
+            rendition.next();
+          } else if (data.key === 'volumeDown') {
+            rendition.prev();
+          }
+        });
+        console.log('Volume key listener added via plugin');
+      } catch (err) {
+        console.warn('Failed to add volume key listener via plugin:', err);
+      }
+    }
+    
+    // Fallback: listen for custom event from MainActivity
+    const handleVolumeKey = (event) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      
+      const key = event.detail?.key;
+      if (key === 'volumeUp') {
+        rendition.next();
+      } else if (key === 'volumeDown') {
+        rendition.prev();
+      }
+    };
+    
+    window.addEventListener('volumeKeyPressed', handleVolumeKey);
+    console.log('Volume key listener added via custom event');
+
+    return () => {
+      if (volumeKeyListener) {
+        try {
+          volumeKeyListener.remove();
+        } catch (err) {
+          console.warn('Failed to remove volume key listener:', err);
+        }
+      }
+      window.removeEventListener('volumeKeyPressed', handleVolumeKey);
+    };
+  }, []);
 
   useEffect(() => {
     if (book.type !== "epub") {
@@ -768,6 +891,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setDrawerOpen(false);
         setTocOpen(false);
       }
+      
     };
     window.addEventListener("keydown", onKeyDown);
 

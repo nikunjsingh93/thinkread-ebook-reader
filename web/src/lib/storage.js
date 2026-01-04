@@ -160,6 +160,7 @@ export function defaultPrefs() {
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
     twoPageLayout: false, // Enable two-page side-by-side layout
     orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
+    volumeKeyBehavior: "media", // "media" or "pageTurn"
   };
 }
 

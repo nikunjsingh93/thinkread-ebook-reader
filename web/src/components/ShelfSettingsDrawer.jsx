@@ -258,6 +258,27 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
             Select and delete multiple books at once.
           </div>
 
+          <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Reading Controls</h4>
+
+          {(typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform()) && (
+            <>
+              <div className="row">
+                <label>Volume Keys</label>
+                <select
+                  value={prefs.volumeKeyBehavior || 'media'}
+                  onChange={(e) => onPrefsChange({ volumeKeyBehavior: e.target.value })}
+                >
+                  <option value="media">Media Controls (Default)</option>
+                  <option value="pageTurn">Turn Pages</option>
+                </select>
+              </div>
+
+              <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
+                Choose whether volume keys control device volume or turn pages while reading.
+              </div>
+            </>
+          )}
+
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
 
           <div className="row">
