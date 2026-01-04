@@ -473,7 +473,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
                   <div className="small">
-                    {pct != null ? `Progress: ${pct}%` : "New"} • {formatBytes(b.sizeBytes)}
+                    {pct != null ? `Progress: ${pct}%` : "New"}{currentUser?.isAdmin ? ` • ${formatBytes(b.sizeBytes)}` : ""}
                   </div>
                 </div>
               </div>
