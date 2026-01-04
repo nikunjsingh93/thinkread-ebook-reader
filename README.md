@@ -7,6 +7,33 @@ A dead‑simple self‑hosted EPUB library + reader:
 - **Upload and use custom fonts** (TTF, OTF, WOFF, WOFF2)
 - Remembers your **last position** per book
 
+## Screenshots
+
+### Desktop
+
+![Desktop - Reader with Dictionary](screenshots/desktop-1-reader-dictionary.png)
+*Reader view with dictionary pop-up feature*
+
+![Desktop - Chapter View](screenshots/desktop-2-chapter-view.png)
+*Chapter reading view with illustrations*
+
+![Desktop - Library View](screenshots/desktop-3-library.png)
+*Library shelf view with book covers*
+
+![Desktop - Reading Settings](screenshots/desktop-4-settings.png)
+*Reading settings panel with customization options*
+
+### Mobile
+
+![Mobile - Reader View](screenshots/mobile-1-reader.png)
+*Mobile reading experience*
+
+![Mobile - Login](screenshots/mobile-2-login.png)
+*Mobile login screen*
+
+![Mobile - Library](screenshots/mobile-3-library.png)
+*Mobile library view*
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
