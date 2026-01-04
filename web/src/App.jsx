@@ -41,6 +41,7 @@ function defaultPrefs() {
     twoPageLayout: false,
     orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
     volumeKeyBehavior: "media", // "media", "volumeDownNext", or "volumeUpNext"
+    bookDisplayMode: "scroll", // "scroll" or "pagination" - only applies to non-eink themes
   };
 }
 

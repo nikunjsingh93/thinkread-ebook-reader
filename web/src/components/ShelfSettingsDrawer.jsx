@@ -280,6 +280,26 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
             </>
           )}
 
+          {/* Book Display Mode - only show for non-eink themes */}
+          {prefs.themeMode !== 'eink' && (
+            <>
+              <div className="row">
+                <label>Book Display</label>
+                <select
+                  value={prefs.bookDisplayMode || 'scroll'}
+                  onChange={(e) => onPrefsChange({ bookDisplayMode: e.target.value })}
+                >
+                  <option value="scroll">Scroll (Default)</option>
+                  <option value="pagination">Pagination</option>
+                </select>
+              </div>
+
+              <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
+                Choose how to navigate through your books. Scroll shows all books, pagination shows one page at a time.
+              </div>
+            </>
+          )}
+
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
 
           <div className="row">

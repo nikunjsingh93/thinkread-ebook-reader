@@ -117,6 +117,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [booksPerPage, setBooksPerPage] = useState(12);
   
   const isEink = prefs?.themeMode === 'eink';
+  // For eink, always use pagination. For other themes, use preference (default: scroll)
+  const usePagination = isEink || (prefs?.bookDisplayMode === 'pagination');
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -251,9 +253,9 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     return filteredBooks;
   }, [books, query, sortBy, progressData]);
 
-  // Calculate books per page based on visible viewport for eink
+  // Calculate books per page based on visible viewport when pagination is enabled
   useEffect(() => {
-    if (!isEink) {
+    if (!usePagination) {
       setBooksPerPage(Infinity);
       return;
     }
@@ -302,27 +304,27 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       clearTimeout(timeout);
       clearTimeout(timeout2);
     };
-  }, [isEink]); // Recalculate when eink mode changes or on resize
+  }, [usePagination]); // Recalculate when pagination mode changes or on resize
 
-  // Pagination logic for eink
-  const totalPages = isEink ? Math.ceil(filtered.length / booksPerPage) : 1;
-  const startIndex = isEink ? (currentPage - 1) * booksPerPage : 0;
-  const endIndex = isEink ? startIndex + booksPerPage : filtered.length;
-  const paginatedBooks = isEink ? filtered.slice(startIndex, endIndex) : filtered;
+  // Pagination logic
+  const totalPages = usePagination ? Math.ceil(filtered.length / booksPerPage) : 1;
+  const startIndex = usePagination ? (currentPage - 1) * booksPerPage : 0;
+  const endIndex = usePagination ? startIndex + booksPerPage : filtered.length;
+  const paginatedBooks = usePagination ? filtered.slice(startIndex, endIndex) : filtered;
 
   // Reset to page 1 when filter changes
   useEffect(() => {
-    if (isEink) {
+    if (usePagination) {
       setCurrentPage(1);
     }
-  }, [query, sortBy, isEink]);
+  }, [query, sortBy, usePagination]);
   
-  // Update booksPerPage when filtered books change (to handle search results)
+  // Update current page if it exceeds total pages (e.g., after search reduces results)
   useEffect(() => {
-    if (isEink && totalPages > 0 && currentPage > totalPages) {
+    if (usePagination && totalPages > 0 && currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
-  }, [isEink, totalPages, currentPage]);
+  }, [usePagination, totalPages, currentPage]);
 
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
@@ -607,12 +609,12 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         <div 
           style={{
             flex: 1, 
-            overflowY: isEink ? "hidden" : "auto", 
+            overflowY: usePagination ? "hidden" : "auto", 
             overflowX: "hidden", 
             minHeight: 0,
-            scrollBehavior: isEink ? 'auto' : 'smooth'
+            scrollBehavior: usePagination ? 'auto' : 'smooth'
           }}
-          className={isEink ? 'eink-scroll-container' : ''}
+          className={usePagination ? 'eink-scroll-container' : ''}
         >
           {filtered.length === 0 ? (
             <div className="muted" style={{padding: "18px 0"}}>
@@ -665,8 +667,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           )}
         </div>
         
-        {/* Pagination controls for eink - positioned outside scroll container */}
-        {isEink && filtered.length > 0 && totalPages > 1 && (
+        {/* Pagination controls - positioned outside scroll container */}
+        {usePagination && filtered.length > 0 && totalPages > 1 && (
           <div style={{
             display: 'flex',
             alignItems: 'center',
