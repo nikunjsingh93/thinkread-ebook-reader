@@ -332,23 +332,23 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
             </div>
           )}
 
-          <div className="row" style={{flexDirection: 'column', alignItems: 'stretch', gap: '12px', marginTop: '16px'}}>
-            {!dictionaryExists ? (
-              <button
-                onClick={handleDictionaryDownload}
-                disabled={downloading}
-                className="pill"
-                style={{
-                  fontSize: '14px',
-                  padding: '12px 24px',
-                  cursor: downloading ? 'wait' : 'pointer',
-                  width: '100%'
-                }}
-              >
-                {downloading ? 'Downloading...' : 'Download Dictionary (100,000+ words)'}
-              </button>
-            ) : (
-              currentUser?.isAdmin && (
+          {(!dictionaryExists || (dictionaryExists && currentUser?.isAdmin)) && (
+            <div className="row" style={{flexDirection: 'column', alignItems: 'stretch', gap: '12px', marginTop: '16px'}}>
+              {!dictionaryExists ? (
+                <button
+                  onClick={handleDictionaryDownload}
+                  disabled={downloading}
+                  className="pill"
+                  style={{
+                    fontSize: '14px',
+                    padding: '12px 24px',
+                    cursor: downloading ? 'wait' : 'pointer',
+                    width: '100%'
+                  }}
+                >
+                  {downloading ? 'Downloading...' : 'Download Dictionary (100,000+ words)'}
+                </button>
+              ) : (
                 <button
                   onClick={handleDictionaryDelete}
                   disabled={downloading}
@@ -364,9 +364,9 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
                 >
                   Remove Dictionary
                 </button>
-              )
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
             Long-press any word while reading to see its definition. The dictionary is saved on the server and persists across sessions.
