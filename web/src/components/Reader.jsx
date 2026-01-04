@@ -1403,8 +1403,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   const pct = Math.round((percent || 0) * 100);
 
-  const verticalMargin = clamp(prefs.verticalMargin || 30, 0, 180);
-  const horizontalMargin = clamp(prefs.horizontalMargin || 46, 0, 180);
+  const verticalMargin = clamp(prefs.verticalMargin || 30, 1, 180);
+  const horizontalMargin = clamp(prefs.horizontalMargin || 46, 1, 180);
 
   return (
     <div className="readerShell">
