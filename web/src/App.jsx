@@ -257,6 +257,9 @@ export default function App() {
   const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState(null); // { open: true, title, message, onConfirm, onCancel }
   const [readerUiVisible, setReaderUiVisible] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [booksPerPage, setBooksPerPage] = useState(12);
 
   // Prevent context menu globally on touch devices
   useEffect(() => {
@@ -663,6 +666,12 @@ export default function App() {
           onEnterDeleteMode={() => setDeleteMode(true)}
           onExitDeleteMode={() => setDeleteMode(false)}
           onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+          currentPage={currentPage}
+          onCurrentPageChange={setCurrentPage}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          booksPerPage={booksPerPage}
+          onBooksPerPageChange={setBooksPerPage}
         />
       )}
 

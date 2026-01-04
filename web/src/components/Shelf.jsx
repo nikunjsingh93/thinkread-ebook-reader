@@ -105,16 +105,13 @@ function CoverImage({ book, progressPercent }) {
   );
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, prefs }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, prefs, currentPage, onCurrentPageChange, searchQuery, onSearchQueryChange, booksPerPage, onBooksPerPageChange }) {
   const inputRef = useRef(null);
   const gridRef = useRef(null);
   const [uploading, setUploading] = useState(false);
-  const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
-  const [currentPage, setCurrentPage] = useState(1);
-  const [booksPerPage, setBooksPerPage] = useState(12);
   
   const isEink = prefs?.themeMode === 'eink';
   // For eink, always use pagination. For other themes, use preference (default: scroll)
@@ -221,7 +218,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   }
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = searchQuery.trim().toLowerCase();
     let filteredBooks = books;
 
     // Apply search filter
@@ -251,12 +248,12 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     });
 
     return filteredBooks;
-  }, [books, query, sortBy, progressData]);
+  }, [books, searchQuery, sortBy, progressData]);
 
   // Calculate books per page based on visible viewport when pagination is enabled
   useEffect(() => {
     if (!usePagination) {
-      setBooksPerPage(Infinity);
+      onBooksPerPageChange(Infinity);
       return;
     }
     
@@ -288,7 +285,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       
       // Books per page = columns * rows
       const visibleBooks = actualColumns * actualRows;
-      setBooksPerPage(Math.max(4, visibleBooks)); // Minimum 4 books per page
+      onBooksPerPageChange(Math.max(4, visibleBooks)); // Minimum 4 books per page
     };
     
     // Calculate on mount and resize
@@ -304,7 +301,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       clearTimeout(timeout);
       clearTimeout(timeout2);
     };
-  }, [usePagination]); // Recalculate when pagination mode changes or on resize
+  }, [usePagination, onBooksPerPageChange]); // Recalculate when pagination mode changes or on resize
 
   // Pagination logic
   const totalPages = usePagination ? Math.ceil(filtered.length / booksPerPage) : 1;
@@ -315,16 +312,16 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   // Reset to page 1 when filter changes
   useEffect(() => {
     if (usePagination) {
-      setCurrentPage(1);
+      onCurrentPageChange(1);
     }
-  }, [query, sortBy, usePagination]);
+  }, [searchQuery, sortBy, usePagination, onCurrentPageChange]);
   
   // Update current page if it exceeds total pages (e.g., after search reduces results)
   useEffect(() => {
     if (usePagination && totalPages > 0 && currentPage > totalPages) {
-      setCurrentPage(totalPages);
+      onCurrentPageChange(totalPages);
     }
-  }, [usePagination, totalPages, currentPage]);
+  }, [usePagination, totalPages, currentPage, onCurrentPageChange]);
 
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
@@ -450,8 +447,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
             <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
           <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={searchQuery}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
             placeholder="Search…"
             style={{
               flex: 1,
@@ -685,7 +682,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           }}>
             <button
               className="pill"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              onClick={() => onCurrentPageChange(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
               style={{
                 opacity: currentPage === 1 ? 0.5 : 1,
@@ -702,7 +699,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             </span>
             <button
               className="pill"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              onClick={() => onCurrentPageChange(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
               style={{
                 opacity: currentPage === totalPages ? 0.5 : 1,
