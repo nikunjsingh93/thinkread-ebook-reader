@@ -54,7 +54,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data # this is the data directory for the database and the files
+      - ./thinkread/data:/data # this is the data directory for the database and the files
     environment:
       - DATA_DIR=/data
     restart: unless-stopped
@@ -66,7 +66,7 @@ services:
 docker run -d \
   --name thinkread \
   -p 8080:8080 \
-  -v ./data:/data \
+  -v ./thinkread/data:/data \
   -e DATA_DIR=/data \
   --restart unless-stopped \
   nikunjsingh/thinkread-ebook-reader:latest
@@ -95,7 +95,7 @@ docker compose up --build
 **Access:**
 - Application: http://localhost:8080
 
-Uploaded books + app data are stored in `./data` (mapped to `/data` inside the container).
+Uploaded books + app data are stored in `./thinkread/data` (mapped to `/data` inside the container).
 
 ## Notes / Limitations
 
