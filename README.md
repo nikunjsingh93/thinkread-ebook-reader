@@ -17,6 +17,22 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Fonts**: Only open-source fonts are included. Custom fonts can be uploaded by users.
 - **Dependencies**: All npm dependencies are open-source with permissive licenses.
 
+## Deploy to Server
+
+
+```yaml
+services:
+  thinkread:
+    image: nikunjsingh/thinkread-ebook-reader:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATA_DIR=/data
+    restart: unless-stopped
+```
+
 ## Development Mode (with Docker)
 
 For development with hot-reload and watch mode:
