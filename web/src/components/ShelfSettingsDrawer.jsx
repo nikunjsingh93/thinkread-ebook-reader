@@ -459,7 +459,7 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
                   Privacy Policy
                 </button>
                 <div className="muted" style={{fontSize: 12}}>
-                  ThinkRead v1.4
+                  ThinkRead v1.5
                 </div>
               </div>
             </div>
