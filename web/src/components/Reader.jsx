@@ -88,7 +88,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     try {
       // Check if this is a custom font that needs @font-face loading
       const isCustomFont = fontFamily.startsWith('custom:');
-      const isLiterata = fontFamily === 'literata';
       let actualFontFamily = fontFamily;
       let needsFontLoading = false;
       let fontFilename = null;
@@ -97,10 +96,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const parts = fontFamily.substring(7).split(':'); // Remove 'custom:' prefix and split filename:fontFamily
         fontFilename = parts[0];
         actualFontFamily = parts[1];
-        needsFontLoading = true;
-      } else if (isLiterata) {
-        actualFontFamily = 'Literata';
-        fontFilename = 'Literata-Regular.ttf';
         needsFontLoading = true;
       }
 
@@ -134,7 +129,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
       });
 
-      // Inject font CSS into the epub iframe if needed (for custom fonts and Literata)
+        // Inject font CSS into the epub iframe if needed (for custom fonts)
       if (needsFontLoading && fontFilename) {
         // Wait for the rendition to be ready, then inject font-face CSS
         rendition.hooks.content.register(async (contents) => {

@@ -55,7 +55,6 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               <option value="serif">Serif</option>
               <option value="sans-serif">Sans</option>
               <option value="Georgia, serif">Georgia</option>
-              <option value="literata">Literata</option>
               <option value="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
               {fonts.map((font) => (
                 <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>

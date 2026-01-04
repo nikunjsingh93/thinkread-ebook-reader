@@ -7,6 +7,16 @@ A dead‑simple self‑hosted EPUB library + reader (Kindle-ish):
 - **Upload and use custom fonts** (TTF, OTF, WOFF, WOFF2)
 - Remembers your **last position** per book
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Important Notes
+
+- **Books**: This repository does not include any sample books. You must add your own EPUB files to the `data/books/` directory. Only include books you have the legal right to distribute.
+- **Fonts**: Only open-source fonts are included. Custom fonts can be uploaded by users.
+- **Dependencies**: All npm dependencies are open-source with permissive licenses.
+
 ## Development Mode (with Docker)
 
 For development with hot-reload and watch mode:
