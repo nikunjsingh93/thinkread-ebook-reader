@@ -288,6 +288,21 @@ export default function App() {
     });
   }, []);
 
+  // Reload preferences when user changes (login/logout)
+  useEffect(() => {
+    if (currentUser) {
+      loadPrefs().then((loadedPrefs) => {
+        setPrefs(loadedPrefs);
+      }).catch((err) => {
+        console.warn('Failed to load user preferences:', err);
+        // Keep default prefs that are already set
+      });
+    } else {
+      // Reset to defaults when logged out
+      setPrefs(defaultPrefs());
+    }
+  }, [currentUser]);
+
   // Apply theme when prefs change
   useEffect(() => {
     applyTheme(prefs);
