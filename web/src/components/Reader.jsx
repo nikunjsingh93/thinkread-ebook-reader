@@ -362,11 +362,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const rendition = renditionRef.current;
           if (!rendition) return;
 
-          if (data.key === 'volumeUp') {
-            rendition.next();
-          } else if (data.key === 'volumeDown') {
-            rendition.prev();
+          const behavior = prefs.volumeKeyBehavior || 'media';
+          
+          // Only handle volume keys if behavior is not "media"
+          if (behavior === 'volumeDownNext') {
+            // Volume Down = Next, Volume Up = Previous
+            if (data.key === 'volumeDown') {
+              rendition.next();
+            } else if (data.key === 'volumeUp') {
+              rendition.prev();
+            }
+          } else if (behavior === 'volumeUpNext') {
+            // Volume Up = Next, Volume Down = Previous
+            if (data.key === 'volumeUp') {
+              rendition.next();
+            } else if (data.key === 'volumeDown') {
+              rendition.prev();
+            }
           }
+          // If behavior is "media", do nothing (let system handle it)
         });
         console.log('Volume key listener added via plugin');
       } catch (err) {
@@ -380,11 +394,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       if (!rendition) return;
       
       const key = event.detail?.key;
-      if (key === 'volumeUp') {
-        rendition.next();
-      } else if (key === 'volumeDown') {
-        rendition.prev();
+      const behavior = event.detail?.behavior || prefs.volumeKeyBehavior || 'media';
+      
+      // Only handle volume keys if behavior is not "media"
+      if (behavior === 'volumeDownNext') {
+        // Volume Down = Next, Volume Up = Previous
+        if (key === 'volumeDown') {
+          rendition.next();
+        } else if (key === 'volumeUp') {
+          rendition.prev();
+        }
+      } else if (behavior === 'volumeUpNext') {
+        // Volume Up = Next, Volume Down = Previous
+        if (key === 'volumeUp') {
+          rendition.next();
+        } else if (key === 'volumeDown') {
+          rendition.prev();
+        }
       }
+      // If behavior is "media", do nothing (let system handle it)
     };
     
     window.addEventListener('volumeKeyPressed', handleVolumeKey);
@@ -400,7 +428,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
       window.removeEventListener('volumeKeyPressed', handleVolumeKey);
     };
-  }, []);
+  }, [prefs.volumeKeyBehavior]);
 
   useEffect(() => {
     if (book.type !== "epub") {

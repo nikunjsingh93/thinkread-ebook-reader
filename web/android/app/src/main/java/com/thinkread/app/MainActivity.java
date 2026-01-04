@@ -301,9 +301,10 @@ public class MainActivity extends BridgeActivity {
         // Handle volume keys
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             String behavior = getVolumeKeyBehavior();
-            android.util.Log.d("MainActivity", "Volume key pressed (keyCode: " + keyCode + "), behavior from SharedPreferences: " + behavior);
+            android.util.Log.d("MainActivity", "Volume key pressed (keyCode: " + keyCode + "), behavior: " + behavior);
             
-            if ("pageTurn".equals(behavior)) {
+            // Check if behavior is one of the page turn modes
+            if ("volumeDownNext".equals(behavior) || "volumeUpNext".equals(behavior)) {
                 try {
                     // Notify JavaScript directly through WebView
                     com.getcapacitor.Bridge bridge = getBridge();
@@ -311,8 +312,8 @@ public class MainActivity extends BridgeActivity {
                         android.webkit.WebView webView = bridge.getWebView();
                         if (webView != null) {
                             String key = (keyCode == KeyEvent.KEYCODE_VOLUME_UP) ? "volumeUp" : "volumeDown";
-                            android.util.Log.d("MainActivity", "Notifying volume key via WebView: " + key);
-                            String js = "if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('volumeKeyPressed', {detail: {key: '" + key + "'}})); }";
+                            android.util.Log.d("MainActivity", "Notifying volume key via WebView: " + key + " with behavior: " + behavior);
+                            String js = "if (window.dispatchEvent) { window.dispatchEvent(new CustomEvent('volumeKeyPressed', {detail: {key: '" + key + "', behavior: '" + behavior + "'}})); }";
                             webView.post(() -> webView.evaluateJavascript(js, null));
                             // Consume the event to prevent media control
                             return true;
@@ -329,7 +330,7 @@ public class MainActivity extends BridgeActivity {
                     android.util.Log.e("MainActivity", "Error notifying volume key: " + e.getMessage(), e);
                 }
             } else {
-                android.util.Log.d("MainActivity", "Volume key behavior is media, allowing default");
+                android.util.Log.d("MainActivity", "Volume key behavior is not page turn, allowing default");
             }
             // Otherwise, let the system handle it (media controls)
         }
@@ -341,7 +342,7 @@ public class MainActivity extends BridgeActivity {
         // Also handle volume keys on key up to ensure we catch them
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             String behavior = getVolumeKeyBehavior();
-            if ("pageTurn".equals(behavior)) {
+            if ("volumeDownNext".equals(behavior) || "volumeUpNext".equals(behavior)) {
                 // Consume the event to prevent media control
                 return true;
             }

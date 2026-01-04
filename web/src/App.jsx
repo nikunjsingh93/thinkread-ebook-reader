@@ -40,7 +40,7 @@ function defaultPrefs() {
     sortBy: "upload",
     twoPageLayout: false,
     orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
-    volumeKeyBehavior: "media", // "media" or "pageTurn"
+    volumeKeyBehavior: "media", // "media", "volumeDownNext", or "volumeUpNext"
   };
 }
 

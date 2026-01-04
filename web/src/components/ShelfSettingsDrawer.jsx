@@ -269,7 +269,8 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
                   onChange={(e) => onPrefsChange({ volumeKeyBehavior: e.target.value })}
                 >
                   <option value="media">Media Controls (Default)</option>
-                  <option value="pageTurn">Turn Pages</option>
+                  <option value="volumeDownNext">Volume Down Next page</option>
+                  <option value="volumeUpNext">Volume Up Next page</option>
                 </select>
               </div>
 
