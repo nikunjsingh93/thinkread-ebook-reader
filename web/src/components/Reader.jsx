@@ -4,7 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl } from "../lib/api.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -17,6 +17,22 @@ function getFontFormat(filename) {
     case 'woff2': return 'woff2';
     default: return 'truetype';
   }
+}
+
+// Helper to get font URL (works in Electron, mobile, and web)
+async function getFontUrl(filename) {
+  const isElectron = typeof window !== 'undefined' && window.electronAPI;
+  const isMobile = typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
+
+  if (isElectron || isMobile) {
+    try {
+      return await apiGetFontFileUrl(filename);
+    } catch (err) {
+      console.warn('Failed to get font URL, using fallback:', err);
+      return `/api/fonts/${filename}`;
+    }
+  }
+  return `/api/fonts/${filename}`;
 }
 
 export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger }) {
@@ -60,6 +76,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const bg = p.colors?.[themeMode]?.bg || p.bg || "#f6f1e7";
     const fg = p.colors?.[themeMode]?.fg || p.fg || "#1a1a1a";
     const fontFamily = p.fontFamily || "serif";
+    const fontWeight = p.fontWeight || 400;
+    const textAlign = p.textAlign || "justify";
 
     // Set container background too
     if (hostRef.current) {
@@ -70,12 +88,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     try {
       // Check if this is a custom font that needs @font-face loading
       const isCustomFont = fontFamily.startsWith('custom:');
+      const isLiterata = fontFamily === 'literata';
       let actualFontFamily = fontFamily;
+      let needsFontLoading = false;
+      let fontFilename = null;
 
       if (isCustomFont) {
         const parts = fontFamily.substring(7).split(':'); // Remove 'custom:' prefix and split filename:fontFamily
-        const filename = parts[0];
+        fontFilename = parts[0];
         actualFontFamily = parts[1];
+        needsFontLoading = true;
+      } else if (isLiterata) {
+        actualFontFamily = 'Literata';
+        fontFilename = 'Literata-Regular.ttf';
+        needsFontLoading = true;
       }
 
       // Register or update the theme - epub.js will merge with existing
@@ -84,7 +110,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         body: {
           "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
+          "text-align": `${textAlign} !important`,
           "color": `${fg} !important`,
           "background": `${bg} !important`,
         },
@@ -93,26 +121,28 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           "color": `${fg} !important`,
           "font-family": `${actualFontFamily} !important`,
           "font-size": `${fontSize}px !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
+          "text-align": `${textAlign} !important`,
         },
         // Headings - apply color and font-family but preserve relative sizing
         "h1, h2, h3, h4, h5, h6": {
           "color": `${fg} !important`,
           "font-family": `${actualFontFamily} !important`,
+          "font-weight": `${fontWeight} !important`,
           "line-height": `${lineHeight} !important`,
         }
       });
 
-      // Inject custom font CSS into the epub iframe if needed
-      if (isCustomFont) {
-        const filename = fontFamily.substring(7).split(':')[0]; // Extract filename from 'custom:filename:fontFamily'
-
+      // Inject font CSS into the epub iframe if needed (for custom fonts and Literata)
+      if (needsFontLoading && fontFilename) {
         // Wait for the rendition to be ready, then inject font-face CSS
-        rendition.hooks.content.register((contents) => {
+        rendition.hooks.content.register(async (contents) => {
+          const fontUrl = await getFontUrl(fontFilename);
           const css = `
             @font-face {
               font-family: '${actualFontFamily}';
-              src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
+              src: url('${fontUrl}') format('${getFontFormat(fontFilename)}');
               font-display: swap;
             }
             body, p, div, span, h1, h2, h3, h4, h5, h6 {
@@ -171,6 +201,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         contents.document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
         
         // Add comprehensive CSS to prevent all selection and callout behaviors
+        // Also prevent images from being split across pages
         const style = contents.document.createElement('style');
         style.textContent = `
           *, *::before, *::after {
@@ -185,6 +216,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             -webkit-touch-callout: none !important;
             -webkit-user-select: none !important;
             user-select: none !important;
+          }
+          img {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            -webkit-column-break-inside: avoid !important;
+            display: block !important;
+            max-width: 100% !important;
+            height: auto !important;
           }
         `;
         contents.document.head.appendChild(style);

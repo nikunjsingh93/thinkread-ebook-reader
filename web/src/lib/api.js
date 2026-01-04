@@ -40,6 +40,12 @@ export async function apiDeleteFont(filename) {
   return r.json();
 }
 
+export async function apiGetFontFileUrl(filename) {
+  const r = await fetch(`/api/fonts/${filename}/file`);
+  if (!r.ok) throw new Error("Failed to get font file URL");
+  return r.text();
+}
+
 export async function apiGetDictionaryStatus() {
   const r = await fetch("/api/dictionary/status");
   if (!r.ok) throw new Error("Failed to fetch dictionary status");

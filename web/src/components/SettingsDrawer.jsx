@@ -55,6 +55,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               <option value="serif">Serif</option>
               <option value="sans-serif">Sans</option>
               <option value="Georgia, serif">Georgia</option>
+              <option value="literata">Literata</option>
               <option value="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial">System</option>
               {fonts.map((font) => (
                 <option key={font.filename} value={`custom:${font.filename}:${font.fontFamily}`}>
@@ -84,6 +85,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
             onChange={(e) => onChange({ fontSize: Number(e.target.value) })}
           />
           <div style={{width: 42, textAlign:"right"}}>{prefs.fontSize}px</div>
+        </div>
+
+        <div className="row">
+          <label>Font weight</label>
+          <input
+            type="range"
+            min="300"
+            max="700"
+            step="100"
+            value={prefs.fontWeight || 400}
+            onChange={(e) => onChange({ fontWeight: Number(e.target.value) })}
+          />
+          <div style={{width: 42, textAlign:"right"}}>{prefs.fontWeight || 400}</div>
         </div>
 
         <div className="row">
@@ -120,6 +134,19 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
             onChange={(e) => onChange({ lineHeight: Number(e.target.value) / 10 })}
           />
           <div style={{width: 42, textAlign:"right"}}>{prefs.lineHeight.toFixed(1)}</div>
+        </div>
+
+        <div className="row">
+          <label>Text alignment</label>
+          <select
+            value={prefs.textAlign || 'justify'}
+            onChange={(e) => onChange({ textAlign: e.target.value })}
+          >
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+            <option value="justify">Justify</option>
+          </select>
         </div>
 
         <div className="row">
