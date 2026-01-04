@@ -114,8 +114,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [progressData, setProgressData] = useState({});
   
   const isEink = prefs?.themeMode === 'eink';
-  // For eink, always use pagination. For other themes, use preference (default: scroll)
-  const usePagination = isEink || (prefs?.bookDisplayMode === 'pagination');
+  // Always use scroll mode (pagination option removed)
+  const usePagination = false;
 
   useEffect(() => {
     function handleClickOutside(event) {

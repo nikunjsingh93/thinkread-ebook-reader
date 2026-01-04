@@ -161,7 +161,6 @@ export function defaultPrefs() {
     twoPageLayout: false, // Enable two-page side-by-side layout
     orientationMode: "portrait", // "portrait", "landscape", "reverse-landscape"
     volumeKeyBehavior: "media", // "media", "volumeDownNext", or "volumeUpNext"
-    bookDisplayMode: "scroll", // "scroll" or "pagination" - only applies to non-eink themes
   };
 }
 

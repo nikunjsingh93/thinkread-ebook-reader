@@ -452,7 +452,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       width: "100%",
       height: "100%",
       spread: prefs.twoPageLayout ? "auto" : "none",
-      flow: "paginated",
+      flow: "scrolled",
     });
     renditionRef.current = rendition;
 
@@ -770,9 +770,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       } catch {}
       
       setPercent(p);
-      // Show "Loading..." until locations are ready, then show page numbers
-      const pageText = locationsReadyRef.current && totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : "Loading...";
-      setLocationText(pageText);
+      // Show "Loading..." until locations are ready, then show location numbers
+      const locationText = locationsReadyRef.current && totalPages > 0 ? `Location ${currentPage} of ${totalPages}` : "Loading...";
+      setLocationText(locationText);
 
       // Update last page info for the button
       if (locationsReadyRef.current && currentPage > 0) {
@@ -1811,9 +1811,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               backdropFilter: 'blur(10px)',
               border: '1px solid var(--border)',
             }}
-            title={`Go back to Page ${originalPosition.page} (${originalPosition.percent}%)`}
+            title={`Go back to Position ${originalPosition.page} (${originalPosition.percent}%)`}
           >
-            ↺ Return to Page {originalPosition.page}
+            ↺ Return to Position {originalPosition.page}
           </button>
         </div>
       )}
