@@ -6,8 +6,7 @@ const DEFAULT_STATE = {
   prefs: {},
   progress: {},
   bookmarks: [],
-  users: [],
-  currentUser: null
+  users: []
 };
 
 // Simple in-memory lock to prevent race conditions
@@ -72,6 +71,8 @@ export function loadState(statePath) {
     if (!parsed.progress || typeof parsed.progress !== "object") parsed.progress = {};
     if (!Array.isArray(parsed.bookmarks)) parsed.bookmarks = [];
     if (!Array.isArray(parsed.users)) parsed.users = [];
+    // Remove legacy currentUser field if it exists
+    delete parsed.currentUser;
     return parsed;
   } catch {
     return DEFAULT_STATE;

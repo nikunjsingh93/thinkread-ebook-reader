@@ -10,6 +10,7 @@ import sanitize from "sanitize-filename";
 import { nanoid } from "nanoid";
 import { fileURLToPath } from "node:url";
 import epubParser from "epub";
+import session from "express-session";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
 
 const execAsync = promisify(exec);
@@ -135,6 +136,17 @@ const app = express();
 app.use(morgan("dev"));
 app.use(express.json({ limit: "50mb" })); // Increased for dictionary
 
+// Session middleware
+app.use(session({
+  secret: 'thinkread-session-secret-' + nanoid(16), // Generate a unique secret
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 // --- API ---
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
@@ -155,9 +167,8 @@ app.post("/api/login", (req, res) => {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
-    // Set current user
-    state.currentUser = user.id;
-    saveStateAtomic(statePath, state);
+    // Set user in session
+    req.session.userId = user.id;
 
     // Return user data without password
     const { password: _, ...userWithoutPassword } = user;
@@ -170,10 +181,13 @@ app.post("/api/login", (req, res) => {
 
 app.post("/api/logout", (req, res) => {
   try {
-    const state = loadState(statePath);
-    state.currentUser = null;
-    saveStateAtomic(statePath, state);
-    res.json({ success: true });
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Error destroying session:", err);
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      res.json({ success: true });
+    });
   } catch (err) {
     console.error("Error during logout:", err);
     res.status(500).json({ error: "Logout failed" });
@@ -182,16 +196,15 @@ app.post("/api/logout", (req, res) => {
 
 app.get("/api/current-user", (req, res) => {
   try {
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const user = state.users.find(u => u.id === state.currentUser);
+    const state = loadState(statePath);
+    const user = state.users.find(u => u.id === req.session.userId);
     if (!user) {
-      // Reset current user if user doesn't exist
-      state.currentUser = null;
-      saveStateAtomic(statePath, state);
+      // Clear session if user doesn't exist
+      req.session.destroy();
       return res.status(401).json({ error: "User not found" });
     }
 
@@ -207,12 +220,12 @@ app.get("/api/current-user", (req, res) => {
 // --- User Management API (Admin Only) ---
 app.get("/api/users", (req, res) => {
   try {
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const currentUser = state.users.find(u => u.id === state.currentUser);
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
@@ -238,12 +251,12 @@ app.post("/api/users", (req, res) => {
       return res.status(400).json({ error: "Username and password required" });
     }
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const currentUser = state.users.find(u => u.id === state.currentUser);
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
@@ -277,18 +290,18 @@ app.delete("/api/users/:userId", (req, res) => {
   try {
     const { userId } = req.params;
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const currentUser = state.users.find(u => u.id === state.currentUser);
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Admin access required" });
     }
 
     // Prevent deleting the current user
-    if (userId === state.currentUser) {
+    if (userId === req.session.userId) {
       return res.status(400).json({ error: "Cannot delete your own account" });
     }
 
@@ -335,12 +348,12 @@ app.get("/api/books", (req, res) => {
 // --- User Preferences API ---
 app.get("/api/prefs", (req, res) => {
   try {
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const userPrefs = (state.prefs && state.prefs[state.currentUser]) || {};
+    const state = loadState(statePath);
+    const userPrefs = (state.prefs && state.prefs[req.session.userId]) || {};
     res.json(userPrefs);
   } catch (err) {
     console.error("Error loading prefs:", err);
@@ -355,14 +368,14 @@ app.post("/api/prefs", async (req, res) => {
       return res.status(400).json({ error: "Invalid preferences data" });
     }
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    const state = loadState(statePath);
     // Initialize prefs object if it doesn't exist
     if (!state.prefs) state.prefs = {};
-    state.prefs[state.currentUser] = prefs;
+    state.prefs[req.session.userId] = prefs;
     await saveStateAtomic(statePath, state);
 
     res.json({ success: true });
@@ -376,12 +389,12 @@ app.post("/api/prefs", async (req, res) => {
 app.get("/api/progress/:bookId", (req, res) => {
   try {
     const { bookId } = req.params;
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const userProgress = state.progress?.[state.currentUser]?.[bookId] || null;
+    const state = loadState(statePath);
+    const userProgress = state.progress?.[req.session.userId]?.[bookId] || null;
     res.json(userProgress);
   } catch (err) {
     console.error("Error loading progress:", err);
@@ -402,16 +415,16 @@ app.post("/api/progress/:bookId", async (req, res) => {
       return res.status(400).json({ error: "Book ID is required" });
     }
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    const state = loadState(statePath);
     // Initialize progress structure if it doesn't exist
     if (!state.progress) state.progress = {};
-    if (!state.progress[state.currentUser]) state.progress[state.currentUser] = {};
+    if (!state.progress[req.session.userId]) state.progress[req.session.userId] = {};
 
-    state.progress[state.currentUser][bookId] = progress;
+    state.progress[req.session.userId][bookId] = progress;
 
     await saveStateAtomic(statePath, state);
 
@@ -424,12 +437,12 @@ app.post("/api/progress/:bookId", async (req, res) => {
 
 app.post("/api/upload", upload.array("files", 200), async (req, res) => {
   try {
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const currentUser = state.users.find(u => u.id === state.currentUser);
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Admin access required for book uploads" });
     }
@@ -518,11 +531,11 @@ app.delete("/api/books/:id", async (req, res) => {
     const { id } = req.params;
     const state = loadState(statePath);
 
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const currentUser = state.users.find(u => u.id === state.currentUser);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
     if (!currentUser || !currentUser.isAdmin) {
       return res.status(403).json({ error: "Admin access required for book deletion" });
     }
@@ -601,15 +614,30 @@ app.get("/api/fonts", (req, res) => {
 
 // Upload fonts
 app.post("/api/fonts/upload", fontUpload.array("fonts", 50), async (req, res) => {
-  const files = req.files || [];
-  const uploaded = files.map(f => ({
-    filename: f.filename,
-    originalName: f.originalname,
-    size: f.size,
-    uploadedAt: Date.now()
-  }));
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
 
-  res.json({ uploaded });
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
+    if (!currentUser || !currentUser.isAdmin) {
+      return res.status(403).json({ error: "Admin access required for font uploads" });
+    }
+
+    const files = req.files || [];
+    const uploaded = files.map(f => ({
+      filename: f.filename,
+      originalName: f.originalname,
+      size: f.size,
+      uploadedAt: Date.now()
+    }));
+
+    res.json({ uploaded });
+  } catch (err) {
+    console.error("Error uploading fonts:", err);
+    res.status(500).json({ error: "Failed to upload fonts" });
+  }
 });
 
 // Serve font files
@@ -639,9 +667,19 @@ app.get("/api/fonts/:filename", (req, res) => {
 // Delete font
 app.delete("/api/fonts/:filename", (req, res) => {
   const { filename } = req.params;
-  const fontPath = path.join(fontsDir, filename);
 
   try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
+    if (!currentUser || !currentUser.isAdmin) {
+      return res.status(403).json({ error: "Admin access required for font deletion" });
+    }
+
+    const fontPath = path.join(fontsDir, filename);
     if (fs.existsSync(fontPath)) {
       fs.unlinkSync(fontPath);
     }
@@ -655,12 +693,12 @@ app.delete("/api/fonts/:filename", (req, res) => {
 // --- Bookmarks API ---
 app.get("/api/bookmarks", (req, res) => {
   try {
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const userBookmarks = (state.bookmarks || []).filter(b => b.userId === state.currentUser);
+    const state = loadState(statePath);
+    const userBookmarks = (state.bookmarks || []).filter(b => b.userId === req.session.userId);
     res.json({ bookmarks: userBookmarks });
   } catch (err) {
     console.error("Error loading bookmarks:", err);
@@ -680,16 +718,16 @@ app.post("/api/bookmarks", async (req, res) => {
       return res.status(400).json({ error: "Book ID and CFI are required" });
     }
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    const state = loadState(statePath);
     if (!state.bookmarks) state.bookmarks = [];
 
     // Check if bookmark already exists for this user, book and CFI
     const existingIndex = state.bookmarks.findIndex(
-      b => b.userId === state.currentUser && b.bookId === bookmark.bookId && b.cfi === bookmark.cfi
+      b => b.userId === req.session.userId && b.bookId === bookmark.bookId && b.cfi === bookmark.cfi
     );
 
     if (existingIndex !== -1) {
@@ -697,7 +735,7 @@ app.post("/api/bookmarks", async (req, res) => {
       state.bookmarks[existingIndex] = {
         ...state.bookmarks[existingIndex],
         ...bookmark,
-        userId: state.currentUser,
+        userId: req.session.userId,
         updatedAt: Date.now()
       };
     } else {
@@ -705,7 +743,7 @@ app.post("/api/bookmarks", async (req, res) => {
       const newBookmark = {
         id: nanoid(12),
         ...bookmark,
-        userId: state.currentUser,
+        userId: req.session.userId,
         createdAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -724,14 +762,14 @@ app.delete("/api/bookmarks/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const state = loadState(statePath);
-    if (!state.currentUser) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
+    const state = loadState(statePath);
     if (!state.bookmarks) state.bookmarks = [];
 
-    const index = state.bookmarks.findIndex(b => b.id === id && b.userId === state.currentUser);
+    const index = state.bookmarks.findIndex(b => b.id === id && b.userId === req.session.userId);
     if (index === -1) {
       return res.status(404).json({ error: "Bookmark not found" });
     }
