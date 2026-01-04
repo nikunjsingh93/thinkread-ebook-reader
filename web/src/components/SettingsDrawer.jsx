@@ -120,7 +120,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           <label>Vertical margins</label>
           <input
             type="range"
-            min="10"
+            min="0"
             max="110"
             value={prefs.verticalMargin}
             onChange={(e) => onChange({ verticalMargin: Number(e.target.value) })}
@@ -132,7 +132,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
           <label>Horizontal margins</label>
           <input
             type="range"
-            min="10"
+            min="0"
             max="110"
             value={prefs.horizontalMargin}
             onChange={(e) => onChange({ horizontalMargin: Number(e.target.value) })}
