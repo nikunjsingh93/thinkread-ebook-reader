@@ -263,9 +263,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               padding: "10px 12px"
             }}
           />
-          <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
-            {uploading ? "Uploading…" : "Upload"}
-          </button>
+          {currentUser?.isAdmin && (
+            <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
+              {uploading ? "Uploading…" : "Upload"}
+            </button>
+          )}
           <div style={{position: "relative"}} className="sort-dropdown">
             <button
               className="pill"
@@ -406,7 +408,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
       {filtered.length === 0 ? (
         <div className="muted" style={{padding: "18px 0"}}>
-          No books yet. Click <b>Upload</b> to add EPUB or MOBI files.
+          {currentUser?.isAdmin ? (
+            <>No books yet. Click <b>Upload</b> to add EPUB or MOBI files.</>
+          ) : (
+            <>No books yet. Contact an administrator to add books.</>
+          )}
         </div>
       ) : (
         <div className="grid">
