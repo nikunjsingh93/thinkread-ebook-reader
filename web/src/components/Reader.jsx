@@ -9,6 +9,12 @@ import { cacheBook } from "../lib/serviceWorker.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
+// Detect iOS devices
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+}
+
 function getFontFormat(filename) {
   const ext = filename.split('.').pop().toLowerCase();
   switch (ext) {
@@ -914,10 +920,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         }, 100);
         
-        // Set a timer for long press (500ms)
+        // Set a timer for long press (shorter on iOS for better responsiveness)
+        const longPressDelay = isIOS() ? 300 : 500;
         longPressTimerRef.current = setTimeout(() => {
           handleLongPress(e);
-        }, 500);
+        }, longPressDelay);
       };
       
       const handleContextMenu = (e) => {
@@ -998,45 +1005,117 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // Get word at position
         let word = null;
         let range = null;
-        
-        // Try caretRangeFromPoint (Chrome, Safari)
-        if (iframeDoc.caretRangeFromPoint) {
-          range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
-        }
-        // Try caretPositionFromPoint (Firefox)
-        else if (iframeDoc.caretPositionFromPoint) {
-          const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
-          if (position) {
-            range = iframeDoc.createRange();
-            range.setStart(position.offsetNode, position.offset);
-            range.setEnd(position.offsetNode, position.offset);
-          }
-        }
-        
-        if (range && range.startContainer) {
-          // Get the text node
-          const textNode = range.startContainer;
-          if (textNode.nodeType === 3) { // TEXT_NODE
-            const text = textNode.textContent;
-            const offset = range.startOffset;
-            
-            // Find word boundaries
-            let start = offset;
-            let end = offset;
-            
-            // Move start backwards to find start of word
-            while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
-              start--;
+
+        // iOS Safari has issues with caretRangeFromPoint in iframes
+        // Try different approaches for text selection
+        if (isIOS()) {
+          try {
+            // First try the standard approach even on iOS
+            if (iframeDoc.caretRangeFromPoint) {
+              range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
+              if (range && range.startContainer && range.startContainer.nodeType === 3) {
+                const text = range.startContainer.textContent;
+                const offset = range.startOffset;
+
+                // Find word boundaries
+                let start = offset;
+                let end = offset;
+
+                // Move start backwards to find start of word
+                while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
+                  start--;
+                }
+
+                // Move end forwards to find end of word
+                while (end < text.length && /[a-zA-Z]/.test(text[end])) {
+                  end++;
+                }
+
+                word = text.substring(start, end).trim();
+              }
             }
-            
-            // Move end forwards to find end of word
-            while (end < text.length && /[a-zA-Z]/.test(text[end])) {
-            end++;
+
+            // If that didn't work, try elementFromPoint as fallback
+            if (!word) {
+              const element = iframeDoc.elementFromPoint(relativeX, relativeY);
+              if (element) {
+                // Get all text nodes in the element and its children
+                const textNodes = [];
+                const walk = (node) => {
+                  if (node.nodeType === 3 && node.textContent.trim()) { // TEXT_NODE
+                    textNodes.push(node);
+                  } else if (node.nodeType === 1) { // ELEMENT_NODE
+                    for (let child of node.childNodes) {
+                      walk(child);
+                    }
+                  }
+                };
+                walk(element);
+
+                // Find the text node with the most words
+                if (textNodes.length > 0) {
+                  let bestTextNode = textNodes[0];
+                  let maxWords = 0;
+
+                  for (const textNode of textNodes) {
+                    const words = textNode.textContent.split(/\s+/).filter(w => w.length > 0);
+                    if (words.length > maxWords) {
+                      maxWords = words.length;
+                      bestTextNode = textNode;
+                    }
+                  }
+
+                  // Extract words from the best text node
+                  const words = bestTextNode.textContent.split(/\s+/).filter(w => w.length > 2); // Only words longer than 2 chars
+                  if (words.length > 0) {
+                    word = words[0]; // Take the first substantial word
+                  }
+                }
+              }
+            }
+          } catch (iosError) {
+            console.warn('iOS text selection failed:', iosError);
           }
-          
-          word = text.substring(start, end).trim();
+        } else {
+          // Try caretRangeFromPoint (Chrome, Safari)
+          if (iframeDoc.caretRangeFromPoint) {
+            range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
+          }
+          // Try caretPositionFromPoint (Firefox)
+          else if (iframeDoc.caretPositionFromPoint) {
+            const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
+            if (position) {
+              range = iframeDoc.createRange();
+              range.setStart(position.offsetNode, position.offset);
+              range.setEnd(position.offsetNode, position.offset);
+            }
+          }
+
+          if (range && range.startContainer) {
+            // Get the text node
+            const textNode = range.startContainer;
+            if (textNode.nodeType === 3) { // TEXT_NODE
+              const text = textNode.textContent;
+              const offset = range.startOffset;
+
+              // Find word boundaries
+              let start = offset;
+              let end = offset;
+
+              // Move start backwards to find start of word
+              while (start > 0 && /[a-zA-Z]/.test(text[start - 1])) {
+                start--;
+              }
+
+              // Move end forwards to find end of word
+              while (end < text.length && /[a-zA-Z]/.test(text[end])) {
+                end++;
+              }
+
+              word = text.substring(start, end).trim();
+            }
+          }
         }
-      }
       
       if (word) {
         // Look up the word
@@ -1439,14 +1518,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
             </svg>
           </button>
-          <button
-            className="pill"
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-            style={isFullscreen ? {opacity: 0.8} : {}}
-          >
-            ⛶
-          </button>
+          {!isIOS() && (
+            <button
+              className="pill"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              style={isFullscreen ? {opacity: 0.8} : {}}
+            >
+              ⛶
+            </button>
+          )}
           <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
         </div>
       </div>
