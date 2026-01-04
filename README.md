@@ -6,6 +6,7 @@ A dead‑simple self‑hosted EPUB library + reader:
 - Read in-browser with **themes + typography controls** (font, size, margins, line height, colors)
 - **Upload and use custom fonts** (TTF, OTF, WOFF, WOFF2)
 - Remembers your **last position** per book
+- Install as **PWA** (Progressive Web App)
 
 ## Screenshots
 
