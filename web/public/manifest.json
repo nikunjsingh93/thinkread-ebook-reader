@@ -1,11 +1,11 @@
 {
-  "name": "ThinkRead - Simple Ebook Reader",
+  "name": "ThinkRead",
   "short_name": "ThinkRead",
   "description": "A simple and elegant ebook reader with offline support",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#7c5cff",
+  "theme_color": "#000000",
   "orientation": "portrait-primary",
   "categories": ["books", "productivity", "utilities"],
   "lang": "en",
