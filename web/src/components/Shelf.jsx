@@ -16,7 +16,7 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, currentUser }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, currentUser, isOffline }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
@@ -241,11 +241,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         ) : (
           <>
             <div>
-              <div style={{fontWeight: 800, fontSize: 18}}>
+              <div style={{fontWeight: 800, fontSize: 18, display: 'flex', alignItems: 'center', gap: '8px'}}>
                 Hi {currentUser?.username}, Your Library
+                {isOffline && (
+                  <span style={{
+                    background: 'var(--accent)',
+                    color: 'white',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    fontWeight: 'bold'
+                  }}>
+                    OFFLINE
+                  </span>
+                )}
               </div>
               <div className="muted" style={{fontSize: 12}}>
-                {currentUser?.isAdmin ? `EPUB, MOBI ${books.length} Book${books.length !== 1 ? 's' : ''}` : `${books.length} Book${books.length !== 1 ? 's' : ''}`}
+                {currentUser?.isAdmin ?
+                  `EPUB, MOBI ${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}` :
+                  `${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}`
+                }
               </div>
             </div>
 
@@ -410,7 +425,9 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
       {filtered.length === 0 ? (
         <div className="muted" style={{padding: "18px 0"}}>
-          {currentUser?.isAdmin ? (
+          {isOffline ? (
+            <>You're offline. No cached books available. Connect to the internet to view your library.</>
+          ) : currentUser?.isAdmin ? (
             <>No books yet. Click <b>Upload</b> to add EPUB or MOBI files.</>
           ) : (
             <>No books yet. Contact an administrator to add books.</>

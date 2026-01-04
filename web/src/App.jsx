@@ -7,8 +7,16 @@ import Bookmarks from "./components/Bookmarks.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import Login from "./components/Login.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
+import PWAInstallPrompt from "./components/PWAInstallPrompt.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
+import {
+  registerServiceWorker,
+  onOnlineStatusChange,
+  isOnline,
+  initInstallPrompt,
+  canInstallPWA
+} from "./lib/serviceWorker.js";
 
 // Fallback function for synchronous defaults (for error cases)
 function defaultPrefs() {
@@ -242,6 +250,10 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
+  // PWA and offline state
+  const [isOffline, setIsOffline] = useState(!isOnline());
+  const [canInstall, setCanInstall] = useState(false);
+
   // Check authentication on app start
   useEffect(() => {
     checkAuthStatus();
@@ -317,6 +329,44 @@ export default function App() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
+
+  // Register service worker and handle PWA install prompt
+  useEffect(() => {
+    registerServiceWorker();
+    initInstallPrompt();
+
+    // Check if PWA can be installed
+    const checkInstallability = () => {
+      setCanInstall(canInstallPWA());
+    };
+
+    checkInstallability();
+    // Re-check periodically
+    const interval = setInterval(checkInstallability, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Monitor online/offline status
+  useEffect(() => {
+    const cleanup = onOnlineStatusChange((online) => {
+      const wasOffline = isOffline;
+      setIsOffline(!online);
+
+      if (online && wasOffline) {
+        // Came back online - refresh books and sync data
+        console.log('Back online - refreshing data');
+        reload().catch(() => {
+          // Ignore reload errors when coming back online
+        });
+        setToast("Back online - data synced");
+      } else if (!online) {
+        console.log('Went offline');
+        setToast("You're offline - showing cached content");
+      }
+    });
+
+    return cleanup;
+  }, [isOffline]);
 
 
   // Authentication functions
@@ -501,6 +551,7 @@ export default function App() {
           onExitDeleteMode={() => setDeleteMode(false)}
           onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
           currentUser={currentUser}
+          isOffline={isOffline}
         />
       )}
 
@@ -536,6 +587,8 @@ export default function App() {
           onToast={(t) => setToast(t)}
         />
       )}
+
+      <PWAInstallPrompt onToast={(t) => setToast(t)} />
     </div>
   );
 }

@@ -12,4 +12,13 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
+  // Copy service worker to dist
+  publicDir: 'public',
 });

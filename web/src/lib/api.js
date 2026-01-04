@@ -1,7 +1,18 @@
 export async function apiGetBooks() {
-  const r = await fetch("/api/books");
-  if (!r.ok) throw new Error("Failed to fetch books");
-  return r.json();
+  try {
+    const r = await fetch("/api/books");
+    if (!r.ok) throw new Error("Failed to fetch books");
+    return r.json();
+  } catch (error) {
+    // If offline, try to get cached books from service worker
+    if (!navigator.onLine) {
+      console.log('Offline - attempting to get cached books');
+      // The service worker will handle this and return cached books
+      const r = await fetch("/api/books");
+      if (r.ok) return r.json();
+    }
+    throw error;
+  }
 }
 
 export async function apiUploadBooks(files) {

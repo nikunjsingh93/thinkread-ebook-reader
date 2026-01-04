@@ -5,6 +5,7 @@ import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl } from "../lib/api.js";
+import { cacheBook } from "../lib/serviceWorker.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -66,6 +67,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
+
+  // Cache book for offline reading when opened
+  useEffect(() => {
+    if (book.id && fileUrl) {
+      cacheBook(book.id, fileUrl);
+    }
+  }, [book.id, fileUrl]);
 
   // Apply theme settings to epub.js rendition
   function applyPrefs(rendition, p) {
