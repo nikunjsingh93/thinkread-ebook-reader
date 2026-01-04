@@ -436,14 +436,6 @@ export default function App() {
             >
               ☰
             </button>
-            <button
-              className="pill"
-              onClick={handleLogout}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
-              title="Logout"
-            >
-              🚪
-            </button>
           </div>
         </div>
       )}
@@ -520,6 +512,7 @@ export default function App() {
         onPrefsChange={onPrefsChange}
         onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
         currentUser={currentUser}
+        onLogout={handleLogout}
       />
 
       {showAdminPanel && (

@@ -6,7 +6,7 @@ import {
   loadDictionary
 } from "../lib/dictionary.js";
 
-export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm, currentUser }) {
+export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm, currentUser, onLogout }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
@@ -166,7 +166,10 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink: 0}}>
           <h3>App Settings</h3>
-          <button className="pill" onClick={onClose}>Done</button>
+          <div style={{display: "flex", alignItems: "center", gap: "8px"}}>
+            <button className="pill" onClick={onLogout} style={{fontSize: "14px"}}>Sign Out</button>
+            <button className="pill" onClick={onClose}>Done</button>
+          </div>
         </div>
 
         <div style={{marginTop: "20px", overflowY: "auto", overflowX: "hidden", flex: 1, paddingRight: "4px"}}>
