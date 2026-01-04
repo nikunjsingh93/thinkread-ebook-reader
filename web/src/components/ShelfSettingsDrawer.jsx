@@ -216,64 +216,68 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
             </>
           )}
 
-          <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
+          {currentUser?.isAdmin && (
+            <>
+              <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
 
-          <div className="row">
-            <label>Upload Fonts</label>
-            <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
-              <button
-                className="pill"
-                onClick={pickFontFiles}
-                disabled={uploadingFonts}
-                style={{fontSize: "12px", padding: "6px 12px"}}
-              >
-                {uploadingFonts ? "Uploading…" : "Upload Font"}
-              </button>
-              <input
-                ref={fontInputRef}
-                type="file"
-                accept=".ttf,.otf,.woff,.woff2"
-                multiple
-                onChange={onFontFileChange}
-                style={{display: "none"}}
-              />
-            </div>
-          </div>
-
-          {fonts.length > 0 && (
-            <div style={{marginTop: "12px", padding: "8px", background: "var(--row-bg)", borderRadius: "4px"}}>
-              <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "8px"}}>Uploaded Fonts:</div>
-              {fonts.map((font) => (
-                <div key={font.filename} style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "4px 0",
-                  fontSize: "12px"
-                }}>
-                  <span style={{fontFamily: `'${font.fontFamily}'`}}>{font.fontFamily}</span>
+              <div className="row">
+                <label>Upload Fonts</label>
+                <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
                   <button
-                    onClick={() => deleteFont(font.filename)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "var(--muted)",
-                      cursor: "pointer",
-                      fontSize: "14px",
-                      padding: "2px 4px"
-                    }}
-                    title="Delete font"
+                    className="pill"
+                    onClick={pickFontFiles}
+                    disabled={uploadingFonts}
+                    style={{fontSize: "12px", padding: "6px 12px"}}
                   >
-                    ✕
+                    {uploadingFonts ? "Uploading…" : "Upload Font"}
                   </button>
+                  <input
+                    ref={fontInputRef}
+                    type="file"
+                    accept=".ttf,.otf,.woff,.woff2"
+                    multiple
+                    onChange={onFontFileChange}
+                    style={{display: "none"}}
+                  />
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
 
-          <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
-            Upload TTF, OTF, WOFF, or WOFF2 font files to use them in the reader.
-          </div>
+              {fonts.length > 0 && (
+                <div style={{marginTop: "12px", padding: "8px", background: "var(--row-bg)", borderRadius: "4px"}}>
+                  <div style={{fontSize: "12px", color: "var(--muted)", marginBottom: "8px"}}>Uploaded Fonts:</div>
+                  {fonts.map((font) => (
+                    <div key={font.filename} style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "4px 0",
+                      fontSize: "12px"
+                    }}>
+                      <span style={{fontFamily: `'${font.fontFamily}'`}}>{font.fontFamily}</span>
+                      <button
+                        onClick={() => deleteFont(font.filename)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--muted)",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          padding: "2px 4px"
+                        }}
+                        title="Delete font"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
+                Upload TTF, OTF, WOFF, or WOFF2 font files to use them in the reader.
+              </div>
+            </>
+          )}
 
           <h4 style={{marginTop: "20px", marginBottom: "12px", color: "var(--text)"}}>Dictionary</h4>
           
