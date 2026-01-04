@@ -11,28 +11,22 @@ A dead‑simple self‑hosted EPUB library + reader:
 
 ### Desktop
 
-![Desktop - Reader with Dictionary](screenshots/desktop-1-reader-dictionary.png)
-*Reader view with dictionary pop-up feature*
+<img width="1470" height="832" alt="1" src="https://github.com/user-attachments/assets/01ed0ce6-da08-44d3-86a8-f853e05ad049" />
 
-![Desktop - Chapter View](screenshots/desktop-2-chapter-view.png)
-*Chapter reading view with illustrations*
+<img width="1468" height="832" alt="2" src="https://github.com/user-attachments/assets/b44866eb-6975-4c31-a0c9-b23cc50cb673" />
 
-![Desktop - Library View](screenshots/desktop-3-library.png)
-*Library shelf view with book covers*
+<img width="1470" height="833" alt="3" src="https://github.com/user-attachments/assets/096680e0-dee7-45de-9ca2-681317791f54" />
 
-![Desktop - Reading Settings](screenshots/desktop-4-settings.png)
-*Reading settings panel with customization options*
+<img width="1470" height="823" alt="4" src="https://github.com/user-attachments/assets/d9db635c-eaa6-4f92-9bd9-e5968adb55e5" />
 
 ### Mobile
 
-![Mobile - Reader View](screenshots/mobile-1-reader.png)
-*Mobile reading experience*
+<img width="374" height="671" alt="5" src="https://github.com/user-attachments/assets/5211805c-90a5-4087-af03-62ac0db66b52" />
 
-![Mobile - Login](screenshots/mobile-2-login.png)
-*Mobile login screen*
+<img width="377" height="668" alt="6" src="https://github.com/user-attachments/assets/2bb4758a-28a7-4093-ad3a-ccb9f1728ad4" />
 
-![Mobile - Library](screenshots/mobile-3-library.png)
-*Mobile library view*
+<img width="375" height="670" alt="7" src="https://github.com/user-attachments/assets/bf5f5086-c436-4dfb-802e-5658f51d19ea" />
+
 
 ## License
 
