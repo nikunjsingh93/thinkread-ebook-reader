@@ -370,6 +370,8 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
 
           <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginTop: "16px"}}>
             Long-press any word while reading to see its definition. The dictionary is saved on the server and persists across sessions.
+            <br />
+            <span style={{fontSize: 11, opacity: 0.8}}>Note: Dictionary lookup does not work on iOS/iPadOS.</span>
           </div>
         </div>
       </div>

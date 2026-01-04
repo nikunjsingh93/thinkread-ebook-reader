@@ -284,6 +284,8 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
 
         <div className="muted" style={{fontSize: 12, padding: "8px 2px"}}>
           Tip: Long-press any word while reading to see its definition. Tap the middle of the page to show/hide the reader toolbar.
+          <br />
+          <span style={{fontSize: 11, opacity: 0.8}}>Note: Dictionary lookup does not work on iOS/iPadOS.</span>
         </div>
         </div>
       </div>
