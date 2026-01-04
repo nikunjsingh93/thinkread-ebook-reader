@@ -19,6 +19,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Deploy to Server
 
+### Docker Compose
+
+See [`docker-compose.deploy.yml`](docker-compose.deploy.yml) for deployment configuration:
 
 ```yaml
 services:
@@ -31,6 +34,18 @@ services:
     environment:
       - DATA_DIR=/data
     restart: unless-stopped
+```
+
+### Docker Run
+
+```bash
+docker run -d \
+  --name thinkread \
+  -p 8080:8080 \
+  -v ./data:/data \
+  -e DATA_DIR=/data \
+  --restart unless-stopped \
+  nikunjsingh/thinkread-ebook-reader:latest
 ```
 
 ## Development Mode (with Docker)
