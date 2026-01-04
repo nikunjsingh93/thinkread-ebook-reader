@@ -16,7 +16,7 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, currentUser }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");

@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const DEFAULT_STATE = { books: [], prefs: {}, progress: {}, bookmarks: [] };
+const DEFAULT_STATE = {
+  books: [],
+  prefs: {},
+  progress: {},
+  bookmarks: [],
+  users: [],
+  currentUser: null
+};
 
 // Simple in-memory lock to prevent race conditions
 const saveLock = new Map();
@@ -23,7 +30,34 @@ export function getDataPaths(dataDir) {
   ensureDir(coversDir);
   ensureDir(fontsDir);
   if (!fs.existsSync(statePath)) {
-    fs.writeFileSync(statePath, JSON.stringify(DEFAULT_STATE, null, 2), "utf-8");
+    const initialState = { ...DEFAULT_STATE };
+    // Create default admin user
+    initialState.users = [{
+      id: "admin-default",
+      username: "admin",
+      password: "admin",
+      isAdmin: true,
+      createdAt: Date.now()
+    }];
+    fs.writeFileSync(statePath, JSON.stringify(initialState, null, 2), "utf-8");
+  } else {
+    // Check if we need to migrate existing state to include users
+    try {
+      const existingState = loadState(statePath);
+      if (!existingState.users || existingState.users.length === 0) {
+        // Migrate existing state to include default admin user
+        existingState.users = [{
+          id: "admin-default",
+          username: "admin",
+          password: "admin",
+          isAdmin: true,
+          createdAt: Date.now()
+        }];
+        fs.writeFileSync(statePath, JSON.stringify(existingState, null, 2), "utf-8");
+      }
+    } catch (err) {
+      console.warn("Failed to migrate existing state:", err);
+    }
   }
   return { booksDir, coversDir, fontsDir, statePath, dictionaryPath };
 }
@@ -37,6 +71,7 @@ export function loadState(statePath) {
     if (!parsed.prefs || typeof parsed.prefs !== "object") parsed.prefs = {};
     if (!parsed.progress || typeof parsed.progress !== "object") parsed.progress = {};
     if (!Array.isArray(parsed.bookmarks)) parsed.bookmarks = [];
+    if (!Array.isArray(parsed.users)) parsed.users = [];
     return parsed;
   } catch {
     return DEFAULT_STATE;

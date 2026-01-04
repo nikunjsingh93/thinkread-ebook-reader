@@ -6,7 +6,7 @@ import {
   loadDictionary
 } from "../lib/dictionary.js";
 
-export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm }) {
+export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, prefs, onPrefsChange, onConfirm, currentUser }) {
   const [fonts, setFonts] = useState([]);
   const [uploadingFonts, setUploadingFonts] = useState(false);
   const fontInputRef = useRef(null);
@@ -192,25 +192,29 @@ export default function ShelfSettingsDrawer({ open, onClose, onEnterDeleteMode, 
 
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Library Management</h4>
 
-          <div className="row" style={{marginBottom: "20px"}}>
-            <label>Delete Books</label>
-            <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
-              <button
-                className="pill"
-                onClick={() => {
-                  onClose();
-                  onEnterDeleteMode();
-                }}
-                style={{fontSize: "12px", padding: "6px 12px"}}
-              >
-                Select Books to Delete
-              </button>
-            </div>
-          </div>
+          {currentUser?.isAdmin && (
+            <>
+              <div className="row" style={{marginBottom: "20px"}}>
+                <label>Delete Books</label>
+                <div style={{display: "flex", gap: "8px", alignItems: "center"}}>
+                  <button
+                    className="pill"
+                    onClick={() => {
+                      onClose();
+                      onEnterDeleteMode();
+                    }}
+                    style={{fontSize: "12px", padding: "6px 12px"}}
+                  >
+                    Select Books to Delete
+                  </button>
+                </div>
+              </div>
 
-          <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
-            Select and delete multiple books at once.
-          </div>
+              <div className="muted" style={{fontSize: 12, padding: "8px 2px", marginBottom: "20px"}}>
+                Select and delete multiple books at once.
+              </div>
+            </>
+          )}
 
           <h4 style={{marginBottom: "12px", color: "var(--text)"}}>Font Management</h4>
 

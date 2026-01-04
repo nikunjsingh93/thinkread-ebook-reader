@@ -97,3 +97,51 @@ export async function apiDeleteBookmark(id) {
   if (!r.ok) throw new Error("Bookmark delete failed");
   return r.json();
 }
+
+// --- Authentication API ---
+export async function apiLogin(username, password) {
+  const r = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "Login failed");
+  return data;
+}
+
+export async function apiLogout() {
+  const r = await fetch("/api/logout", { method: "POST" });
+  if (!r.ok) throw new Error("Logout failed");
+  return r.json();
+}
+
+export async function apiGetCurrentUser() {
+  const r = await fetch("/api/current-user");
+  if (!r.ok) throw new Error("Failed to get current user");
+  return r.json();
+}
+
+// --- User Management API (Admin Only) ---
+export async function apiGetUsers() {
+  const r = await fetch("/api/users");
+  if (!r.ok) throw new Error("Failed to fetch users");
+  return r.json();
+}
+
+export async function apiCreateUser(userData) {
+  const r = await fetch("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(userData),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "Create user failed");
+  return data;
+}
+
+export async function apiDeleteUser(userId) {
+  const r = await fetch(`/api/users/${userId}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("Delete user failed");
+  return r.json();
+}

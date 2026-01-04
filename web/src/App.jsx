@@ -5,6 +5,8 @@ import Toast from "./components/Toast.jsx";
 import ShelfSettingsDrawer from "./components/ShelfSettingsDrawer.jsx";
 import Bookmarks from "./components/Bookmarks.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
+import Login from "./components/Login.jsx";
+import AdminPanel from "./components/AdminPanel.jsx";
 import { apiGetBooks } from "./lib/api.js";
 import { loadPrefs, savePrefs } from "./lib/storage.js";
 
@@ -235,6 +237,16 @@ export default function App() {
   const [bookmarkUpdateTrigger, setBookmarkUpdateTrigger] = useState(0);
   const [confirmDialog, setConfirmDialog] = useState(null); // { open: true, title, message, onConfirm, onCancel }
 
+  // Authentication state
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+
+  // Check authentication on app start
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
   // Prevent context menu globally on touch devices
   useEffect(() => {
     const preventContextMenu = (e) => {
@@ -292,6 +304,45 @@ export default function App() {
   }, []);
 
 
+  // Authentication functions
+  const checkAuthStatus = async () => {
+    try {
+      const response = await fetch('/api/current-user');
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUser(data.user);
+      } else {
+        setCurrentUser(null);
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      setCurrentUser(null);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+      setCurrentUser(null);
+      // Reset app state
+      setSelected(null);
+      setSettingsOpen(false);
+      setDeleteMode(false);
+      setShowBookmarks(false);
+      setShowAdminPanel(false);
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Force logout on client side anyway
+      setCurrentUser(null);
+    }
+  };
+
   // Handle orientation unlock when setting is disabled
 
 
@@ -304,6 +355,26 @@ export default function App() {
     } catch (err) {
       console.warn('Failed to save preferences:', err);
     }
+  }
+
+  // Show loading screen while checking authentication
+  if (isAuthLoading) {
+    return (
+      <div className="appShell" style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--bg)'
+      }}>
+        <div style={{ color: 'var(--text)' }}>Loading...</div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!currentUser) {
+    return <Login onLogin={handleLogin} onToast={(t) => setToast(t)} />;
   }
 
   return (
@@ -337,6 +408,16 @@ export default function App() {
                 ⛶
               </button>
             )}
+            {currentUser.isAdmin && (
+              <button
+                className="pill"
+                onClick={() => setShowAdminPanel(true)}
+                style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+                title="Admin Panel"
+              >
+                👑
+              </button>
+            )}
             <button
               className="pill"
               onClick={() => setShowBookmarks(true)}
@@ -354,6 +435,14 @@ export default function App() {
               title="Settings"
             >
               ☰
+            </button>
+            <button
+              className="pill"
+              onClick={handleLogout}
+              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              title="Logout"
+            >
+              🚪
             </button>
           </div>
         </div>
@@ -404,6 +493,7 @@ export default function App() {
           onEnterDeleteMode={() => setDeleteMode(true)}
           onExitDeleteMode={() => setDeleteMode(false)}
           onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+          currentUser={currentUser}
         />
       )}
 
@@ -429,7 +519,15 @@ export default function App() {
         prefs={prefs}
         onPrefsChange={onPrefsChange}
         onConfirm={(title, message, onConfirm) => setConfirmDialog({ open: true, title, message, onConfirm })}
+        currentUser={currentUser}
       />
+
+      {showAdminPanel && (
+        <AdminPanel
+          onClose={() => setShowAdminPanel(false)}
+          onToast={(t) => setToast(t)}
+        />
+      )}
     </div>
   );
 }
