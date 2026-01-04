@@ -93,10 +93,6 @@ export default function Login({ onLogin, onToast }) {
             {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="loginFooter">
-          <p>Default admin credentials: admin / admin</p>
-        </div>
       </div>
 
       <style jsx>{`
@@ -195,17 +191,6 @@ export default function Login({ onLogin, onToast }) {
         .loginButton:disabled {
           opacity: 0.6;
           cursor: not-allowed;
-        }
-
-        .loginFooter {
-          margin-top: 24px;
-          text-align: center;
-        }
-
-        .loginFooter p {
-          margin: 0;
-          font-size: 12px;
-          color: var(--muted);
         }
       `}</style>
     </div>
