@@ -241,7 +241,9 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         ) : (
           <>
             <div>
-              <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
+              <div style={{fontWeight: 800, fontSize: 18}}>
+                Hi {currentUser?.username}, Your Library
+              </div>
               <div className="muted" style={{fontSize: 12}}>
                 EPUB, MOBI • {books.length} book(s)
               </div>
