@@ -250,58 +250,16 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     return filteredBooks;
   }, [books, searchQuery, sortBy, progressData]);
 
-  // Calculate books per page based on visible viewport when pagination is enabled
+  // Set books per page to 9 when pagination is enabled (3x3 grid)
   useEffect(() => {
     if (!usePagination) {
       onBooksPerPageChange(Infinity);
       return;
     }
-    
-    const calculateBooksPerPage = () => {
-      if (!gridRef.current) return;
-      
-      const grid = gridRef.current;
-      const gridRect = grid.getBoundingClientRect();
-      const gridWidth = gridRect.width;
-      const gridHeight = gridRect.height;
-      
-      // Get computed grid styles
-      const gridStyles = window.getComputedStyle(grid);
-      const gap = parseFloat(gridStyles.gap) || 14;
-      
-      // Estimate card size (minmax(150px, 1fr) from CSS)
-      // Calculate how many columns fit
-      const minCardWidth = 150;
-      const columns = Math.floor((gridWidth + gap) / (minCardWidth + gap));
-      const actualColumns = Math.max(1, columns);
-      
-      // Estimate card height (aspect ratio 2/3 + body padding)
-      // Cover: aspect-ratio 2/3, so if width is ~150px, height is ~225px
-      // Card body: ~60px padding
-      // Total card height: ~285px
-      const estimatedCardHeight = 285;
-      const rows = Math.floor((gridHeight + gap) / (estimatedCardHeight + gap));
-      const actualRows = Math.max(1, rows);
-      
-      // Books per page = columns * rows
-      const visibleBooks = actualColumns * actualRows;
-      onBooksPerPageChange(Math.max(4, visibleBooks)); // Minimum 4 books per page
-    };
-    
-    // Calculate on mount and resize
-    calculateBooksPerPage();
-    window.addEventListener('resize', calculateBooksPerPage);
-    
-    // Also recalculate after a short delay to ensure layout is complete
-    const timeout = setTimeout(calculateBooksPerPage, 100);
-    const timeout2 = setTimeout(calculateBooksPerPage, 500); // Second delay for slower devices
-    
-    return () => {
-      window.removeEventListener('resize', calculateBooksPerPage);
-      clearTimeout(timeout);
-      clearTimeout(timeout2);
-    };
-  }, [usePagination, onBooksPerPageChange]); // Recalculate when pagination mode changes or on resize
+
+    // Always show exactly 9 books per page (3x3 grid) when pagination is enabled
+    onBooksPerPageChange(9);
+  }, [usePagination, onBooksPerPageChange]);
 
   // Pagination logic
   const totalPages = usePagination ? Math.ceil(filtered.length / booksPerPage) : 1;
@@ -618,7 +576,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               No books yet. Click <b>Upload</b> to add EPUB files.
             </div>
           ) : (
-            <div className="grid" ref={gridRef}>
+            <div className={`grid ${usePagination ? 'pagination-grid' : ''}`} ref={gridRef}>
             {paginatedBooks.map((b) => {
             const progress = progressData[b.id];
             // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
