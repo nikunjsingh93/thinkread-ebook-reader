@@ -40,6 +40,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Deploy to Server
 
+**Default User Credentials:**
+- Username: `admin`
+- Password: `admin`
+
 ### Docker Compose
 
 ```yaml
