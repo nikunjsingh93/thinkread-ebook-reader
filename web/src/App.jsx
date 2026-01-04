@@ -18,7 +18,7 @@ const OrientationLock = registerPlugin('OrientationLock');
 // Fallback function for synchronous defaults (for error cases)
 function defaultPrefs() {
   return {
-    fontFamily: "custom:Literata-Regular.ttf:Literata",
+    fontFamily: "literata",
     fontSize: 18,
     fontWeight: 400,
     lineHeight: 1.6,

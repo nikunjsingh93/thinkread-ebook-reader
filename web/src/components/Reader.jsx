@@ -104,12 +104,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     try {
       // Check if this is a custom font that needs @font-face loading
       const isCustomFont = fontFamily.startsWith('custom:');
+      const isLiterata = fontFamily === 'literata';
       let actualFontFamily = fontFamily;
+      let needsFontLoading = false;
+      let fontFilename = null;
 
       if (isCustomFont) {
         const parts = fontFamily.substring(7).split(':'); // Remove 'custom:' prefix and split filename:fontFamily
-        const filename = parts[0];
+        fontFilename = parts[0];
         actualFontFamily = parts[1];
+        needsFontLoading = true;
+      } else if (isLiterata) {
+        actualFontFamily = 'Literata';
+        fontFilename = 'Literata-Regular.ttf';
+        needsFontLoading = true;
       }
 
       // Register or update the theme - epub.js will merge with existing
@@ -142,17 +150,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
       });
 
-      // Inject custom font CSS into the epub iframe if needed
-      if (isCustomFont) {
-        const filename = fontFamily.substring(7).split(':')[0]; // Extract filename from 'custom:filename:fontFamily'
-
+      // Inject font CSS into the epub iframe if needed (for custom fonts and Literata)
+      if (needsFontLoading && fontFilename) {
         // Wait for the rendition to be ready, then inject font-face CSS
         rendition.hooks.content.register(async (contents) => {
-          const fontUrl = await getFontUrl(filename);
+          const fontUrl = await getFontUrl(fontFilename);
           const css = `
             @font-face {
               font-family: '${actualFontFamily}';
-              src: url('${fontUrl}') format('${getFontFormat(filename)}');
+              src: url('${fontUrl}') format('${getFontFormat(fontFilename)}');
               font-display: swap;
             }
             body, p, div, span, h1, h2, h3, h4, h5, h6 {
@@ -454,18 +460,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // Apply prefs first, then display
         applyPrefs(rendition, prefs);
 
-        // If using custom font, inject CSS directly into iframe after a short delay
+        // If using custom font or Literata, inject CSS directly into iframe after a short delay
         const fontFamily = prefs.fontFamily || "serif";
-        if (fontFamily.startsWith('custom:')) {
+        const needsFontInjection = fontFamily.startsWith('custom:') || fontFamily === 'literata';
+        if (needsFontInjection) {
           setTimeout(async () => {
             try {
               const iframe = hostRef.current?.querySelector('iframe');
               if (iframe && iframe.contentDocument) {
                 const doc = iframe.contentDocument;
-                const filename = fontFamily.substring(7).split(':')[0];
-                const actualFontFamily = fontFamily.substring(7).split(':')[1];
+                let filename, actualFontFamily;
+                
+                if (fontFamily.startsWith('custom:')) {
+                  filename = fontFamily.substring(7).split(':')[0];
+                  actualFontFamily = fontFamily.substring(7).split(':')[1];
+                } else if (fontFamily === 'literata') {
+                  filename = 'Literata-Regular.ttf';
+                  actualFontFamily = 'Literata';
+                }
 
-                // Remove any existing custom font styles first
+                // Remove any existing font styles first
                 const existingStyles = doc.querySelectorAll('style[data-custom-font]');
                 existingStyles.forEach(style => style.remove());
 
@@ -483,7 +497,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 style.textContent = css;
                 doc.head.appendChild(style);
 
-                console.log('Injected custom font CSS for new book:', actualFontFamily);
+                console.log('Injected font CSS for new book:', actualFontFamily);
               }
             } catch (err) {
               console.warn('Failed to inject font CSS for new book:', err);
@@ -840,41 +854,57 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     requestAnimationFrame(() => {
       setTimeout(async () => {
         try {
-          // Reapply the epub.js theme to update settings
-          applyPrefs(r, prefs);
-
-          // Inject font CSS immediately for existing content if it's a custom font
-          const fontFamily = prefs.fontFamily || "serif";
-          if (fontFamily.startsWith('custom:')) {
-            const iframe = hostRef.current?.querySelector('iframe');
-            if (iframe && iframe.contentDocument) {
-              const doc = iframe.contentDocument;
-              const filename = fontFamily.substring(7).split(':')[0];
-              const actualFontFamily = fontFamily.substring(7).split(':')[1];
-
-              // Remove any existing custom font styles first
-              const existingStyles = doc.querySelectorAll('style[data-custom-font]');
-              existingStyles.forEach(style => style.remove());
-
-              const fontUrl = await getFontUrl(filename);
-              const css = `
-                @font-face {
-                  font-family: '${actualFontFamily}';
-                  src: url('${fontUrl}') format('${getFontFormat(filename)}');
-                  font-display: swap;
-                }
-              `;
-
-              const style = doc.createElement('style');
-              style.setAttribute('data-custom-font', 'true');
-              style.textContent = css;
-              doc.head.appendChild(style);
-
-              console.log('Injected custom font CSS for:', actualFontFamily);
-            }
+          // Always remove any existing custom font styles first (when switching fonts)
+          const iframe = hostRef.current?.querySelector('iframe');
+          if (iframe && iframe.contentDocument) {
+            const doc = iframe.contentDocument;
+            const existingStyles = doc.querySelectorAll('style[data-custom-font]');
+            existingStyles.forEach(style => style.remove());
           }
 
-          // For margin/layout changes, force complete re-layout
+          // Reapply the epub.js theme to update settings (this ensures font-family is updated)
+          applyPrefs(r, prefs);
+          
+          // Force theme selection to ensure changes are applied
+          try {
+            r.themes.select("custom");
+          } catch (err) {
+            console.warn('Failed to select theme:', err);
+          }
+
+          // Inject font CSS immediately for existing content if it's a custom font or Literata
+          const fontFamily = prefs.fontFamily || "serif";
+          const needsFontInjection = fontFamily.startsWith('custom:') || fontFamily === 'literata';
+          if (needsFontInjection && iframe && iframe.contentDocument) {
+            const doc = iframe.contentDocument;
+            let filename, actualFontFamily;
+            
+            if (fontFamily.startsWith('custom:')) {
+              filename = fontFamily.substring(7).split(':')[0];
+              actualFontFamily = fontFamily.substring(7).split(':')[1];
+            } else if (fontFamily === 'literata') {
+              filename = 'Literata-Regular.ttf';
+              actualFontFamily = 'Literata';
+            }
+
+            const fontUrl = await getFontUrl(filename);
+            const css = `
+              @font-face {
+                font-family: '${actualFontFamily}';
+                src: url('${fontUrl}') format('${getFontFormat(filename)}');
+                font-display: swap;
+              }
+            `;
+
+            const style = doc.createElement('style');
+            style.setAttribute('data-custom-font', 'true');
+            style.textContent = css;
+            doc.head.appendChild(style);
+
+            console.log('Injected font CSS for:', actualFontFamily);
+          }
+
+          // Force complete re-layout and re-display for font changes
           // Resize first
           r.resize();
 
