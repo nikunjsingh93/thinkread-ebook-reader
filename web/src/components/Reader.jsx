@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
-import { lookupWord, loadDictionary } from "../lib/dictionary.js";
+import { lookupWord, loadDictionary, getWordCount } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetBookFileUrl, apiGetFontFileUrl } from "../lib/api.js";
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
@@ -1279,7 +1279,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           });
         } else {
           // Word not found in dictionary
-          onToast?.(`"${word}" not found`);
+          const wordCount = getWordCount();
+          if (wordCount === 0) {
+            // Dictionary is not downloaded
+            onToast?.(`"${word}" not found. Download dictionary in app settings.`);
+          } else {
+            // Dictionary is downloaded but word not found
+            onToast?.(`"${word}" not found`);
+          }
         }
       }
     };
