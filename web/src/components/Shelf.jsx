@@ -246,7 +246,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
               {currentUser?.isAdmin && (
                 <div className="muted" style={{fontSize: 12}}>
-                  EPUB, MOBI • {books.length} book(s)
+                  {books.length} book(s)
                 </div>
               )}
             </div>
