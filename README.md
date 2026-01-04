@@ -21,8 +21,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Docker Compose
 
-See [`docker-compose.deploy.yml`](docker-compose.deploy.yml) for deployment configuration:
-
 ```yaml
 services:
   thinkread:
