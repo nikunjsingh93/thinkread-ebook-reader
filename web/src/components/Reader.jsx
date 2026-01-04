@@ -1746,7 +1746,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             paddingTop: `${verticalMargin}px`,
             paddingBottom: `${verticalMargin}px`,
             opacity: isLoading ? 0 : 1,
-            transition: 'opacity 0.2s ease',
+            transition: prefs.themeMode === 'eink' ? 'none' : 'opacity 0.2s ease',
           }}
         />
       </div>
@@ -1791,7 +1791,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 100,
-            animation: 'fadeIn 0.2s ease-in'
+            animation: prefs.themeMode === 'eink' ? 'none' : 'fadeIn 0.2s ease-in'
           }}
         >
           <button
@@ -1852,7 +1852,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                         color: 'var(--text)',
                         cursor: 'pointer',
                         fontSize: '13px',
-                        transition: 'all 0.15s ease',
+                        transition: prefs.themeMode === 'eink' ? 'none' : 'all 0.15s ease',
                         paddingLeft: `${12 + (item.level || 0) * 16}px`,
                       }}
                       onMouseEnter={(e) => {

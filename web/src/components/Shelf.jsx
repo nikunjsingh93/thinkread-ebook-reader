@@ -105,13 +105,18 @@ function CoverImage({ book, progressPercent }) {
   );
 }
 
-export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm }) {
+export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, prefs }) {
   const inputRef = useRef(null);
+  const gridRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [booksPerPage, setBooksPerPage] = useState(12);
+  
+  const isEink = prefs?.themeMode === 'eink';
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -245,6 +250,79 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
     return filteredBooks;
   }, [books, query, sortBy, progressData]);
+
+  // Calculate books per page based on visible viewport for eink
+  useEffect(() => {
+    if (!isEink) {
+      setBooksPerPage(Infinity);
+      return;
+    }
+    
+    const calculateBooksPerPage = () => {
+      if (!gridRef.current) return;
+      
+      const grid = gridRef.current;
+      const gridRect = grid.getBoundingClientRect();
+      const gridWidth = gridRect.width;
+      const gridHeight = gridRect.height;
+      
+      // Get computed grid styles
+      const gridStyles = window.getComputedStyle(grid);
+      const gap = parseFloat(gridStyles.gap) || 14;
+      
+      // Estimate card size (minmax(150px, 1fr) from CSS)
+      // Calculate how many columns fit
+      const minCardWidth = 150;
+      const columns = Math.floor((gridWidth + gap) / (minCardWidth + gap));
+      const actualColumns = Math.max(1, columns);
+      
+      // Estimate card height (aspect ratio 2/3 + body padding)
+      // Cover: aspect-ratio 2/3, so if width is ~150px, height is ~225px
+      // Card body: ~60px padding
+      // Total card height: ~285px
+      const estimatedCardHeight = 285;
+      const rows = Math.floor((gridHeight + gap) / (estimatedCardHeight + gap));
+      const actualRows = Math.max(1, rows);
+      
+      // Books per page = columns * rows
+      const visibleBooks = actualColumns * actualRows;
+      setBooksPerPage(Math.max(4, visibleBooks)); // Minimum 4 books per page
+    };
+    
+    // Calculate on mount and resize
+    calculateBooksPerPage();
+    window.addEventListener('resize', calculateBooksPerPage);
+    
+    // Also recalculate after a short delay to ensure layout is complete
+    const timeout = setTimeout(calculateBooksPerPage, 100);
+    const timeout2 = setTimeout(calculateBooksPerPage, 500); // Second delay for slower devices
+    
+    return () => {
+      window.removeEventListener('resize', calculateBooksPerPage);
+      clearTimeout(timeout);
+      clearTimeout(timeout2);
+    };
+  }, [isEink]); // Recalculate when eink mode changes or on resize
+
+  // Pagination logic for eink
+  const totalPages = isEink ? Math.ceil(filtered.length / booksPerPage) : 1;
+  const startIndex = isEink ? (currentPage - 1) * booksPerPage : 0;
+  const endIndex = isEink ? startIndex + booksPerPage : filtered.length;
+  const paginatedBooks = isEink ? filtered.slice(startIndex, endIndex) : filtered;
+
+  // Reset to page 1 when filter changes
+  useEffect(() => {
+    if (isEink) {
+      setCurrentPage(1);
+    }
+  }, [query, sortBy, isEink]);
+  
+  // Update booksPerPage when filtered books change (to handle search results)
+  useEffect(() => {
+    if (isEink && totalPages > 0 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [isEink, totalPages, currentPage]);
 
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
 
@@ -425,7 +503,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     textAlign: "left",
                     cursor: "pointer",
                     fontSize: "14px",
-                    transition: "all 0.15s ease",
+                    transition: isEink ? "none" : "all 0.15s ease",
                     borderRadius: "4px"
                   }}
                   onMouseEnter={(e) => {
@@ -458,7 +536,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     textAlign: "left",
                     cursor: "pointer",
                     fontSize: "14px",
-                    transition: "all 0.15s ease",
+                    transition: isEink ? "none" : "all 0.15s ease",
                     borderRadius: "4px"
                   }}
                   onMouseEnter={(e) => {
@@ -491,7 +569,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     textAlign: "left",
                     cursor: "pointer",
                     fontSize: "14px",
-                    transition: "all 0.15s ease",
+                    transition: isEink ? "none" : "all 0.15s ease",
                     borderRadius: "4px"
                   }}
                   onMouseEnter={(e) => {
@@ -525,14 +603,24 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         )}
       </div>
 
-      <div style={{flex: 1, overflowY: "auto", overflowX: "hidden", minHeight: 0}}>
-        {filtered.length === 0 ? (
-          <div className="muted" style={{padding: "18px 0"}}>
-            No books yet. Click <b>Upload</b> to add EPUB files.
-          </div>
-        ) : (
-          <div className="grid">
-          {filtered.map((b) => {
+      <div style={{flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden'}}>
+        <div 
+          style={{
+            flex: 1, 
+            overflowY: isEink ? "hidden" : "auto", 
+            overflowX: "hidden", 
+            minHeight: 0,
+            scrollBehavior: isEink ? 'auto' : 'smooth'
+          }}
+          className={isEink ? 'eink-scroll-container' : ''}
+        >
+          {filtered.length === 0 ? (
+            <div className="muted" style={{padding: "18px 0"}}>
+              No books yet. Click <b>Upload</b> to add EPUB files.
+            </div>
+          ) : (
+            <div className="grid" ref={gridRef}>
+            {paginatedBooks.map((b) => {
             const progress = progressData[b.id];
             // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
             const pct = progress?.percent != null 
@@ -573,6 +661,57 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
             );
           })}
+            </div>
+          )}
+        </div>
+        
+        {/* Pagination controls for eink - positioned outside scroll container */}
+        {isEink && filtered.length > 0 && totalPages > 1 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+            padding: '16px 0',
+            flexShrink: 0,
+            borderTop: '1px solid var(--border)',
+            marginTop: '8px',
+            backgroundColor: 'var(--bg)',
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 10
+          }}>
+            <button
+              className="pill"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              style={{
+                opacity: currentPage === 1 ? 0.5 : 1,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                padding: '6px 12px',
+                pointerEvents: currentPage === 1 ? 'none' : 'auto'
+              }}
+            >
+              Previous
+            </button>
+            <span style={{ fontSize: '12px', color: 'var(--text)', minWidth: '80px', textAlign: 'center' }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              className="pill"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                opacity: currentPage === totalPages ? 0.5 : 1,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: '12px',
+                padding: '6px 12px',
+                pointerEvents: currentPage === totalPages ? 'none' : 'auto'
+              }}
+            >
+              Next
+            </button>
           </div>
         )}
       </div>

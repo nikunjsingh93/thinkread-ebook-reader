@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function MacTitleBar({ hidden = false }) {
+export default function MacTitleBar({ hidden = false, prefs }) {
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
   
   // Check if we're on macOS - in Electron, we can check via userAgent or platform
@@ -43,7 +43,7 @@ export default function MacTitleBar({ hidden = false }) {
         appRegion: hidden ? 'no-drag' : 'drag',
         backgroundColor: 'var(--bg)',
         pointerEvents: hidden ? 'none' : 'auto', // Disable pointer events when hidden
-        transition: 'top 0.2s ease, opacity 0.2s ease',
+        transition: prefs?.themeMode === 'eink' ? 'none' : 'top 0.2s ease, opacity 0.2s ease',
         cursor: 'default',
         opacity: hidden ? 0 : 1, // Fade out for complete hiding
       }}

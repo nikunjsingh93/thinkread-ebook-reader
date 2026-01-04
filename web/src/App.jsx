@@ -47,7 +47,15 @@ function defaultPrefs() {
 // Theme application function
 function applyTheme(prefs) {
   const root = document.documentElement;
+  const body = document.body;
   const themeMode = prefs.themeMode || 'pure-white';
+  
+  // Add/remove eink-theme class for animation removal
+  if (themeMode === 'eink') {
+    body.classList.add('eink-theme');
+  } else {
+    body.classList.remove('eink-theme');
+  }
 
   if (themeMode === 'pure-white') {
     // Base colors - text closer to black, light backgrounds
@@ -545,7 +553,7 @@ export default function App() {
 
   return (
     <div className="appShell">
-      <MacTitleBar hidden={selected && !readerUiVisible} />
+      <MacTitleBar hidden={selected && !readerUiVisible} prefs={prefs} />
       {!selected && (
         <div 
           className="topbar"
@@ -643,7 +651,7 @@ export default function App() {
                 }}
               />
       ) : (
-        <Shelf
+        <Shelf prefs={prefs}
           books={books}
           onOpenBook={(b) => setSelected(b)}
           onReload={reload}

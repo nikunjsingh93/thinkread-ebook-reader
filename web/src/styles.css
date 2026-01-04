@@ -171,6 +171,9 @@ button, input, select {
   transform: translateY(-2px);
   border-color: rgba(124,92,255,.55);
 }
+body.eink-theme .card:hover {
+  transform: none;
+}
 .cover{
   aspect-ratio: 2 / 3;
   display:flex;
@@ -235,6 +238,9 @@ button, input, select {
   background: var(--reader-bar-bg);
   backdrop-filter: blur(10px);
   transition: top 0.2s ease, opacity 0.2s ease;
+}
+body.eink-theme .readerTop {
+  transition: none;
 }
 .readerTop.hidden {
   top: -100px !important; /* Move completely off-screen */
@@ -308,7 +314,13 @@ button, input, select {
   font-size: 12px;
   color: var(--muted);
   transition: transform 0.2s ease;
+}
+body.eink-theme .bottomBar {
+  transition: none;
   box-sizing: border-box;
+}
+body.eink-theme * {
+  scroll-behavior: auto !important;
 }
 .bottomBar.hidden {
   transform: translateY(100%);
