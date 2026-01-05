@@ -12,6 +12,12 @@ function formatBytes(bytes) {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+// Detect iOS devices
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+}
+
 function coverLetter(title) {
   const t = (title || "").trim();
   return (t[0] || "📘").toUpperCase();
@@ -27,6 +33,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [progressData, setProgressData] = useState({});
   const [progressLoading, setProgressLoading] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(0);
+  const [bookDetailsModal, setBookDetailsModal] = useState(null); // { book, position }
+
+  // Long press handling for book details
+  const longPressTimerRef = useRef(null);
+  const longPressStartRef = useRef(null);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -99,6 +110,59 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       newSelected.add(bookId);
     }
     setSelectedBooks(newSelected);
+  }
+
+  // Long press handlers for book details
+  function handleBookLongPressStart(book, event) {
+    // Clear any existing timers
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+
+    // Store the start position
+    longPressStartRef.current = {
+      x: event.clientX || (event.touches && event.touches[0].clientX),
+      y: event.clientY || (event.touches && event.touches[0].clientY),
+      time: Date.now()
+    };
+
+    // Set a timer for long press (shorter for mobile)
+    const longPressDelay = isIOS() ? 500 : 700;
+    longPressTimerRef.current = setTimeout(() => {
+      // Show book details modal
+      setBookDetailsModal({
+        book,
+        position: longPressStartRef.current
+      });
+    }, longPressDelay);
+  }
+
+  function handleBookLongPressEnd() {
+    // Clear the timer if user releases before long press
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  function handleBookLongPressMove() {
+    // Cancel long press if user moves finger/mouse
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  // Download book function
+  function downloadBook(book) {
+    const downloadUrl = `/api/books/${book.id}/file`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = book.originalName || `${book.title}.epub`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setBookDetailsModal(null);
   }
 
   function enterMultiSelectMode() {
@@ -541,6 +605,18 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 className={`card ${deleteMode ? 'multi-select' : ''}`}
                 key={b.id}
                 onClick={() => deleteMode ? toggleBookSelection(b.id) : onOpenBook(b)}
+                onMouseDown={(e) => !deleteMode && handleBookLongPressStart(b, e)}
+                onMouseUp={() => !deleteMode && handleBookLongPressEnd()}
+                onMouseLeave={() => !deleteMode && handleBookLongPressEnd()}
+                onTouchStart={(e) => !deleteMode && handleBookLongPressStart(b, e)}
+                onTouchEnd={() => !deleteMode && handleBookLongPressEnd()}
+                onTouchCancel={() => !deleteMode && handleBookLongPressEnd()}
+                onContextMenu={(e) => {
+                  // Prevent right-click context menu
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return false;
+                }}
               >
                 {deleteMode && (
                   <div
@@ -622,6 +698,172 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           }
         `}
       </style>
+
+      {/* Book Details Modal */}
+      {bookDetailsModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            padding: '20px'
+          }}
+          onClick={() => setBookDetailsModal(null)}
+        >
+          <div
+            style={{
+              backgroundColor: 'var(--panel)',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              border: '1px solid var(--border)',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: 'var(--text)', fontSize: '20px', fontWeight: '600' }}>
+                Book Details
+              </h2>
+              <button
+                onClick={() => setBookDetailsModal(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: 'var(--muted)',
+                  padding: '0',
+                  lineHeight: '1'
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+              <div style={{
+                width: '80px',
+                height: '120px',
+                flexShrink: 0,
+                borderRadius: '4px',
+                overflow: 'hidden',
+                backgroundColor: 'var(--row-bg)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {bookDetailsModal.book.coverImage ? (
+                  <img
+                    src={`/api/books/${bookDetailsModal.book.id}/cover`}
+                    alt={`${bookDetailsModal.book.title} cover`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.parentNode.textContent = coverLetter(bookDetailsModal.book.title);
+                    }}
+                  />
+                ) : (
+                  coverLetter(bookDetailsModal.book.title)
+                )}
+              </div>
+
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 8px 0', color: 'var(--text)', fontSize: '18px', fontWeight: '500' }}>
+                  {bookDetailsModal.book.title}
+                </h3>
+                {bookDetailsModal.book.author && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Author: {bookDetailsModal.book.author}
+                  </p>
+                )}
+                {bookDetailsModal.book.publisher && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Publisher: {bookDetailsModal.book.publisher}
+                  </p>
+                )}
+                {bookDetailsModal.book.published && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Published: {bookDetailsModal.book.published}
+                  </p>
+                )}
+                {bookDetailsModal.book.language && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Language: {bookDetailsModal.book.language}
+                  </p>
+                )}
+                {bookDetailsModal.book.sizeBytes && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Size: {formatBytes(bookDetailsModal.book.sizeBytes)}
+                  </p>
+                )}
+                {bookDetailsModal.book.addedAt && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
+                    Added: {new Date(bookDetailsModal.book.addedAt).toLocaleDateString()}
+                  </p>
+                )}
+                {bookDetailsModal.book.cached && (
+                  <p style={{ margin: '0 0 4px 0', color: 'var(--accent, #007acc)', fontSize: '14px', fontWeight: '500' }}>
+                    ✓ Available offline
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => downloadBook(bookDetailsModal.book)}
+                style={{
+                  backgroundColor: 'var(--accent, #007acc)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 10V16M12 16L9 13M12 16L15 13M17 21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3H14L19 8V19C19 20.1046 18.1046 21 17 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Download EPUB
+              </button>
+              <button
+                onClick={() => setBookDetailsModal(null)}
+                style={{
+                  backgroundColor: 'transparent',
+                  color: 'var(--muted)',
+                  border: '1px solid var(--border)',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '14px'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
