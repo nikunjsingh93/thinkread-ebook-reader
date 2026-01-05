@@ -6,6 +6,9 @@ export default function AdminPanel({ onClose, onToast }) {
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', isAdmin: false });
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUser, setEditUser] = useState({ username: '', password: '', isAdmin: false });
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   useEffect(() => {
@@ -56,6 +59,52 @@ export default function AdminPanel({ onClose, onToast }) {
       console.error('Error creating user:', error);
       onToast('Network error creating user');
     }
+  };
+
+  const handleEditUser = async (e) => {
+    e.preventDefault();
+    if (!editUser.username.trim()) {
+      onToast('Please enter a username');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editUser),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setUsers(users.map(u => u.id === editingUser.id ? data.user : u));
+        setEditingUser(null);
+        setEditUser({ username: '', password: '', isAdmin: false });
+        setShowPassword(false);
+        onToast(`User "${data.user.username}" updated successfully`);
+      } else {
+        onToast(data.error || 'Failed to update user');
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
+      onToast('Network error updating user');
+    }
+  };
+
+  const startEditingUser = (user) => {
+    setEditingUser(user);
+    setEditUser({
+      username: user.username,
+      password: '',
+      isAdmin: user.isAdmin
+    });
+    setShowPassword(false);
+  };
+
+  const cancelEditingUser = () => {
+    setEditingUser(null);
+    setEditUser({ username: '', password: '', isAdmin: false });
+    setShowPassword(false);
   };
 
   const handleDeleteUser = async (user) => {
@@ -166,6 +215,54 @@ export default function AdminPanel({ onClose, onToast }) {
             </form>
           )}
 
+          {editingUser && (
+            <form onSubmit={handleEditUser} className="editUserForm">
+              <div className="formRow">
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={editUser.username}
+                  onChange={(e) => setEditUser({...editUser, username: e.target.value})}
+                  required
+                />
+                <div className="passwordField">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="New Password (leave empty to keep current)"
+                    value={editUser.password}
+                    onChange={(e) => setEditUser({...editUser, password: e.target.value})}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="showPasswordButton"
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? "👁️" : "🙈"}
+                  </button>
+                </div>
+                <label className="checkboxLabel">
+                  <input
+                    type="checkbox"
+                    checked={editUser.isAdmin}
+                    onChange={(e) => setEditUser({...editUser, isAdmin: e.target.checked})}
+                  />
+                  Admin
+                </label>
+              </div>
+              <div className="formActions">
+                <button type="submit" className="submitButton">Update User</button>
+                <button
+                  type="button"
+                  onClick={cancelEditingUser}
+                  className="cancelButton"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
           <div className="usersList">
             {users.map(user => (
               <div key={user.id} className="userRow">
@@ -176,18 +273,27 @@ export default function AdminPanel({ onClose, onToast }) {
                     Created: {new Date(user.createdAt).toLocaleDateString()}
                   </span>
                 </div>
-                <button
-                  onClick={() => confirmDeleteUser(user)}
-                  className="deleteButton"
-                  disabled={users.filter(u => u.isAdmin).length <= 1 && user.isAdmin}
-                  title={
-                    users.filter(u => u.isAdmin).length <= 1 && user.isAdmin
-                      ? 'Cannot delete the last admin user'
-                      : 'Delete user'
-                  }
-                >
-                  Delete
-                </button>
+                <div className="userActions">
+                  <button
+                    onClick={() => startEditingUser(user)}
+                    className="editButton"
+                    title="Edit user"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => confirmDeleteUser(user)}
+                    className="deleteButton"
+                    disabled={users.filter(u => u.isAdmin).length <= 1 && user.isAdmin}
+                    title={
+                      users.filter(u => u.isAdmin).length <= 1 && user.isAdmin
+                        ? 'Cannot delete the last admin user'
+                        : 'Delete user'
+                    }
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -289,7 +395,7 @@ export default function AdminPanel({ onClose, onToast }) {
           background: #0056b3;
         }
 
-        .createUserForm {
+        .createUserForm, .editUserForm {
           background: var(--card-bg);
           border: 1px solid var(--border);
           border-radius: 8px;
@@ -325,6 +431,53 @@ export default function AdminPanel({ onClose, onToast }) {
 
         .checkboxLabel input[type="checkbox"] {
           margin: 0;
+        }
+
+        .passwordField {
+          position: relative;
+          flex: 1;
+        }
+
+        .passwordField input {
+          width: 100%;
+          padding: 8px 40px 8px 12px;
+          border: 1px solid var(--input-border);
+          border-radius: 4px;
+          background: var(--input-bg);
+          color: var(--text);
+        }
+
+        .showPasswordButton {
+          position: absolute;
+          right: 8px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 4px;
+          border-radius: 4px;
+          font-size: 14px;
+          transition: background-color 0.2s ease;
+        }
+
+        .showPasswordButton:hover {
+          background: var(--row-bg);
+        }
+
+        .editButton {
+          background: var(--accent);
+          color: white;
+          border: none;
+          padding: 6px 12px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 14px;
+          transition: background-color 0.2s ease;
+        }
+
+        .editButton:hover {
+          background: #0056b3;
         }
 
         .formActions {
@@ -374,6 +527,11 @@ export default function AdminPanel({ onClose, onToast }) {
           background: var(--card-bg);
           border: 1px solid var(--border);
           border-radius: 8px;
+        }
+
+        .userActions {
+          display: flex;
+          gap: 8px;
         }
 
         .userInfo {

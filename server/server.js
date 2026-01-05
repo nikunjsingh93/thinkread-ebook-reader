@@ -286,6 +286,55 @@ app.post("/api/users", (req, res) => {
   }
 });
 
+app.put("/api/users/:userId", (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { username, password, isAdmin } = req.body;
+
+    if (!username) {
+      return res.status(400).json({ error: "Username is required" });
+    }
+
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    const currentUser = state.users.find(u => u.id === req.session.userId);
+    if (!currentUser || !currentUser.isAdmin) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const userIndex = state.users.findIndex(u => u.id === userId);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Check if username is already taken by another user
+    if (state.users.find(u => u.id !== userId && u.username === username)) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+
+    // Update user data
+    const updatedUser = { ...state.users[userIndex] };
+    updatedUser.username = username;
+    if (password) {
+      updatedUser.password = password; // Only update password if provided
+    }
+    updatedUser.isAdmin = Boolean(isAdmin);
+
+    state.users[userIndex] = updatedUser;
+    saveStateAtomic(statePath, state);
+
+    // Return user data without password
+    const { password: _, ...userWithoutPassword } = updatedUser;
+    res.json({ user: userWithoutPassword });
+  } catch (err) {
+    console.error("Error updating user:", err);
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
 app.delete("/api/users/:userId", (req, res) => {
   try {
     const { userId } = req.params;
