@@ -191,13 +191,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    // Reset the start position
+    longPressStartRef.current = null;
   }
 
-  function handleBookLongPressMove() {
-    // Cancel long press if user moves finger/mouse
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+  function handleBookLongPressMove(event) {
+    // Cancel long press only if user moves finger/mouse significantly (indicating scroll)
+    if (longPressStartRef.current && longPressTimerRef.current) {
+      const currentX = event.clientX || (event.touches && event.touches[0].clientX);
+      const currentY = event.clientY || (event.touches && event.touches[0].clientY);
+
+      const deltaX = Math.abs(currentX - longPressStartRef.current.x);
+      const deltaY = Math.abs(currentY - longPressStartRef.current.y);
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+      // Only cancel long press if moved more than 10px (indicating scroll, not just finger jitter)
+      if (distance > 10) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+        longPressStartRef.current = null; // Reset to prevent further checks
+      }
     }
   }
 
@@ -651,9 +664,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 key={b.id}
                 onClick={() => deleteMode ? toggleBookSelection(b.id) : onOpenBook(b)}
                 onMouseDown={(e) => !deleteMode && handleBookLongPressStart(b, e)}
+                onMouseMove={(e) => !deleteMode && handleBookLongPressMove(e)}
                 onMouseUp={() => !deleteMode && handleBookLongPressEnd()}
                 onMouseLeave={() => !deleteMode && handleBookLongPressEnd()}
                 onTouchStart={(e) => !deleteMode && handleBookLongPressStart(b, e)}
+                onTouchMove={(e) => !deleteMode && handleBookLongPressMove(e)}
                 onTouchEnd={() => !deleteMode && handleBookLongPressEnd()}
                 onTouchCancel={() => !deleteMode && handleBookLongPressEnd()}
                 onContextMenu={(e) => {
