@@ -86,6 +86,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   // Long press handling for book details
   const longPressTimerRef = useRef(null);
   const longPressStartRef = useRef(null);
+  const longPressCancelledRef = useRef(false); // Track if long press was cancelled by movement
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -167,6 +168,9 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       clearTimeout(longPressTimerRef.current);
     }
 
+    // Reset cancellation flag for new touch session
+    longPressCancelledRef.current = false;
+
     // Store the start position
     longPressStartRef.current = {
       x: event.clientX || (event.touches && event.touches[0].clientX),
@@ -177,11 +181,13 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     // Set a timer for long press (shorter for mobile)
     const longPressDelay = isIOS() ? 500 : 700;
     longPressTimerRef.current = setTimeout(() => {
-      // Show book details modal
-      setBookDetailsModal({
-        book,
-        position: longPressStartRef.current
-      });
+      // Only show modal if long press wasn't cancelled by movement
+      if (!longPressCancelledRef.current) {
+        setBookDetailsModal({
+          book,
+          position: longPressStartRef.current
+        });
+      }
     }, longPressDelay);
   }
 
@@ -191,13 +197,14 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-    // Reset the start position
+    // Reset all long press state
     longPressStartRef.current = null;
+    longPressCancelledRef.current = false;
   }
 
   function handleBookLongPressMove(event) {
     // Cancel long press only if user moves finger/mouse significantly (indicating scroll)
-    if (longPressStartRef.current && longPressTimerRef.current) {
+    if (longPressStartRef.current && longPressTimerRef.current && !longPressCancelledRef.current) {
       const currentX = event.clientX || (event.touches && event.touches[0].clientX);
       const currentY = event.clientY || (event.touches && event.touches[0].clientY);
 
@@ -205,10 +212,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       const deltaY = Math.abs(currentY - longPressStartRef.current.y);
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-      // Only cancel long press if moved more than 10px (indicating scroll, not just finger jitter)
+      // If moved more than 10px, permanently cancel long press for this touch session
       if (distance > 10) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
+        longPressCancelledRef.current = true; // Mark as cancelled - won't trigger even if stopped
         longPressStartRef.current = null; // Reset to prevent further checks
       }
     }
