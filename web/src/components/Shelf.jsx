@@ -223,9 +223,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     setSelectedBooks(new Set());
   }
 
-  function selectAllBooks() {
-    setSelectedBooks(new Set(filtered.map(b => b.id)));
-  }
 
   function clearSelection() {
     setSelectedBooks(new Set());
@@ -378,9 +375,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             </div>
 
             <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
-              <button className="pill" onClick={selectAllBooks} style={{fontSize: "12px", padding: "4px 8px"}}>
-                Select All
-              </button>
               <button className="pill" onClick={clearSelection} style={{fontSize: "12px", padding: "4px 8px"}}>
                 Clear
               </button>
@@ -394,7 +388,10 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 style={{
                   fontSize: "12px",
                   padding: "4px 8px",
-                  opacity: selectedBooks.size === 0 ? 0.5 : 1
+                  opacity: selectedBooks.size === 0 ? 0.5 : 1,
+                  backgroundColor: selectedBooks.size === 0 ? "#ffcccc" : "#ff4444",
+                  color: "white",
+                  border: "1px solid #cc0000"
                 }}
               >
                 Delete ({selectedBooks.size})
