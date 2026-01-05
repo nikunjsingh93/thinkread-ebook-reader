@@ -482,7 +482,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               borderRadius: '6px',
               boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
               fontSize: '12px',
-              zIndex: 1000
+              zIndex: 1000,
+              pointerEvents: 'none' // Don't capture touch events
             }}>
               Loading covers: {imagesLoaded}/{filtered.length}
             </div>

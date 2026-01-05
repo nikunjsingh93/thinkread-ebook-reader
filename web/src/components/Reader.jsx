@@ -1138,23 +1138,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           shouldPreventDefault: false // Start as false to allow normal clicks
         };
 
-        // For Safari, we need to prevent default immediately to avoid interference
-        if (isIOS()) {
-          console.log('[Dictionary] Preventing default immediately for Safari on', e.type);
-          if (e.cancelable) {
-            e.preventDefault();
-          }
-          longPressStartRef.current.shouldPreventDefault = true;
+        // Handle preventDefault timing - don't prevent on nav zone events
+        // The epub iframe content will handle preventing long press behavior
+        if (e.type === 'touchstart') {
+          // For touch events, don't prevent default - let normal tap behavior work
+          // The epub content will handle preventing context menus on long press
+          longPressPreventRef.current = setTimeout(() => {
+            if (longPressStartRef.current) {
+              longPressStartRef.current.shouldPreventDefault = true;
+              console.log('[Dictionary] Long press detected, will prevent click');
+            }
+          }, 200); // Allow normal taps under 200ms
         } else {
-        // After 100ms (short delay), start preventing default behavior
-        // This allows quick taps to work normally
-        longPressPreventRef.current = setTimeout(() => {
-          if (longPressStartRef.current) {
-            longPressStartRef.current.shouldPreventDefault = true;
-            // Also prevent default on the original event if it's still available
-            console.log('[Dictionary] Setting preventDefault flag after 100ms');
-          }
-        }, 100);
+          // For mouse events, use shorter delay
+          longPressPreventRef.current = setTimeout(() => {
+            if (longPressStartRef.current) {
+              longPressStartRef.current.shouldPreventDefault = true;
+              console.log('[Dictionary] Setting preventDefault flag after 100ms');
+            }
+          }, 100);
         }
 
         // Set a timer for long press (shorter on iOS for better responsiveness)
