@@ -15,6 +15,230 @@ function isIOS() {
          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
 }
 
+// Selection API approach to extract word at coordinates
+function extractWordUsingSelectionAPI(doc, x, y) {
+  try {
+    // Save current selection
+    const savedSelection = doc.getSelection();
+    const savedRange = savedSelection.rangeCount > 0 ? savedSelection.getRangeAt(0).cloneRange() : null;
+
+    // Create a new range at the coordinates
+    const range = doc.caretRangeFromPoint(x, y);
+    if (!range) {
+      console.log('[Dictionary] Selection API: caretRangeFromPoint returned null');
+      return null;
+    }
+
+    // Expand the range to select the word
+    const selection = doc.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    // Try to expand selection to word boundaries
+    if (selection.modify) {
+      // Use modify method if available (Chrome, Safari)
+      selection.modify('extend', 'backward', 'word');
+      selection.modify('extend', 'forward', 'word');
+    } else {
+      // Fallback: manually expand the range
+      expandRangeToWord(range);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    // Get the selected text
+    const selectedText = selection.toString().trim();
+    console.log('[Dictionary] Selection API selected text:', selectedText);
+
+    // Extract the word from the selection
+    const words = selectedText.match(/\b[a-zA-Z]{3,}\b/g);
+    const word = words && words.length > 0 ? words[0] : null;
+
+    // Restore original selection
+    selection.removeAllRanges();
+    if (savedRange) {
+      selection.addRange(savedRange);
+    }
+
+    return word;
+  } catch (error) {
+    console.log('[Dictionary] Selection API failed:', error);
+    return null;
+  }
+}
+
+// Helper function to expand range to word boundaries manually
+function expandRangeToWord(range) {
+  if (!range || !range.startContainer) return;
+
+  // Move start backward to word boundary
+  while (range.startOffset > 0) {
+    const char = range.startContainer.textContent[range.startOffset - 1];
+    if (!/\w/.test(char)) break;
+    range.setStart(range.startContainer, range.startOffset - 1);
+  }
+
+  // Move end forward to word boundary
+  while (range.endOffset < range.endContainer.textContent.length) {
+    const char = range.endContainer.textContent[range.endOffset];
+    if (!/\w/.test(char)) break;
+    range.setEnd(range.endContainer, range.endOffset + 1);
+  }
+}
+
+// Helper function to find the text node containing a specific word
+function findTextNodeContainingWord(element, word) {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.textContent && node.textContent.includes(word)) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
+// Programmatic selection creation at a point
+function createSelectionAtPoint(doc, x, y) {
+  try {
+    console.log('[Dictionary] Starting programmatic selection at:', x, y);
+
+    // Find the element at the click position
+    const element = doc.elementFromPoint(x, y);
+    if (!element) {
+      console.log('[Dictionary] No element found at coordinates');
+      return null;
+    }
+
+    // Get all text content from this element and its children
+    const textContent = element.textContent || '';
+    if (!textContent.trim()) {
+      console.log('[Dictionary] Element has no text content');
+      return null;
+    }
+
+    console.log('[Dictionary] Element text content:', textContent.substring(0, 100));
+
+    // Find all words in the text
+    const words = textContent.match(/\b[a-zA-Z]{3,}\b/g);
+    if (!words || words.length === 0) {
+      console.log('[Dictionary] No words found in element');
+      return null;
+    }
+
+    console.log('[Dictionary] Found words:', words);
+
+    // Try to determine which word was clicked by creating ranges for each word
+    // and checking which word's bounding rect contains the click coordinates
+    let bestWord = null;
+    let bestDistance = Infinity;
+
+    for (const word of words) {
+      try {
+        // Find the text node containing this word
+        const textNode = findTextNodeContainingWord(element, word);
+        if (!textNode) continue;
+
+        const wordStart = textNode.textContent.indexOf(word);
+        if (wordStart === -1) continue;
+
+        // Create a range for this word
+        const range = doc.createRange();
+        range.setStart(textNode, wordStart);
+        range.setEnd(textNode, wordStart + word.length);
+
+        // Get bounding rect for this word
+        const rect = range.getBoundingClientRect();
+
+        // Check if click coordinates are within this word's rect
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          console.log('[Dictionary] Found exact word match:', word);
+          return word;
+        }
+
+        // If not exact match, calculate distance to center of word
+        const centerX = (rect.left + rect.right) / 2;
+        const centerY = (rect.top + rect.bottom) / 2;
+        const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestWord = word;
+        }
+      } catch (e) {
+        console.log('[Dictionary] Error checking word:', word, e);
+      }
+    }
+
+    if (bestWord) {
+      console.log('[Dictionary] Best word match:', bestWord, 'distance:', bestDistance);
+      return bestWord;
+    }
+
+    // Final fallback: return the first word
+    console.log('[Dictionary] Using first word as final fallback:', words[0]);
+    return words[0];
+
+  } catch (error) {
+    console.log('[Dictionary] Programmatic selection failed:', error);
+    return null;
+  }
+}
+
+// Fallback function to extract word from element when caretRangeFromPoint fails
+function extractWordFromElementAtPosition(element, x, y) {
+  if (!element || !element.textContent) {
+    return null;
+  }
+
+  const text = element.textContent;
+  console.log('[Dictionary] Element text content:', text.substring(0, 100) + '...');
+
+  // Find all words in the text
+  const words = text.match(/\b[a-zA-Z]{3,}\b/g); // Words with 3+ letters
+  if (!words || words.length === 0) {
+    return null;
+  }
+
+  console.log('[Dictionary] Found words in element:', words.slice(0, 5));
+
+  // Try to estimate which word was clicked based on position
+  try {
+    const rect = element.getBoundingClientRect();
+    const elementWidth = rect.width;
+    const relativeX = x - rect.left;
+
+    // Estimate position in text based on relative X position
+    const textLength = text.length;
+    const charIndex = Math.floor((relativeX / elementWidth) * textLength);
+
+    console.log('[Dictionary] Estimated char index:', charIndex, 'of', textLength);
+
+    // Find the word that contains this character index
+    let currentIndex = 0;
+    for (const word of words) {
+      const wordStart = text.indexOf(word, currentIndex);
+      const wordEnd = wordStart + word.length;
+
+      if (charIndex >= wordStart && charIndex <= wordEnd) {
+        console.log('[Dictionary] Selected word based on position:', word);
+        return word;
+      }
+
+      currentIndex = wordEnd;
+    }
+  } catch (e) {
+    console.log('[Dictionary] Position-based selection failed:', e);
+  }
+
+  // Fallback: return the middle word or first word
+  const middleIndex = Math.floor(words.length / 2);
+  console.log('[Dictionary] Using middle word as fallback:', words[middleIndex]);
+  return words[middleIndex] || words[0];
+}
+
 function getFontFormat(filename) {
   const ext = filename.split('.').pop().toLowerCase();
   switch (ext) {
@@ -205,7 +429,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         };
         
         // Add touch event listeners with capture phase
-        contents.document.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+        contents.document.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
         contents.document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
         contents.document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
         
@@ -891,11 +1115,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // NavZones are in the readerStage, which is the parent of hostRef
       const readerStage = hostRef.current?.parentElement;
       const navZones = readerStage?.querySelectorAll('.navZone');
-      
+      console.log('[Dictionary] Found nav zones:', navZones?.length || 0);
+
       const handleLongPressStart = (e) => {
+        console.log('[Dictionary] Touch/mouse start event:', e.type, 'at', e.clientX, e.clientY);
         // Reset the flag
         longPressTriggeredRef.current = false;
-        
+
         // Clear any existing timers
         if (longPressTimerRef.current) {
           clearTimeout(longPressTimerRef.current);
@@ -903,7 +1129,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         if (longPressPreventRef.current) {
           clearTimeout(longPressPreventRef.current);
         }
-        
+
         // Store the start position and time
         longPressStartRef.current = {
           x: e.clientX || (e.touches && e.touches[0].clientX),
@@ -911,18 +1137,31 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           time: Date.now(),
           shouldPreventDefault: false // Start as false to allow normal clicks
         };
-        
+
+        // For Safari, we need to prevent default immediately to avoid interference
+        if (isIOS()) {
+          console.log('[Dictionary] Preventing default immediately for Safari on', e.type);
+          if (e.cancelable) {
+            e.preventDefault();
+          }
+          longPressStartRef.current.shouldPreventDefault = true;
+        } else {
         // After 100ms (short delay), start preventing default behavior
         // This allows quick taps to work normally
         longPressPreventRef.current = setTimeout(() => {
           if (longPressStartRef.current) {
             longPressStartRef.current.shouldPreventDefault = true;
+            // Also prevent default on the original event if it's still available
+            console.log('[Dictionary] Setting preventDefault flag after 100ms');
           }
         }, 100);
-        
+        }
+
         // Set a timer for long press (shorter on iOS for better responsiveness)
         const longPressDelay = isIOS() ? 300 : 500;
+        console.log('[Dictionary] Starting long press timer for', longPressDelay, 'ms');
         longPressTimerRef.current = setTimeout(() => {
+          console.log('[Dictionary] Long press timer fired, calling handleLongPress');
           handleLongPress(e);
         }, longPressDelay);
       };
@@ -972,8 +1211,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       };
       
       const handleClick = (e) => {
+        console.log('[Dictionary] Click event, longPressTriggered:', longPressTriggeredRef.current);
         // Prevent navigation if long press was triggered
         if (longPressTriggeredRef.current) {
+          console.log('[Dictionary] Preventing click due to long press');
           e.stopPropagation();
           e.preventDefault();
           longPressTriggeredRef.current = false;
@@ -982,25 +1223,69 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       };
       
       const handleLongPress = (e) => {
+        console.log('[Dictionary] Long press triggered at:', longPressStartRef.current);
         // Mark that long press was triggered
         longPressTriggeredRef.current = true;
-        
+
         // Get the iframe and calculate position relative to it
         const iframe = hostRef.current?.querySelector('iframe');
         if (!iframe) {
+          console.log('[Dictionary] No iframe found');
           return;
         }
-        
+
         const iframeRect = iframe.getBoundingClientRect();
+        console.log('[Dictionary] iframe rect:', iframeRect);
+        console.log('[Dictionary] iframe dimensions:', iframeRect.width, 'x', iframeRect.height);
+
         const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-        
+
         if (!iframeDoc) {
+          console.log('[Dictionary] No iframe document found');
           return;
         }
-        
-        // Calculate position relative to iframe
-        const relativeX = longPressStartRef.current.x - iframeRect.left;
-        const relativeY = longPressStartRef.current.y - iframeRect.top;
+
+        // Check if we can access the iframe content (same-origin)
+        try {
+          // Test if we can access the document
+          const testAccess = iframeDoc.body;
+          console.log('[Dictionary] Iframe content access OK, body exists:', !!testAccess);
+        } catch (e) {
+          console.log('[Dictionary] Cannot access iframe content (cross-origin restriction):', e.message);
+          onToast?.('Dictionary unavailable for this book (cross-origin content)');
+          return;
+        }
+
+        // Calculate position relative to iframe - Safari might need different calculation
+        let relativeX = longPressStartRef.current.x - iframeRect.left;
+        let relativeY = longPressStartRef.current.y - iframeRect.top;
+
+        console.log('[Dictionary] Absolute coords:', longPressStartRef.current.x, longPressStartRef.current.y);
+        console.log('[Dictionary] Iframe offset:', iframeRect.left, iframeRect.top);
+        console.log('[Dictionary] Iframe size:', iframeRect.width, 'x', iframeRect.height);
+        console.log('[Dictionary] Calculated relative coords:', relativeX, relativeY);
+
+        // Check if coordinates are within iframe bounds
+        const withinBounds = relativeX >= 0 && relativeX <= iframeRect.width &&
+                           relativeY >= 0 && relativeY <= iframeRect.height;
+        console.log('[Dictionary] Coordinates within iframe bounds:', withinBounds);
+
+        // Safari might need page-relative coordinates instead of viewport-relative
+        if (isIOS()) {
+          const pageX = longPressStartRef.current.x + window.scrollX;
+          const pageY = longPressStartRef.current.y + window.scrollY;
+          const iframePageLeft = iframeRect.left + window.scrollX;
+          const iframePageTop = iframeRect.top + window.scrollY;
+
+          relativeX = pageX - iframePageLeft;
+          relativeY = pageY - iframePageTop;
+
+          console.log('[Dictionary] Safari page-relative coords:', relativeX, relativeY);
+
+          const safariWithinBounds = relativeX >= 0 && relativeX <= iframeRect.width &&
+                                   relativeY >= 0 && relativeY <= iframeRect.height;
+          console.log('[Dictionary] Safari coordinates within bounds:', safariWithinBounds);
+        }
         
         // Get word at position
         let word = null;
@@ -1008,15 +1293,113 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
         // Try caretRangeFromPoint first (works on Mac, Android, and sometimes iOS)
         if (iframeDoc.caretRangeFromPoint) {
+          console.log('[Dictionary] Using caretRangeFromPoint with coords:', relativeX, relativeY);
+
+          // For Safari, try to focus the iframe content first
+          if (isIOS()) {
+            try {
+              iframe.contentWindow.focus();
+              console.log('[Dictionary] Focused iframe content for Safari');
+            } catch (e) {
+              console.log('[Dictionary] Could not focus iframe content:', e);
+            }
+          }
+
+          // Debug: check what's at this position
+          const elementAtPoint = iframeDoc.elementFromPoint(relativeX, relativeY);
+          console.log('[Dictionary] Element at point:', elementAtPoint?.tagName, elementAtPoint?.textContent?.substring(0, 50));
+
           range = iframeDoc.caretRangeFromPoint(relativeX, relativeY);
-        }
-        // Try caretPositionFromPoint (Firefox)
-        else if (iframeDoc.caretPositionFromPoint) {
+          console.log('[Dictionary] caretRangeFromPoint result:', range);
+
+          if (!range) {
+            // caretRangeFromPoint failed, try fallback methods
+            console.log('[Dictionary] caretRangeFromPoint failed, trying fallback methods');
+
+            // Try with different coordinate systems for Safari
+            if (isIOS()) {
+              // Try viewport coordinates directly
+              const viewportX = longPressStartRef.current.x;
+              const viewportY = longPressStartRef.current.y;
+              console.log('[Dictionary] Trying viewport coords:', viewportX, viewportY);
+              range = iframeDoc.caretRangeFromPoint(viewportX, viewportY);
+              console.log('[Dictionary] Viewport coords result:', range);
+
+              // Try page coordinates
+              if (!range) {
+                const pageX = viewportX + window.scrollX;
+                const pageY = viewportY + window.scrollY;
+                console.log('[Dictionary] Trying page coords:', pageX, pageY);
+                range = iframeDoc.caretRangeFromPoint(pageX, pageY);
+                console.log('[Dictionary] Page coords result:', range);
+              }
+            }
+
+            // If still no range, try iframe-relative coordinates
+            if (!range && elementAtPoint) {
+              console.log('[Dictionary] Trying iframe document coordinates');
+
+              // Try coordinates relative to the iframe's document
+              const iframeBounds = iframe.getBoundingClientRect();
+              const docRelativeX = relativeX;
+              const docRelativeY = relativeY;
+
+              console.log('[Dictionary] Trying doc-relative coords:', docRelativeX, docRelativeY);
+              range = iframeDoc.caretRangeFromPoint(docRelativeX, docRelativeY);
+              console.log('[Dictionary] Doc-relative result:', range);
+
+              // If still no range, try Selection API approach first
+            if (!range) {
+              console.log('[Dictionary] Trying Selection API approach');
+              word = extractWordUsingSelectionAPI(iframeDoc, relativeX, relativeY);
+              console.log('[Dictionary] Selection API result:', word);
+            }
+
+            // If Selection API also fails, try creating a selection programmatically
+            if (!range && !word) {
+              console.log('[Dictionary] Selection API failed, trying programmatic selection');
+              word = createSelectionAtPoint(iframeDoc, relativeX, relativeY);
+              console.log('[Dictionary] Programmatic selection result:', word);
+            }
+
+            // Final fallback: manual text extraction
+            if (!word) {
+              console.log('[Dictionary] All methods failed, using manual text extraction from element');
+              word = extractWordFromElementAtPosition(elementAtPoint, relativeX, relativeY);
+              console.log('[Dictionary] Manual extraction result:', word);
+            }
+            }
+          }
+        } else if (iframeDoc.caretPositionFromPoint) {
+          // Try caretPositionFromPoint (Firefox)
+          console.log('[Dictionary] Using caretPositionFromPoint');
           const position = iframeDoc.caretPositionFromPoint(relativeX, relativeY);
           if (position) {
             range = iframeDoc.createRange();
             range.setStart(position.offsetNode, position.offset);
             range.setEnd(position.offsetNode, position.offset);
+          }
+        } else {
+          // Browser doesn't support caretRangeFromPoint or caretPositionFromPoint, try alternatives
+          console.log('[Dictionary] caretRangeFromPoint/caretPositionFromPoint not supported, trying alternatives');
+
+          // Try programmatic selection first
+          word = createSelectionAtPoint(iframeDoc, relativeX, relativeY);
+          console.log('[Dictionary] Programmatic selection result:', word);
+
+          if (!word) {
+            // Try Selection API as fallback
+            word = extractWordUsingSelectionAPI(iframeDoc, relativeX, relativeY);
+            console.log('[Dictionary] Selection API result:', word);
+          }
+
+          if (!word) {
+            // Final fallback: manual extraction
+            const elementAtPoint = iframeDoc.elementFromPoint(relativeX, relativeY);
+            if (elementAtPoint) {
+              word = extractWordFromElementAtPosition(elementAtPoint, relativeX, relativeY);
+              console.log('[Dictionary] Manual extraction result:', word);
+            }
           }
         }
 
@@ -1045,13 +1428,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         }
         
-        // iOS fallback: if caretRangeFromPoint didn't work, try manual method
+        // iOS/Safari fallback: if caretRangeFromPoint didn't work, try multiple methods
         if (isIOS() && !word) {
           try {
             const absX = longPressStartRef.current.x;
             const absY = longPressStartRef.current.y;
-            
-            // Try using window.caretRangeFromPoint with absolute coordinates
+
+            // Try using window.caretRangeFromPoint with absolute coordinates (Safari)
             const iframeWindow = iframe.contentWindow;
             if (iframeWindow && iframeWindow.caretRangeFromPoint) {
               try {
@@ -1073,11 +1456,33 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   }
                 }
               } catch (e) {
-                // Continue to manual fallback
+                // Continue to next fallback
+              }
+            }
+
+            // Try document.elementFromPoint and manual text extraction
+            if (!word && iframeDoc.elementFromPoint) {
+              try {
+                const iframeRect = iframe.getBoundingClientRect();
+                const relativeX = absX - iframeRect.left;
+                const relativeY = absY - iframeRect.top;
+
+                const element = iframeDoc.elementFromPoint(relativeX, relativeY);
+                if (element && element.textContent) {
+                  // Try to find word at approximate position by searching text
+                  const text = element.textContent;
+                  const words = text.match(/\b[a-zA-Z0-9]+\b/g);
+                  if (words && words.length > 0) {
+                    // Use first word as fallback - not perfect but better than nothing
+                    word = words[0];
+                  }
+                }
+              } catch (e) {
+                // Final fallback failed
               }
             }
           } catch (iosError) {
-            console.warn('iOS text selection fallback failed:', iosError);
+            console.warn('iOS/Safari text selection fallback failed:', iosError);
           }
         }
       
@@ -1109,7 +1514,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           zone.addEventListener('mousemove', handleLongPressMove);
           zone.addEventListener('click', handleClick, true); // Capture phase to prevent navigation
           zone.addEventListener('contextmenu', handleContextMenu); // Prevent context menu
-          zone.addEventListener('touchstart', handleLongPressStart, { passive: true }); // Passive for better scroll performance
+          zone.addEventListener('touchstart', handleLongPressStart, { passive: false }); // Need non-passive for preventDefault in Safari
           zone.addEventListener('touchend', handleLongPressEnd);
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
         });
