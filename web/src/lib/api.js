@@ -15,6 +15,10 @@ export async function apiGetBooks() {
               title: book.title,
               originalName: book.originalName,
               author: book.author,
+              publisher: book.publisher,
+              published: book.published,
+              language: book.language,
+              description: book.description,
               addedAt: book.addedAt,
               sizeBytes: book.sizeBytes,
               coverImage: book.coverImage

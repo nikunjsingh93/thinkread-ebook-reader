@@ -23,6 +23,54 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
+function formatDate(dateString) {
+  if (!dateString) return "";
+
+  try {
+    // Handle different date formats that might come from EPUB metadata
+    let date;
+
+    // Try to parse as ISO date first
+    date = new Date(dateString);
+
+    // If that fails, try some common EPUB date formats
+    if (isNaN(date.getTime())) {
+      // Try YYYY-MM-DD format
+      const isoMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (isoMatch) {
+        date = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+      } else {
+        // Try YYYY-MM format
+        const yearMonthMatch = dateString.match(/^(\d{4})-(\d{2})/);
+        if (yearMonthMatch) {
+          date = new Date(parseInt(yearMonthMatch[1]), parseInt(yearMonthMatch[2]) - 1, 1);
+        } else {
+          // Try just YYYY format
+          const yearMatch = dateString.match(/^(\d{4})/);
+          if (yearMatch) {
+            date = new Date(parseInt(yearMatch[1]), 0, 1);
+          }
+        }
+      }
+    }
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return dateString; // Return original string if invalid date
+    }
+
+    const options = {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    };
+
+    return date.toLocaleDateString('en-US', options);
+  } catch (error) {
+    return dateString; // Return original string if parsing fails
+  }
+}
+
 export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, onSortChange, deleteMode, onEnterDeleteMode, onExitDeleteMode, onConfirm, currentUser, isOffline }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -798,7 +846,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 )}
                 {bookDetailsModal.book.published && (
                   <p style={{ margin: '0 0 4px 0', color: 'var(--muted)', fontSize: '14px' }}>
-                    Published: {bookDetailsModal.book.published}
+                    Published: {formatDate(bookDetailsModal.book.published)}
                   </p>
                 )}
                 {bookDetailsModal.book.language && (

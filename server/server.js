@@ -47,7 +47,7 @@ async function extractCoverImage(epubPath, bookId) {
           epub.getImage(coverId, (error, img, mimeType) => {
             if (error) {
               console.log(`No cover found for book ${bookId}:`, error.message);
-              return resolve(null);
+              return resolve({ cover: null, metadata: epub.metadata });
             }
 
             // Save the cover image
@@ -58,23 +58,23 @@ async function extractCoverImage(epubPath, bookId) {
             fs.writeFile(coverPath, img, (err) => {
               if (err) {
                 console.error(`Error saving cover for book ${bookId}:`, err);
-                return resolve(null);
+                return resolve({ cover: null, metadata: epub.metadata });
               }
               console.log(`Extracted cover for book ${bookId}`);
-              resolve(coverFilename);
+              resolve({ cover: coverFilename, metadata: epub.metadata });
             });
           });
         } else {
-          resolve(null);
+          resolve({ cover: null, metadata: epub.metadata });
         }
       } else {
-        resolve(null);
+        resolve({ cover: null, metadata: epub.metadata });
       }
     });
 
     epub.on("error", (error) => {
       console.log(`Error parsing epub for book ${bookId}:`, error.message);
-      resolve(null);
+      resolve({ cover: null, metadata: null });
     });
 
     epub.parse();
@@ -499,13 +499,51 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
 
     const id = nanoid(12);
     const originalName = f.originalname;
-    const safeTitle = path.basename(originalName, path.extname(originalName));
+    let safeTitle = path.basename(originalName, path.extname(originalName));
 
-    // Extract cover image for epub files
+    // Extract cover image and metadata for epub files
     let coverImage = null;
+    let metadata = null;
     if (finalType === "epub") {
       const epubPath = path.join(booksDir, storedName);
-      coverImage = await extractCoverImage(epubPath, id);
+      const result = await extractCoverImage(epubPath, id);
+      coverImage = result.cover;
+      metadata = result.metadata;
+    }
+
+    // Extract useful metadata fields
+    let author = null;
+    let publisher = null;
+    let published = null;
+    let language = null;
+    let description = null;
+
+    if (metadata) {
+      // Try different metadata field names that EPUB parsers might use
+      author = metadata.creator || metadata.author || metadata['dc:creator'] || null;
+      publisher = metadata.publisher || metadata['dc:publisher'] || null;
+      published = metadata.date || metadata.published || metadata['dc:date'] || null;
+      language = metadata.language || metadata['dc:language'] || null;
+      description = metadata.description || metadata['dc:description'] || null;
+
+      // Handle author arrays (some EPUBs have multiple authors)
+      if (Array.isArray(author)) {
+        author = author.join(', ');
+      }
+
+      // Try to extract a better title from metadata if available
+      const metadataTitle = metadata.title || metadata['dc:title'];
+      if (metadataTitle && typeof metadataTitle === 'string' && metadataTitle.trim()) {
+        safeTitle = metadataTitle.trim();
+      }
+
+      console.log(`Extracted metadata for book ${id}:`, {
+        author,
+        publisher,
+        published,
+        language,
+        title: safeTitle
+      });
     }
 
     const book = {
@@ -516,6 +554,11 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
       storedName,
       sizeBytes: fileSize,
       coverImage,
+      author,
+      publisher,
+      published,
+      language,
+      description,
       addedAt: Date.now(),
     };
     state.books.push(book);
