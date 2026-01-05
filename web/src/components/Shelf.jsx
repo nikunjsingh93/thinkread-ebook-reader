@@ -25,6 +25,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
+  const [progressLoading, setProgressLoading] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(0);
 
   useEffect(() => {
@@ -40,6 +41,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   // Load progress data for all books (with Safari optimization)
   useEffect(() => {
     const loadAllProgress = async () => {
+      setProgressLoading(true);
+
       // Safari performs better with smaller batches to avoid network congestion
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
       const batchSize = isSafari ? 5 : 20; // Smaller batches for Safari
@@ -75,10 +78,14 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         // Update progress data incrementally for better UX
         setProgressData(prev => ({ ...prev, ...progressMap }));
       }
+
+      setProgressLoading(false);
     };
 
     if (books.length > 0) {
       loadAllProgress();
+    } else {
+      setProgressLoading(false);
     }
     // Reset image loading counter when books change
     setImagesLoaded(0);
@@ -163,6 +170,15 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         case "alphabetical":
           return (a.title || a.originalName || "").localeCompare(b.title || b.originalName || "");
         case "lastOpened":
+          // For lastOpened sorting, only sort if we have complete progress data
+          // If progress is still loading, return 0 (no sorting) to show loading state
+          const hasProgressData = Object.keys(progressData).length > 0 && !progressLoading;
+
+          if (!hasProgressData) {
+            // Don't sort yet - show loading state instead
+            return 0;
+          }
+
           // Sort by last opened (most recently read first, then books never opened)
           const aProgress = progressData[a.id];
           const bProgress = progressData[b.id];
@@ -179,7 +195,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     });
 
     return filteredBooks;
-  }, [books, query, sortBy, progressData]);
+  }, [books, query, sortBy, progressData, progressLoading]);
 
   async function pickFiles() {
     inputRef.current?.click();
@@ -470,27 +486,54 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         </div>
       ) : (
         <>
-          {/* Show loading progress for Safari */}
+          {/* Show loading progress for Safari within grid */}
           {/^((?!chrome|android).)*safari/i.test(navigator.userAgent) && imagesLoaded < filtered.length && (
             <div style={{
-              position: 'fixed',
-              top: '60px',
-              right: '20px',
-              background: 'var(--panel)',
-              color: 'var(--text)',
-              padding: '8px 12px',
-              borderRadius: '6px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '12px',
+              color: 'var(--muted)',
               fontSize: '12px',
-              zIndex: 1000,
-              pointerEvents: 'none' // Don't capture touch events
+              width: '100%',
+              marginBottom: '8px'
             }}>
               Loading covers: {imagesLoaded}/{filtered.length}
             </div>
           )}
 
+          {/* Show sorting loading indicator within the grid */}
+          {sortBy === "lastOpened" && progressLoading && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: '20px',
+              color: 'var(--muted)',
+              fontSize: '14px',
+              width: '100%'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid var(--border)',
+                  borderTop: '2px solid var(--accent, #007acc)',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                Loading reading progress...
+              </div>
+            </div>
+          )}
+
           <div className="grid">
-          {filtered.map((b) => {
+          {/* Only show books when sorting is complete */}
+          {!(sortBy === "lastOpened" && progressLoading) && filtered.map((b) => {
             const progress = progressData[b.id];
             const pct = progress?.percent != null ? Math.round(progress.percent * 100) : null;
             return (
@@ -556,6 +599,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
             );
           })}
+          )}
         </div>
         </>
       )}
@@ -569,6 +613,16 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           onToast?.("Cannot cancel upload in progress");
         }}
       />
+
+      {/* CSS animation for loading spinner */}
+      <style>
+        {`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}
+      </style>
     </div>
   );
 }
