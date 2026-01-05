@@ -599,7 +599,6 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
             );
           })}
-          )}
         </div>
         </>
       )}
