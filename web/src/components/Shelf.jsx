@@ -25,6 +25,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
+  const [imagesLoaded, setImagesLoaded] = useState(0);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -36,30 +37,51 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [sortDropdownOpen]);
 
-  // Load progress data for all books
+  // Load progress data for all books (with Safari optimization)
   useEffect(() => {
     const loadAllProgress = async () => {
-      const progressPromises = books.map(async (book) => {
-        try {
-          const progress = await loadProgress(book.id);
-          return { bookId: book.id, progress };
-        } catch (err) {
-          console.warn(`Failed to load progress for book ${book.id}:`, err);
-          return { bookId: book.id, progress: null };
-        }
-      });
+      // Safari performs better with smaller batches to avoid network congestion
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const batchSize = isSafari ? 5 : 20; // Smaller batches for Safari
 
-      const results = await Promise.all(progressPromises);
       const progressMap = {};
-      results.forEach(({ bookId, progress }) => {
-        progressMap[bookId] = progress;
-      });
-      setProgressData(progressMap);
+      const batches = [];
+
+      // Split books into batches
+      for (let i = 0; i < books.length; i += batchSize) {
+        batches.push(books.slice(i, i + batchSize));
+      }
+
+      // Process batches sequentially to avoid overwhelming Safari
+      for (const batch of batches) {
+        const progressPromises = batch.map(async (book) => {
+          try {
+            const progress = await loadProgress(book.id);
+            return { bookId: book.id, progress };
+          } catch (err) {
+            // Reduce console noise for Safari network issues
+            if (!isSafari) {
+              console.warn(`Failed to load progress for book ${book.id}:`, err);
+            }
+            return { bookId: book.id, progress: null };
+          }
+        });
+
+        const results = await Promise.all(progressPromises);
+        results.forEach(({ bookId, progress }) => {
+          progressMap[bookId] = progress;
+        });
+
+        // Update progress data incrementally for better UX
+        setProgressData(prev => ({ ...prev, ...progressMap }));
+      }
     };
 
     if (books.length > 0) {
       loadAllProgress();
     }
+    // Reset image loading counter when books change
+    setImagesLoaded(0);
   }, [books]);
 
   function toggleBookSelection(bookId) {
@@ -447,7 +469,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           )}
         </div>
       ) : (
-        <div className="grid">
+        <>
+          {/* Show loading progress for Safari */}
+          {/^((?!chrome|android).)*safari/i.test(navigator.userAgent) && imagesLoaded < filtered.length && (
+            <div style={{
+              position: 'fixed',
+              top: '60px',
+              right: '20px',
+              background: 'var(--panel)',
+              color: 'var(--text)',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+              fontSize: '12px',
+              zIndex: 1000
+            }}>
+              Loading covers: {imagesLoaded}/{filtered.length}
+            </div>
+          )}
+
+          <div className="grid">
           {filtered.map((b) => {
             const progress = progressData[b.id];
             const pct = progress?.percent != null ? Math.round(progress.percent * 100) : null;
@@ -484,16 +525,21 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     <img
                       src={`/api/books/${b.id}/cover`}
                       alt={`${b.title} cover`}
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority="low"
                       style={{
                         width: '100%',
                         height: '100%',
                         objectFit: 'cover',
                         borderRadius: '4px'
                       }}
+                      onLoad={() => setImagesLoaded(prev => prev + 1)}
                       onError={(e) => {
                         // Fallback to letter if image fails to load
                         e.target.style.display = 'none';
                         e.target.parentNode.textContent = coverLetter(b.title);
+                        setImagesLoaded(prev => prev + 1); // Count as loaded even on error
                       }}
                     />
                   ) : (
@@ -510,6 +556,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             );
           })}
         </div>
+        </>
       )}
 
       <UploadProgress
