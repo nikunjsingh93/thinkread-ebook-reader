@@ -4,11 +4,14 @@ export default function Login({ onLogin, onToast }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoginError(''); // Clear any previous error
+
     if (!username.trim() || !password.trim()) {
-      onToast('Please enter both username and password');
+      setLoginError('Please enter both username and password');
       return;
     }
 
@@ -25,16 +28,24 @@ export default function Login({ onLogin, onToast }) {
       const data = await response.json();
 
       if (response.ok) {
+        setLoginError(''); // Clear error on success
         onLogin(data.user);
         onToast(`Welcome back, ${data.user.username}!`);
       } else {
-        onToast(data.error || 'Login failed');
+        setLoginError(data.error || 'Login failed');
       }
     } catch (error) {
       console.error('Login error:', error);
-      onToast('Network error. Please try again.');
+      setLoginError('Network error. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (setter) => (e) => {
+    setter(e.target.value);
+    if (loginError) {
+      setLoginError(''); // Clear error when user starts typing
     }
   };
 
@@ -65,7 +76,7 @@ export default function Login({ onLogin, onToast }) {
               type="text"
               id="username"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={handleInputChange(setUsername)}
               placeholder="Enter your username"
               disabled={isLoading}
               autoComplete="username"
@@ -78,11 +89,16 @@ export default function Login({ onLogin, onToast }) {
               type="password"
               id="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={handleInputChange(setPassword)}
               placeholder="Enter your password"
               disabled={isLoading}
               autoComplete="current-password"
             />
+            {loginError && (
+              <div className="errorMessage">
+                {loginError}
+              </div>
+            )}
           </div>
 
           <button
@@ -191,6 +207,13 @@ export default function Login({ onLogin, onToast }) {
         .loginButton:disabled {
           opacity: 0.6;
           cursor: not-allowed;
+        }
+
+        .errorMessage {
+          color: #dc3545;
+          font-size: 14px;
+          margin-top: 4px;
+          font-weight: 500;
         }
       `}</style>
     </div>
