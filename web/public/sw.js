@@ -145,13 +145,33 @@ async function handleOfflineBooksRequest() {
         const urlParts = request.url.split('/api/books/')[1].split('/file')[0];
         const bookId = urlParts;
 
-        // Try to get book metadata from cache or create minimal entry
-        cachedBooks.push({
+        // Try to get book metadata from cached metadata first
+        let bookMetadata = null;
+        const metadataRequest = new Request(`/api/books/${bookId}/metadata`);
+        const cachedMetadata = await cache.match(metadataRequest);
+        if (cachedMetadata) {
+          try {
+            bookMetadata = await cachedMetadata.json();
+          } catch (e) {
+            console.warn('[SW] Failed to parse cached metadata for:', bookId);
+          }
+        }
+
+        // Create book entry with proper metadata or fallback
+        const bookEntry = {
           id: bookId,
-          title: `Cached Book (${bookId})`,
           cached: true,
-          offline: true
-        });
+          offline: true,
+          ...bookMetadata // Spread cached metadata if available
+        };
+
+        // If no cached metadata, create a minimal entry
+        if (!bookMetadata) {
+          bookEntry.title = `Offline Book (${bookId.substring(0, 8)})`;
+          bookEntry.addedAt = Date.now(); // Use current time as fallback
+        }
+
+        cachedBooks.push(bookEntry);
       } catch (error) {
         console.warn('[SW] Error parsing cached book URL:', request.url);
       }
@@ -246,6 +266,10 @@ self.addEventListener('message', (event) => {
         event.ports[0].postMessage({ cachedBooks: books });
       });
       break;
+    case 'CACHE_BOOK_METADATA':
+      // Cache book metadata for offline use
+      cacheBookMetadata(data.bookId, data.metadata);
+      break;
   }
 });
 
@@ -260,6 +284,22 @@ async function cacheBook(bookId, url) {
     }
   } catch (error) {
     console.warn('[SW] Failed to cache book:', bookId, error);
+  }
+}
+
+// Cache book metadata for offline use
+async function cacheBookMetadata(bookId, metadata) {
+  const cache = await caches.open(CACHE_NAME);
+  const metadataUrl = `/api/books/${bookId}/metadata`;
+
+  try {
+    const response = new Response(JSON.stringify(metadata), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    await cache.put(metadataUrl, response);
+    console.log('[SW] Book metadata cached:', bookId);
+  } catch (error) {
+    console.warn('[SW] Failed to cache book metadata:', bookId, error);
   }
 }
 

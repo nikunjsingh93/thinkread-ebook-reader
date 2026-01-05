@@ -2,7 +2,29 @@ export async function apiGetBooks() {
   try {
     const r = await fetch("/api/books");
     if (!r.ok) throw new Error("Failed to fetch books");
-    return r.json();
+    const data = await r.json();
+
+    // Cache book metadata for offline use
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      data.books.forEach(book => {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'CACHE_BOOK_METADATA',
+          data: {
+            bookId: book.id,
+            metadata: {
+              title: book.title,
+              originalName: book.originalName,
+              author: book.author,
+              addedAt: book.addedAt,
+              sizeBytes: book.sizeBytes,
+              coverImage: book.coverImage
+            }
+          }
+        });
+      });
+    }
+
+    return data;
   } catch (error) {
     // If offline, try to get cached books from service worker
     if (!navigator.onLine) {
