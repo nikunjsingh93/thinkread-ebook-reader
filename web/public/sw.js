@@ -1,5 +1,5 @@
 // Service Worker for ThinkRead PWA
-const CACHE_NAME = 'thinkread-v1';
+const CACHE_NAME = 'thinkread-v2';
 const OFFLINE_URL = '/';
 
 // Assets to cache on install

@@ -979,13 +979,23 @@ app.use((err, req, res, next) => {
 });
 
 // --- Static web ---
-const publicDir = path.join(__dirname, "public");
-if (fs.existsSync(publicDir)) {
-  app.use(express.static(publicDir, { maxAge: "1h" }));
+// Try production location first (./public), then development location (../web/dist)
+let staticDir = null;
+const prodPublicDir = path.join(__dirname, "public");
+const devWebDistDir = path.join(__dirname, "..", "web", "dist");
+
+if (fs.existsSync(prodPublicDir)) {
+  staticDir = prodPublicDir;
+} else if (fs.existsSync(devWebDistDir)) {
+  staticDir = devWebDistDir;
+}
+
+if (staticDir) {
+  app.use(express.static(staticDir, { maxAge: "1h" }));
   // SPA fallback (excluding /api)
   app.get("*", (req, res) => {
     if (req.path.startsWith("/api")) return res.status(404).end();
-    res.sendFile(path.join(publicDir, "index.html"));
+    res.sendFile(path.join(staticDir, "index.html"));
   });
 } else {
   app.get("/", (req, res) => {
