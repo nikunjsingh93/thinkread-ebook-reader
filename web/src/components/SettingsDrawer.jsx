@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { apiGetFonts } from "../lib/api.js";
 import { defaultPrefs } from "../lib/storage.js";
 
 export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   const [fonts, setFonts] = useState([]);
+  const bgColorInputRef = useRef(null);
+  const fgColorInputRef = useRef(null);
 
   useEffect(() => {
     function onKey(e) {
@@ -163,7 +165,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
 
         <div className="row">
           <label>Background</label>
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px', position: 'relative'}}>
             <div
               style={{
                 width: '32px',
@@ -172,19 +174,23 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 border: '2px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                position: 'relative'
+                position: 'relative',
+                zIndex: 1
               }}
               onClick={(e) => {
-                // Find the hidden color input and click it
-                const colorInput = e.currentTarget.nextSibling;
-                if (colorInput) colorInput.click();
+                e.preventDefault();
+                e.stopPropagation();
+                if (bgColorInputRef.current) {
+                  bgColorInputRef.current.click();
+                }
               }}
               title={`Background color: ${prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg}`}
             />
             <input
+              ref={bgColorInputRef}
               type="color"
               value={prefs.colors?.[prefs.themeMode || 'pure-white']?.bg || prefs.bg}
-                onChange={(e) => {
+              onChange={(e) => {
                 const themeMode = prefs.themeMode || 'pure-white';
                 const newColors = {
                   ...prefs.colors,
@@ -198,9 +204,10 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               style={{
                 position: 'absolute',
                 opacity: 0,
-                pointerEvents: 'none',
-                width: '1px',
-                height: '1px'
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                zIndex: 2
               }}
             />
             <span style={{fontSize: '12px', color: 'var(--muted)'}}>
@@ -211,7 +218,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
 
         <div className="row">
           <label>Text</label>
-          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: '8px', position: 'relative'}}>
             <div
               style={{
                 width: '32px',
@@ -220,16 +227,20 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 border: '2px solid rgba(255,255,255,0.2)',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                position: 'relative'
+                position: 'relative',
+                zIndex: 1
               }}
               onClick={(e) => {
-                // Find the hidden color input and click it
-                const colorInput = e.currentTarget.nextSibling;
-                if (colorInput) colorInput.click();
+                e.preventDefault();
+                e.stopPropagation();
+                if (fgColorInputRef.current) {
+                  fgColorInputRef.current.click();
+                }
               }}
               title={`Text color: ${prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}`}
             />
             <input
+              ref={fgColorInputRef}
               type="color"
               value={prefs.colors?.[prefs.themeMode || 'pure-white']?.fg || prefs.fg}
               onChange={(e) => {
@@ -246,9 +257,10 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
               style={{
                 position: 'absolute',
                 opacity: 0,
-                pointerEvents: 'none',
-                width: '1px',
-                height: '1px'
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                zIndex: 2
               }}
             />
             <span style={{fontSize: '12px', color: 'var(--muted)'}}>
