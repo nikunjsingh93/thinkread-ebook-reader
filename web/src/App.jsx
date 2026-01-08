@@ -39,6 +39,7 @@ function defaultPrefs() {
     sortBy: "upload",
     twoPageLayout: false,
     voiceGender: "female",
+    voiceName: null,
   };
 }
 

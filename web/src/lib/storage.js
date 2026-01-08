@@ -75,7 +75,8 @@ export function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",     // "upload", "alphabetical", "lastOpened"
     twoPageLayout: false, // Enable two-page side-by-side layout
-    voiceGender: "female", // "male" or "female" for text-to-speech
+    voiceGender: "female", // "male" or "female" for text-to-speech (legacy, kept for backward compatibility)
+    voiceName: null, // Name of the selected voice (if null, uses voiceGender or default)
   };
 }
 

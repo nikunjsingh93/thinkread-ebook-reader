@@ -2041,25 +2041,31 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     // Note: Voice gender property is not standard, so we'll look for common patterns
     const preferredGender = gender === 'male' ? 'male' : 'female';
     
-    // Chrome-specific voice names and common patterns
+    // Browser-specific voice patterns
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isChrome = /chrome/i.test(navigator.userAgent) && !/edge/i.test(navigator.userAgent);
+    
     const femaleVoicePatterns = [
       'female', 'woman', 'karen', 'samantha', 'victoria', 'zira', 'susan', 'hazel',
-      'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer',  // Some newer voice patterns
-      'google uk english female', 'microsoft zira', 'microsoft hazel'
+      'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer',
+      'google uk english female', 'microsoft zira', 'microsoft hazel',
+      // Safari voices
+      'samantha', 'karen', 'moira', 'tessa', 'veena', 'fiona', 'kate', 'norah'
     ];
     
     const maleVoicePatterns = [
       'male', 'man', 'david', 'mark', 'alex', 'tom', 'daniel', 'john',
       'google us english', 'microsoft david', 'microsoft mark',
-      // Chrome/Windows male voices
-      'google uk english male', 'en-gb',
-      // Check voice localService property - male voices often have different characteristics
+      'google uk english male',
+      // Safari male voices
+      'alex', 'daniel', 'fred', 'lee', 'oliver', 'reed', 'robin', 'rishi', 'tom', 'will'
     ];
     
     // Try to find voices that match the preference
     let matchingVoices = voices.filter(voice => {
       const name = voice.name.toLowerCase();
       const lang = voice.lang.toLowerCase();
+      const voiceIndex = voices.indexOf(voice);
       
       if (preferredGender === 'female') {
         return femaleVoicePatterns.some(pattern => name.includes(pattern));
@@ -2070,11 +2076,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // Also check if it's NOT a known female voice (fallback)
         const isNotFemale = !femaleVoicePatterns.some(pattern => name.includes(pattern));
         
-        // In Chrome, male voices often appear later in the list and may not have explicit gender in name
-        // Check language and position
-        const isEnUs = lang.startsWith('en-us');
+        // Safari-specific: Male voices often come after female voices in the list
+        if (isSafari) {
+          // In Safari, count how many voices there are and pick from the latter half
+          const totalVoices = voices.length;
+          const isLikelyMale = isNotFemale && voiceIndex >= Math.floor(totalVoices * 0.4);
+          return hasMalePattern || isLikelyMale;
+        }
         
-        return hasMalePattern || (isEnUs && isNotFemale && voices.indexOf(voice) > voices.length / 2);
+        // Chrome-specific: Male voices often appear later in the list
+        if (isChrome) {
+          const isEnUs = lang.startsWith('en-us') || lang.startsWith('en-gb');
+          // Chrome typically has female voices first, male voices later
+          const isLikelyMale = isEnUs && isNotFemale && voiceIndex > Math.floor(voices.length * 0.3);
+          return hasMalePattern || isLikelyMale;
+        }
+        
+        // Fallback for other browsers
+        const isEnUs = lang.startsWith('en-us') || lang.startsWith('en-gb');
+        return hasMalePattern || (isEnUs && isNotFemale && voiceIndex > voices.length / 2);
       }
     });
 
@@ -2187,14 +2207,29 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const voices = speechSynthesis.getVoices();
           
           if (voices.length > 0) {
-            // Select voice based on gender preference
-            const voice = getVoiceForGender(prefs.voiceGender || 'female');
-            if (voice) {
-              utterance.voice = voice;
-              utterance.lang = voice.lang || 'en-US';
-              console.log('[TTS] Using voice:', voice.name, voice.lang);
+            // Select voice based on preference
+            let selectedVoice = null;
+            
+            if (prefs.voiceName) {
+              // Try to find the voice by name
+              selectedVoice = voices.find(v => v.name === prefs.voiceName);
+              if (selectedVoice) {
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang || 'en-US';
+                console.log('[TTS] Using selected voice:', selectedVoice.name, selectedVoice.lang);
+              } else {
+                console.warn('[TTS] Selected voice not found, using default');
+              }
             } else {
-              console.warn('[TTS] No matching voice found, using default');
+              // Fallback: use gender preference if voiceName not set (backward compatibility)
+              if (prefs.voiceGender) {
+                const genderVoice = getVoiceForGender(prefs.voiceGender);
+                if (genderVoice) {
+                  utterance.voice = genderVoice;
+                  utterance.lang = genderVoice.lang || 'en-US';
+                  console.log('[TTS] Using gender-based voice:', genderVoice.name, genderVoice.lang);
+                }
+              }
             }
           }
 
@@ -2432,10 +2467,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           try {
             const voices = speechSynthesis.getVoices();
             if (voices.length > 0) {
-              const voice = getVoiceForGender(prefs.voiceGender || 'female');
-              if (voice) {
-                utterance.voice = voice;
-                utterance.lang = voice.lang || 'en-US';
+              // Select voice based on preference
+              let selectedVoice = null;
+              
+              if (prefs.voiceName) {
+                selectedVoice = voices.find(v => v.name === prefs.voiceName);
+              } else if (prefs.voiceGender) {
+                // Fallback: use gender preference for backward compatibility
+                selectedVoice = getVoiceForGender(prefs.voiceGender);
+              }
+              
+              if (selectedVoice) {
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang || 'en-US';
               }
             }
 
@@ -2718,14 +2762,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           >
             {isSpeaking ? (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="5" y="4" width="2" height="8" rx="0.5" fill="currentColor"/>
-                <rect x="9" y="4" width="2" height="8" rx="0.5" fill="currentColor"/>
+                <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor"/>
+                <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor"/>
               </svg>
             ) : (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 10C4 9.44772 4.44772 9 5 9H7C7.55228 9 8 9.44772 8 10V12C8 12.5523 7.55228 13 7 13H5C4.44772 13 4 12.5523 4 12V10Z" fill="currentColor"/>
-                <path d="M9 5C8.44772 5 8 5.44772 8 6V10C8 10.5523 8.44772 11 9 11H11C11.5523 11 12 10.5523 12 10V6C12 5.44772 11.5523 5 11 5H9Z" fill="currentColor"/>
-                <path d="M12 3C11.4477 3 11 3.44772 11 4V12C11 12.5523 11.4477 13 12 13H13C13.5523 13 14 12.5523 14 12V4C14 3.44772 13.5523 3 13 3H12Z" fill="currentColor"/>
+                <path d="M4 6C4 5.44772 4.44772 5 5 5H7C7.55228 5 8 5.44772 8 6V10C8 10.5523 7.55228 11 7 11H5C4.44772 11 4 10.5523 4 10V6Z" fill="currentColor"/>
+                <path d="M9 4C8.44772 4 8 4.44772 8 5V11C8 11.5523 8.44772 12 9 12H11C11.5523 12 12 11.5523 12 11V5C12 4.44772 11.5523 4 11 4H9Z" fill="currentColor"/>
+                <path d="M13 3C12.4477 3 12 3.44772 12 4V12C12 12.5523 12.4477 13 13 13H14C14.5523 13 15 12.5523 15 12V4C15 3.44772 14.5523 3 14 3H13Z" fill="currentColor"/>
               </svg>
             )}
           </button>

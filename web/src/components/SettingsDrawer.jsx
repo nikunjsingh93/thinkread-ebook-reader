@@ -4,6 +4,7 @@ import { defaultPrefs } from "../lib/storage.js";
 
 export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   const [fonts, setFonts] = useState([]);
+  const [voices, setVoices] = useState([]);
   const bgColorInputRef = useRef(null);
   const fgColorInputRef = useRef(null);
 
@@ -24,8 +25,64 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
     // Also load fonts when drawer opens (in case fonts were added)
     if (open) {
       loadFonts();
+      loadVoices();
     }
   }, [open]);
+
+  function loadVoices() {
+    if (!('speechSynthesis' in window)) {
+      setVoices([]);
+      return;
+    }
+
+    const loadVoicesList = () => {
+      const availableVoices = speechSynthesis.getVoices();
+      
+      if (availableVoices.length === 0) {
+        // Voices not loaded yet, try again after a short delay
+        setTimeout(() => {
+          const retryVoices = speechSynthesis.getVoices();
+          if (retryVoices.length > 0) {
+            formatAndSetVoices(retryVoices);
+          }
+        }, 100);
+        return;
+      }
+      
+      formatAndSetVoices(availableVoices);
+    };
+
+    const formatAndSetVoices = (availableVoices) => {
+      // Filter and format voices
+      const formattedVoices = availableVoices
+        .filter(voice => {
+          // Only show voices with a name
+          return voice.name && voice.name.trim().length > 0;
+        })
+        .map(voice => ({
+          name: voice.name,
+          lang: voice.lang,
+          voice: voice
+        }))
+        // Sort by language, then by name
+        .sort((a, b) => {
+          if (a.lang !== b.lang) {
+            return a.lang.localeCompare(b.lang);
+          }
+          return a.name.localeCompare(b.name);
+        });
+      
+      setVoices(formattedVoices);
+    };
+
+    // Load voices immediately if available
+    loadVoicesList();
+
+    // Listen for voices to be loaded (important for Chrome)
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = loadVoicesList;
+    }
+  }
 
   async function loadFonts() {
     try {
@@ -164,14 +221,41 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
-          <label>Text-to-Speech Voice</label>
-          <select
-            value={prefs.voiceGender || 'female'}
-            onChange={(e) => onChange({ voiceGender: e.target.value })}
-          >
-            <option value="female">Female</option>
-            <option value="male">Male</option>
-          </select>
+          <label>Read the Book</label>
+          <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
+            {!('speechSynthesis' in window) ? (
+              <div className="muted" style={{fontSize: 11}}>
+                Text-to-speech is not supported in this browser
+              </div>
+            ) : voices.length === 0 ? (
+              <div className="muted" style={{fontSize: 11}}>
+                Loading voices...
+              </div>
+            ) : (
+              <>
+                <select
+                  value={prefs.voiceName || ''}
+                  onChange={(e) => onChange({ voiceName: e.target.value || null })}
+                >
+                  <option value="">Default (browser will choose)</option>
+                  {voices.map((voiceInfo, index) => (
+                    <option key={index} value={voiceInfo.name}>
+                      {voiceInfo.name} ({voiceInfo.lang})
+                    </option>
+                  ))}
+                  {/* Show saved voice even if not in current list (may have changed browsers) */}
+                  {prefs.voiceName && !voices.some(v => v.name === prefs.voiceName) && (
+                    <option value={prefs.voiceName} disabled>
+                      {prefs.voiceName} (not available)
+                    </option>
+                  )}
+                </select>
+                <div className="muted" style={{fontSize: 11}}>
+                  Requires browser support for text-to-speech
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="row">
