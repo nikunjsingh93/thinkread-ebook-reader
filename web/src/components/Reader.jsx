@@ -2278,29 +2278,44 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         return;
       }
 
-      // Stop any ongoing TTS
-      stopTTS();
-
-      // Store text
+      // Store text first (before stopping, so we can save progress with correct text)
       ttsTextRef.current = text;
 
-      // Try to load saved TTS progress
-      let resumeFromTime = 0;
-      try {
-        const savedProgress = await apiGetTTSProgress(book.id);
-        if (savedProgress && savedProgress.currentTime > 0) {
-          // Create a simple hash of the text to verify it's the same text
-          const textHash = text.length.toString(); // Simple hash based on length
-          if (savedProgress.textHash === textHash || savedProgress.chapterName === currentChapterName) {
-            resumeFromTime = savedProgress.currentTime;
-            savedAudioPositionRef.current = resumeFromTime;
-          }
+      // Save current position if there's existing audio before stopping
+      if (audioRef.current && audioRef.current.currentTime > 0) {
+        try {
+          await apiSaveTTSProgress(book.id, {
+            currentTime: audioRef.current.currentTime,
+            textHash: ttsTextRef.current.length.toString(),
+            chapterName: currentChapterName
+          });
+        } catch (err) {
+          console.warn('Failed to save TTS progress before restart:', err);
         }
-      } catch (err) {
-        console.warn('Failed to load TTS progress:', err);
       }
 
-      // Update chapter name from current location
+      // Stop any ongoing TTS (but don't clear text ref or saved position)
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        const audio = audioRef.current;
+        audio.onplay = null;
+        audio.onpause = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audioRef.current = null;
+      }
+      if (audioSourceRef.current) {
+        URL.revokeObjectURL(audioSourceRef.current);
+        audioSourceRef.current = null;
+      }
+      setIsSpeaking(false);
+      setAudioCurrentTime(0);
+      setAudioDuration(0);
+      setTtsLoading(false);
+
+      // Get chapter name from current location FIRST (before checking saved progress)
+      let detectedChapterName = currentChapterName; // Use current state as fallback
       if (renditionRef.current && toc.length > 0) {
         try {
           // Try to get location from rendition object
@@ -2359,6 +2374,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             }
             
             if (matchingChapter) {
+              detectedChapterName = matchingChapter.label;
               setCurrentChapterName(matchingChapter.label);
               console.log('[TTS] Chapter name set to:', matchingChapter.label, 'from href:', currentHref);
             }
@@ -2366,6 +2382,60 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         } catch (err) {
           console.warn('Failed to get chapter name on TTS start:', err);
         }
+      }
+
+      // Now try to load saved TTS progress for this chapter (using detected chapter name)
+      let resumeFromTime = 0;
+      try {
+        const savedProgress = await apiGetTTSProgress(book.id);
+        if (savedProgress && savedProgress.currentTime > 0) {
+          // Create a simple hash of the text to verify it's the same text
+          const textHash = text.length.toString(); // Simple hash based on length
+          const savedTextHash = savedProgress.textHash || '0';
+          const currentTextHash = textHash;
+          
+          // Check if it's the same chapter/text
+          const textHashMatches = savedTextHash === currentTextHash;
+          
+          // Chapter name matching - be lenient with comparison
+          const savedChapter = savedProgress.chapterName || '';
+          const currentChapter = detectedChapterName || '';
+          const chapterMatches = savedChapter && currentChapter && 
+                                 savedChapter === currentChapter;
+          
+          // Text hash similarity check - allow small differences (within 10%)
+          const savedHashNum = parseInt(savedTextHash) || 0;
+          const currentHashNum = parseInt(currentTextHash) || 0;
+          const hashDiff = Math.abs(savedHashNum - currentHashNum);
+          const hashSimilar = hashDiff <= Math.max(savedHashNum * 0.1, 50); // 10% or 50 chars tolerance
+          
+          // Resume if:
+          // 1. Chapter names match (most reliable)
+          // 2. Text hashes match exactly
+          // 3. Text hashes are similar AND we don't have conflicting chapter names
+          const shouldResume = chapterMatches || 
+                              textHashMatches || 
+                              (hashSimilar && (!savedChapter || !currentChapter || savedChapter === currentChapter));
+          
+          if (shouldResume) {
+            resumeFromTime = savedProgress.currentTime;
+            savedAudioPositionRef.current = resumeFromTime;
+            console.log('[TTS] Resuming from saved position:', resumeFromTime, 'seconds');
+            console.log('[TTS] Match - Chapter:', chapterMatches ? '✓' : '✗', 
+                       'TextHash:', textHashMatches ? '✓' : (hashSimilar ? '≈' : '✗'));
+            if (!chapterMatches && !textHashMatches) {
+              console.log('[TTS] Using similar text hash (difference:', hashDiff, 'chars)');
+            }
+          } else {
+            console.log('[TTS] Saved progress exists but chapter/text changed - starting fresh');
+            console.log('[TTS] Saved chapter:', savedChapter, 'Current:', currentChapter);
+            console.log('[TTS] Saved hash:', savedTextHash, 'Current:', currentTextHash, 'Diff:', hashDiff);
+          }
+        } else {
+          console.log('[TTS] No saved progress found - starting from beginning');
+        }
+      } catch (err) {
+        console.warn('Failed to load TTS progress:', err);
       }
 
       // Generate TTS audio from server
@@ -2498,9 +2568,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   function stopTTS() {
     try {
-      // Save current position before stopping (only if user might want to resume)
-      // Actually, when user clicks X, they want to stop completely, so don't save
-      // But we'll keep this for now in case they accidentally click
+      // Save current position before stopping so user can resume later
+      if (audioRef.current && audioRef.current.currentTime > 0 && ttsTextRef.current) {
+        apiSaveTTSProgress(book.id, {
+          currentTime: audioRef.current.currentTime,
+          textHash: ttsTextRef.current.length.toString(),
+          chapterName: currentChapterName
+        }).catch(err => console.warn('Failed to save TTS progress on stop:', err));
+      }
       
       if (audioRef.current) {
         audioRef.current.pause();
@@ -2522,11 +2597,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       setAudioDuration(0);
       setTtsLoading(false);
       setShowAudioPlayer(false); // Close modal immediately
-      savedAudioPositionRef.current = 0;
-      ttsTextRef.current = null; // Clear text reference
-      
-      // Delete saved progress when explicitly stopped (user wants to start fresh)
-      apiDeleteTTSProgress(book.id).catch(err => console.warn('Failed to delete TTS progress on stop:', err));
+      // Keep ttsTextRef and savedAudioPositionRef so we can resume later
     } catch (err) {
       console.error('Failed to stop text-to-speech:', err);
     }
