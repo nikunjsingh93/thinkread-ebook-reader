@@ -80,7 +80,15 @@ export function defaultPrefs() {
 
 export async function loadProgress(bookId) {
   try {
-    const response = await fetch(`/api/progress/${bookId}`);
+    // Use cache: 'no-store' to ensure we always get fresh data from server
+    // This is critical for iOS/iPadOS PWA where cached progress can cause sync issues
+    const response = await fetch(`/api/progress/${bookId}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
     if (!response.ok) {
       if (response.status === 404) {
         // Check localStorage as fallback
@@ -141,10 +149,15 @@ export async function saveProgress(bookId, progress) {
       return;
     }
     
+    // Use cache: 'no-store' and ensure request bypasses cache
+    // This is critical for iOS/iPadOS PWA to ensure progress syncs properly
     const response = await fetch(`/api/progress/${bookId}`, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
       },
       body: JSON.stringify(progress),
     });

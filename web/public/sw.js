@@ -58,8 +58,14 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
+  // Skip non-GET requests (POST requests like saving progress should go directly to network)
   if (request.method !== 'GET') return;
+
+  // Skip progress API requests - they should always fetch fresh data from server
+  // This is critical for iOS/iPadOS where cached progress can cause sync issues
+  if (url.pathname.startsWith('/api/progress/')) {
+    return; // Let the request go directly to network, bypassing service worker
+  }
 
   // Handle different URL patterns
   if (url.pathname.startsWith('/api/books/') && url.pathname.endsWith('/file')) {
