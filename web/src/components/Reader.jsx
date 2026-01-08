@@ -4,7 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS } from "../lib/api.js";
 import { cacheBook } from "../lib/serviceWorker.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
@@ -295,10 +295,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const dictionaryCleanupRef = useRef(null);
   const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const speechSynthesisRef = useRef(null);
-  const speechUtteranceRef = useRef(null);
-  const highlightedWordRef = useRef(null); // Track currently highlighted word
-  const ttsTextRef = useRef(null); // Store extracted text for highlighting
+  const audioRef = useRef(null); // Audio element for playback
+  const audioSourceRef = useRef(null); // Current audio source URL
+  const ttsTextRef = useRef(null); // Store extracted text
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [currentChapterName, setCurrentChapterName] = useState('');
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -787,8 +789,49 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       let totalPages = 0;
       
       // Stop TTS when page changes
-      if (isSpeaking && speechSynthesisRef.current) {
+      if (isSpeaking && audioRef.current) {
         stopTTS();
+      }
+      
+      // Update current chapter name
+      if (toc.length > 0 && loc) {
+        try {
+          // Get the href from the location
+          const currentHref = loc?.start?.href || loc?.start?.displayed?.href;
+          if (currentHref) {
+            // Find the chapter that matches this href
+            // Remove fragment identifier if present
+            const hrefWithoutFragment = currentHref.split('#')[0];
+            
+            // Find matching TOC item
+            const matchingChapter = toc.find(item => {
+              const itemHref = item.href.split('#')[0];
+              // Check if the hrefs match (handle relative paths)
+              return itemHref === hrefWithoutFragment || 
+                     itemHref.endsWith(hrefWithoutFragment) || 
+                     hrefWithoutFragment.endsWith(itemHref);
+            });
+            
+            if (matchingChapter) {
+              setCurrentChapterName(matchingChapter.label);
+            } else {
+              // Fallback: find the closest chapter by checking if current href contains the TOC href
+              const closestChapter = toc.find(item => {
+                const itemHref = item.href.split('#')[0];
+                return hrefWithoutFragment.includes(itemHref) || itemHref.includes(hrefWithoutFragment);
+              });
+              if (closestChapter) {
+                setCurrentChapterName(closestChapter.label);
+              } else if (toc.length > 0) {
+                // Last resort: show first chapter or "Unknown Chapter"
+                setCurrentChapterName(toc[0].label || 'Unknown Chapter');
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to get chapter name:', err);
+          setCurrentChapterName('Unknown Chapter');
+        }
       }
       
       try {
@@ -2133,11 +2176,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   }
 
   function toggleTTS() {
-    if (!('speechSynthesis' in window)) {
-      onToast?.('Text-to-speech is not supported in your browser');
-      return;
-    }
-
     if (isSpeaking) {
       // Stop speaking
       stopTTS();
@@ -2147,12 +2185,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
-  // Detect Android devices
-  function isAndroid() {
-    return /Android/i.test(navigator.userAgent);
-  }
-
-  function startTTS() {
+  async function startTTS() {
     try {
       const text = extractTextFromCurrentPage();
       if (!text) {
@@ -2160,275 +2193,92 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         return;
       }
 
-      // Initialize speech synthesis
-      const synth = window.speechSynthesis;
-      speechSynthesisRef.current = synth;
+      // Stop any ongoing TTS
+      stopTTS();
 
-      // Cancel any ongoing speech
-      synth.cancel();
-
-      // Store text for highlighting
+      // Store text
       ttsTextRef.current = text;
 
-      // Add click handlers to text elements while TTS is active
-      addTTSClickHandlers();
+      // Generate TTS audio from server
+      try {
+        setIsSpeaking(true);
+        setAudioCurrentTime(0);
+        setAudioDuration(0);
 
-      // Android-specific handling: split text into smaller chunks if too long
-      const isAndroidDevice = isAndroid();
-      const androidMaxLength = 5000; // Android has stricter limits
-      
-      // Chrome requires voices to be loaded before speaking
-      // Force voice loading by accessing getVoices() multiple times
-      let voicesLoaded = false;
-      const checkVoicesLoaded = () => {
-        const voices = speechSynthesis.getVoices();
-        if (voices.length > 0) {
-          voicesLoaded = true;
-          return true;
+        const audioBlob = await apiGenerateTTS(text, {
+          voice: prefs.voiceName || null,
+          rate: prefs.readingSpeed || 1.0,
+          pitch: 1.0,
+          lang: 'en-US'
+        });
+
+        // Create audio element and play
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioSourceRef.current = audioUrl;
+
+        // Clean up old audio if exists
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current = null;
         }
-        return false;
-      };
 
-      // Try to load voices immediately
-      checkVoicesLoaded();
-      
-      // Create utterance - Android may need shorter text
-      let textToSpeak = text;
-      if (isAndroidDevice && text.length > androidMaxLength) {
-        // Split into sentences for Android
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-        textToSpeak = sentences[0]; // Start with first sentence for now
-        console.log('[TTS] Android: Using first sentence chunk, length:', textToSpeak.length);
-      }
-      
-      const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      speechUtteranceRef.current = utterance;
-      ttsTextRef.current = text;
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
 
-      // Configure speech parameters - Android may need different defaults
-      utterance.rate = Math.max(0.5, Math.min(2.0, prefs.readingSpeed || 1.0)); // Clamp for Android
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-      utterance.lang = 'en-US';
-
-      // Extract words for highlighting (use original text for highlighting, not textToSpeak)
-      const words = text.split(/\s+/).filter(w => w.trim().length > 0);
-
-      // Function to setup and start speech
-      const setupAndStartSpeech = () => {
-        try {
-          // Get voices
-          const voices = speechSynthesis.getVoices();
-          
-          if (voices.length > 0) {
-            // Select voice based on preference
-            let selectedVoice = null;
-            
-            if (prefs.voiceName) {
-              // Try to find the voice by name
-              selectedVoice = voices.find(v => v.name === prefs.voiceName);
-              if (selectedVoice) {
-                // For Android, prefer local voices (localService === true or undefined)
-                // Avoid remote voices which may cause synthesis-failed
-                if (!isAndroidDevice || selectedVoice.localService !== false) {
-                  utterance.voice = selectedVoice;
-                  utterance.lang = selectedVoice.lang || 'en-US';
-                  console.log('[TTS] Using selected voice:', selectedVoice.name, selectedVoice.lang, 'localService:', selectedVoice.localService);
-                } else {
-                  console.warn('[TTS] Selected voice is remote, finding local alternative for Android');
-                  // Find a local voice with same language
-                  const localAlt = voices.find(v => 
-                    v.lang === selectedVoice.lang && v.localService !== false
-                  );
-                  if (localAlt) {
-                    utterance.voice = localAlt;
-                    utterance.lang = localAlt.lang;
-                    console.log('[TTS] Using local alternative:', localAlt.name);
-                  } else {
-                    utterance.lang = selectedVoice.lang || 'en-US';
-                  }
-                }
-              } else {
-                console.warn('[TTS] Selected voice not found, using default');
-              }
-            } else {
-              // Fallback: use gender preference if voiceName not set (backward compatibility)
-              if (prefs.voiceGender) {
-                const genderVoice = getVoiceForGender(prefs.voiceGender);
-                if (genderVoice) {
-                  // For Android, prefer local voices
-                  if (!isAndroidDevice || genderVoice.localService !== false) {
-                    utterance.voice = genderVoice;
-                    utterance.lang = genderVoice.lang || 'en-US';
-                    console.log('[TTS] Using gender-based voice:', genderVoice.name, genderVoice.lang);
-                  } else {
-                    utterance.lang = genderVoice.lang || 'en-US';
-                  }
-                }
-              }
-            }
-            
-            // Android fallback: ensure we have a valid local voice
-            if (isAndroidDevice) {
-              // If no voice set or voice is remote, find a local one
-              if (!utterance.voice || utterance.voice.localService === false) {
-                // Find any local English voice first
-                const localEnVoice = voices.find(v => 
-                  v.lang.toLowerCase().startsWith('en') && v.localService !== false
-                );
-                if (localEnVoice) {
-                  utterance.voice = localEnVoice;
-                  utterance.lang = localEnVoice.lang;
-                  console.log('[TTS] Android: Using local English voice:', localEnVoice.name);
-                } else {
-                  // Find any local voice
-                  const localVoice = voices.find(v => v.localService !== false);
-                  if (localVoice) {
-                    utterance.voice = localVoice;
-                    utterance.lang = localVoice.lang;
-                    console.log('[TTS] Android: Using local voice:', localVoice.name);
-                  } else if (voices.length > 0) {
-                    // Last resort: use first voice even if remote
-                    utterance.lang = voices[0].lang;
-                    utterance.voice = voices[0];
-                    console.warn('[TTS] Android: No local voices found, using remote:', voices[0].name);
-                  }
-                }
-              }
-            }
+        // Update audio time and duration
+        const updateTime = () => {
+          setAudioCurrentTime(audio.currentTime);
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
           }
+        };
 
-          // Set up word boundary tracking for highlighting
-          utterance.onboundary = (event) => {
-            if (event.name === 'word') {
-              // Update highlighting based on word boundary
-              const charIndex = event.charIndex;
-              let currentWordIndex = 0;
-              let charCount = 0;
-              
-              for (let i = 0; i < words.length; i++) {
-                const wordLength = words[i].length;
-                if (charCount + wordLength > charIndex) {
-                  currentWordIndex = i;
-                  break;
-                }
-                charCount += wordLength + 1; // +1 for space
-              }
-              
-              highlightWord(currentWordIndex, words);
-            }
-          };
+        audio.addEventListener('timeupdate', updateTime);
+        audio.addEventListener('loadedmetadata', () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
+          }
+        });
 
-          // Event handlers
-          utterance.onstart = () => {
-            setIsSpeaking(true);
-            highlightWord(0, words);
-            console.log('[TTS] Speech started');
-          };
-
-          utterance.onend = () => {
-            setIsSpeaking(false);
-            speechUtteranceRef.current = null;
-            clearHighlight();
-            console.log('[TTS] Speech ended');
-          };
-
-          utterance.onerror = (event) => {
-            console.error('[TTS] Speech synthesis error:', event.error, event);
-            setIsSpeaking(false);
-            speechUtteranceRef.current = null;
-            clearHighlight();
-            if (event.error !== 'interrupted') {
-              // Android-specific error messages
-              if (isAndroidDevice) {
-                if (event.error === 'synthesis-failed' || event.error === 'synthesis-unavailable') {
-                  onToast?.('Android TTS error. Try selecting a different voice in settings.');
-                  console.error('[TTS] Android synthesis failed. Voice:', utterance.voice?.name, 'Voice local:', utterance.voice?.localService, 'Lang:', utterance.lang, 'Text length:', textToSpeak.length);
-                } else {
-                  onToast?.('Error reading text: ' + event.error);
-                }
-              } else {
-                onToast?.('Error reading text: ' + event.error);
-              }
-            }
-          };
-
-          // Start speaking - Chrome requires this to be in response to user action
-          // Set state immediately for UI feedback
+        audio.onplay = () => {
           setIsSpeaking(true);
-          
-          // Android: Ensure we're ready before speaking
-          if (isAndroidDevice) {
-            // Wait a bit for Android to be ready
-            setTimeout(() => {
-              try {
-                synth.speak(utterance);
-                // Android verification
-                setTimeout(() => {
-                  if (!synth.speaking && !synth.pending) {
-                    console.warn('[TTS] Android: Speech did not start');
-                    setIsSpeaking(false);
-                    clearHighlight();
-                    onToast?.('Failed to start reading. Try selecting a different voice.');
-                  }
-                }, 300);
-              } catch (androidErr) {
-                console.error('[TTS] Android speak error:', androidErr);
-                setIsSpeaking(false);
-                clearHighlight();
-                onToast?.('Android TTS failed. Please try a different voice.');
-              }
-            }, 100);
-          } else {
-            // Actually start speaking for other platforms
-            synth.speak(utterance);
-            
-            // Verify speech started (Chrome sometimes doesn't start immediately)
-            setTimeout(() => {
-              if (!synth.speaking && !synth.pending) {
-                console.warn('[TTS] Speech did not start');
-                setIsSpeaking(false);
-                clearHighlight();
-              }
-            }, 200);
-          }
+        };
 
-        } catch (err) {
-          console.error('[TTS] Error setting up speech:', err);
+        audio.onpause = () => {
           setIsSpeaking(false);
-          onToast?.('Failed to start text-to-speech');
-        }
-      };
+        };
 
-      // Wait a bit for cancel to process, then setup
-      setTimeout(() => {
-        if (checkVoicesLoaded()) {
-          // Voices already loaded
-          setupAndStartSpeech();
-        } else {
-          // Wait for voices to load
-          const voicesChangedHandler = () => {
-            if (checkVoicesLoaded()) {
-              speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-              setupAndStartSpeech();
-            }
-          };
-          
-          speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
-          
-          // Fallback: try after timeout
-          setTimeout(() => {
-            speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-            if (checkVoicesLoaded()) {
-              setupAndStartSpeech();
-            } else {
-              // Try anyway with default
-              console.warn('[TTS] Voices not loaded, attempting with default');
-              setupAndStartSpeech();
-            }
-          }, 1000);
-        }
-      }, 100);
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setAudioCurrentTime(0);
+          // Clean up
+          if (audioSourceRef.current) {
+            URL.revokeObjectURL(audioSourceRef.current);
+            audioSourceRef.current = null;
+          }
+          audioRef.current = null;
+          console.log('[TTS] Speech ended');
+        };
+
+        audio.onerror = (event) => {
+          console.error('[TTS] Audio playback error:', event);
+          setIsSpeaking(false);
+          setAudioCurrentTime(0);
+          setAudioDuration(0);
+          onToast?.('Error playing audio');
+        };
+
+        // Start playing
+        await audio.play();
+        console.log('[TTS] Speech started');
+
+      } catch (err) {
+        console.error('[TTS] Error generating or playing TTS:', err);
+        setIsSpeaking(false);
+        setAudioCurrentTime(0);
+        setAudioDuration(0);
+        onToast?.('Failed to start text-to-speech: ' + (err.message || 'Unknown error'));
+      }
     } catch (err) {
       console.error('Failed to start text-to-speech:', err);
       onToast?.('Failed to start text-to-speech');
@@ -2438,381 +2288,54 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   function stopTTS() {
     try {
-      if (speechSynthesisRef.current) {
-        speechSynthesisRef.current.cancel();
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+      }
+      if (audioSourceRef.current) {
+        URL.revokeObjectURL(audioSourceRef.current);
+        audioSourceRef.current = null;
       }
       setIsSpeaking(false);
-      speechUtteranceRef.current = null;
-      clearHighlight();
-      removeTTSClickHandlers();
+      setAudioCurrentTime(0);
+      setAudioDuration(0);
     } catch (err) {
       console.error('Failed to stop text-to-speech:', err);
     }
   }
 
-  const ttsClickHandlerRef = useRef(null);
-
-  function addTTSClickHandlers() {
-    try {
-      const iframe = hostRef.current?.querySelector('iframe');
-      if (!iframe || !iframe.contentDocument) return;
-
-      const doc = iframe.contentDocument;
-      
-      // Remove existing handler if any
-      removeTTSClickHandlers();
-      
-      // Create click handler
-      const handler = (e) => {
-        if (!isSpeaking || !ttsTextRef.current) return;
-        
-        // Get clicked element
-        let target = e.target;
-        while (target && target !== doc.body) {
-          if (target.nodeType === Node.TEXT_NODE || 
-              ['P', 'DIV', 'SPAN', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(target.tagName)) {
-            break;
-          }
-          target = target.parentElement;
-        }
-        
-        if (!target) return;
-        
-        // Get text up to click point
-        const textNode = target.nodeType === Node.TEXT_NODE ? target : target.firstChild;
-        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
-        
-        // Create range to get text up to click point
-        const range = doc.createRange();
-        range.setStart(doc.body, 0);
-        range.setEnd(e.target, 0);
-        
-        const textBefore = range.toString();
-        const fullText = ttsTextRef.current;
-        const words = fullText.split(/\s+/).filter(w => w.trim().length > 0);
-        const wordsBefore = textBefore.split(/\s+/).filter(w => w.trim().length > 0);
-        
-        // Estimate word index based on position
-        const estimatedIndex = Math.min(wordsBefore.length, words.length - 1);
-        
-        stopTTS();
-        setTimeout(() => {
-          resumeTTSFromWord(estimatedIndex);
-        }, 100);
-        
-        e.stopPropagation();
-        e.preventDefault();
-      };
-      
-      ttsClickHandlerRef.current = handler;
-      doc.body.addEventListener('click', handler, true);
-    } catch (err) {
-      console.error('[TTS] Error adding click handlers:', err);
+  // Seek functions for audio player
+  function seekAudio(seconds) {
+    if (audioRef.current && audioDuration > 0) {
+      const newTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + seconds));
+      audioRef.current.currentTime = newTime;
+      setAudioCurrentTime(newTime);
     }
   }
 
-  function removeTTSClickHandlers() {
-    try {
-      if (ttsClickHandlerRef.current) {
-        const iframe = hostRef.current?.querySelector('iframe');
-        if (iframe && iframe.contentDocument) {
-          iframe.contentDocument.body.removeEventListener('click', ttsClickHandlerRef.current, true);
-        }
-        ttsClickHandlerRef.current = null;
-      }
-    } catch (err) {
-      console.error('[TTS] Error removing click handlers:', err);
+  function seekTo(time) {
+    if (audioRef.current && audioDuration > 0) {
+      const newTime = Math.max(0, Math.min(audioDuration, time));
+      audioRef.current.currentTime = newTime;
+      setAudioCurrentTime(newTime);
     }
   }
 
-  function resumeTTSFromWord(startWordIndex) {
-    try {
-      if (!ttsTextRef.current) {
-        startTTS();
-        return;
-      }
-
-      const text = ttsTextRef.current;
-      const words = text.split(/\s+/).filter(w => w.trim().length > 0);
-      
-      if (startWordIndex >= words.length) {
-        onToast?.('Reached end of page');
-        return;
-      }
-
-      // Get text from start word index onwards
-      const textToRead = words.slice(startWordIndex).join(' ');
-      
-      if (!textToRead || !textToRead.trim()) {
-        onToast?.('No text found from this position');
-        return;
-      }
-
-      // Start TTS with the remaining text
-      const synth = window.speechSynthesis;
-      speechSynthesisRef.current = synth;
-      synth.cancel();
-
-      setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(textToRead);
-        speechUtteranceRef.current = utterance;
-        
-        utterance.rate = prefs.readingSpeed || 1.0;
-        utterance.pitch = 1.0;
-        utterance.volume = 1.0;
-        utterance.lang = 'en-US';
-
-        const setupAndStart = () => {
-          try {
-            const voices = speechSynthesis.getVoices();
-            if (voices.length > 0) {
-              // Select voice based on preference
-              let selectedVoice = null;
-              
-              if (prefs.voiceName) {
-                selectedVoice = voices.find(v => v.name === prefs.voiceName);
-              } else if (prefs.voiceGender) {
-                // Fallback: use gender preference for backward compatibility
-                selectedVoice = getVoiceForGender(prefs.voiceGender);
-              }
-              
-              if (selectedVoice) {
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang || 'en-US';
-              }
-            }
-
-            // Set up word boundary tracking (adjust for start word index)
-            const remainingWords = words.slice(startWordIndex);
-            utterance.onboundary = (event) => {
-              if (event.name === 'word') {
-                const charIndex = event.charIndex;
-                let currentWordIndex = 0;
-                let charCount = 0;
-                
-                for (let i = 0; i < remainingWords.length; i++) {
-                  const wordLength = remainingWords[i].length;
-                  if (charCount + wordLength > charIndex) {
-                    currentWordIndex = i;
-                    break;
-                  }
-                  charCount += wordLength + 1;
-                }
-                
-                highlightWord(startWordIndex + currentWordIndex, words);
-              }
-            };
-
-            utterance.onstart = () => {
-              setIsSpeaking(true);
-              highlightWord(startWordIndex, words);
-            };
-
-            utterance.onend = () => {
-              setIsSpeaking(false);
-              speechUtteranceRef.current = null;
-              clearHighlight();
-            };
-
-            utterance.onerror = (event) => {
-              setIsSpeaking(false);
-              speechUtteranceRef.current = null;
-              clearHighlight();
-              if (event.error !== 'interrupted') {
-                onToast?.('Error reading text');
-              }
-            };
-
-            setIsSpeaking(true);
-            synth.speak(utterance);
-          } catch (err) {
-            console.error('[TTS] Error resuming speech:', err);
-            setIsSpeaking(false);
-          }
-        };
-
-        const voices = speechSynthesis.getVoices();
-        if (voices.length > 0) {
-          setupAndStart();
-        } else {
-          const handler = () => {
-            speechSynthesis.removeEventListener('voiceschanged', handler);
-            setupAndStart();
-          };
-          speechSynthesis.addEventListener('voiceschanged', handler);
-          setTimeout(() => {
-            speechSynthesis.removeEventListener('voiceschanged', handler);
-            setupAndStart();
-          }, 500);
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Failed to resume TTS:', err);
-      onToast?.('Failed to resume reading');
-    }
+  function formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
-  // Word highlighting functions
-  function highlightWord(wordIndex, words) {
-    try {
-      // Clear previous highlight
-      clearHighlight();
-      
-      if (wordIndex < 0 || wordIndex >= words.length) return;
-
-      const iframe = hostRef.current?.querySelector('iframe');
-      if (!iframe || !iframe.contentDocument) return;
-
-      const doc = iframe.contentDocument;
-      const word = words[wordIndex];
-      
-      // Clean word for matching (remove punctuation at start/end)
-      const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '').toLowerCase();
-      if (!cleanWord) return;
-
-      // Find and highlight the word in the document
-      const walker = doc.createTreeWalker(
-        doc.body,
-        NodeFilter.SHOW_TEXT,
-        null
-      );
-
-      let found = false;
-      let node;
-      while ((node = walker.nextNode()) && !found) {
-        const text = node.textContent;
-        if (!text || !text.toLowerCase().includes(cleanWord)) continue;
-
-        // Find word boundaries (case-insensitive)
-        const regex = new RegExp(`\\b${cleanWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-        const match = regex.exec(text);
-        
-        if (match) {
-          const wordStart = match.index;
-          const wordEnd = wordStart + match[0].length;
-          
-          // Create range and highlight
-          const range = doc.createRange();
-          range.setStart(node, wordStart);
-          range.setEnd(node, wordEnd);
-          
-          // Create highlight span
-          const highlight = doc.createElement('span');
-          highlight.style.backgroundColor = 'rgba(255, 255, 0, 0.6)';
-          highlight.style.borderRadius = '3px';
-          highlight.style.padding = '2px 0';
-          highlight.className = 'tts-highlight';
-          highlight.style.cursor = 'pointer';
-          highlight.title = 'Click to resume reading from here';
-          
-          // Store word index in data attribute for click handler
-          highlight.dataset.wordIndex = wordIndex;
-          
-          // Add click handler to resume TTS from this position
-          highlight.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            if (isSpeaking && ttsTextRef.current) {
-              const clickedWordIndex = parseInt(highlight.dataset.wordIndex);
-              stopTTS();
-              // Small delay to ensure stopTTS completes
-              setTimeout(() => {
-                resumeTTSFromWord(clickedWordIndex);
-              }, 100);
-            }
-          });
-          
-          try {
-            // Try to wrap the range contents
-            range.surroundContents(highlight);
-            highlightedWordRef.current = highlight;
-            
-            // Only scroll if we're on the current page (don't change page position)
-            // Check if highlight is already in viewport
-            const highlightRect = highlight.getBoundingClientRect();
-            const iframeRect = iframe.getBoundingClientRect();
-            const isInViewport = (
-              highlightRect.top >= iframeRect.top &&
-              highlightRect.bottom <= iframeRect.bottom &&
-              highlightRect.left >= iframeRect.left &&
-              highlightRect.right <= iframeRect.right
-            );
-            
-            // Only scroll if highlight is not in viewport (don't change page position unnecessarily)
-            if (!isInViewport) {
-              setTimeout(() => {
-                try {
-                  highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-                } catch (e) {
-                  highlight.scrollIntoView({ block: 'center' });
-                }
-              }, 50);
-            }
-            
-            found = true;
-            break;
-          } catch (e) {
-            // If surroundContents fails, try extractContents approach
-            try {
-              const contents = range.extractContents();
-              highlight.appendChild(contents);
-              range.insertNode(highlight);
-              highlightedWordRef.current = highlight;
-              
-              setTimeout(() => {
-                try {
-                  highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-                } catch (e2) {
-                  highlight.scrollIntoView({ block: 'center' });
-                }
-              }, 50);
-              
-              found = true;
-              break;
-            } catch (e2) {
-              // If both methods fail, skip this occurrence
-              console.warn('[TTS] Could not highlight word:', e2);
-            }
-          }
-        }
+  function pausePlayAudio() {
+    if (audioRef.current) {
+      if (audioRef.current.paused) {
+        audioRef.current.play();
+      } else {
+        audioRef.current.pause();
       }
-    } catch (err) {
-      console.error('[TTS] Error highlighting word:', err);
-    }
-  }
-
-  function clearHighlight() {
-    try {
-      if (highlightedWordRef.current) {
-        const highlight = highlightedWordRef.current;
-        const parent = highlight.parentNode;
-        if (parent) {
-          // Replace highlight with its contents
-          while (highlight.firstChild) {
-            parent.insertBefore(highlight.firstChild, highlight);
-          }
-          parent.removeChild(highlight);
-        }
-        highlightedWordRef.current = null;
-      }
-
-      // Also clear any remaining highlights
-      const iframe = hostRef.current?.querySelector('iframe');
-      if (iframe && iframe.contentDocument) {
-        const doc = iframe.contentDocument;
-        const highlights = doc.querySelectorAll('.tts-highlight');
-        highlights.forEach(hl => {
-          const parent = hl.parentNode;
-          if (parent) {
-            while (hl.firstChild) {
-              parent.insertBefore(hl.firstChild, hl);
-            }
-            parent.removeChild(hl);
-          }
-        });
-      }
-    } catch (err) {
-      console.error('[TTS] Error clearing highlight:', err);
     }
   }
 
@@ -3081,6 +2604,123 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           position={dictionaryPopup.position}
           onClose={() => setDictionaryPopup(null)}
         />
+      )}
+
+      {/* Audio Player Modal */}
+      {audioRef.current && audioDuration > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            background: 'var(--drawer-bg)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            border: '1px solid var(--border)',
+            minWidth: '320px',
+            maxWidth: '90vw',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}
+        >
+          {/* Chapter Name */}
+          <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text)', textAlign: 'center', marginBottom: '4px' }}>
+            {currentChapterName || 'Reading'}
+          </div>
+
+          {/* Seekbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+            <input
+              type="range"
+              min={0}
+              max={audioDuration || 0}
+              value={audioCurrentTime || 0}
+              onChange={(e) => seekTo(parseFloat(e.target.value))}
+              step={0.1}
+              style={{
+                flex: 1,
+                height: '6px',
+                cursor: 'pointer',
+                background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${(audioCurrentTime / audioDuration) * 100}%, rgba(255,255,255,0.2) ${(audioCurrentTime / audioDuration) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                borderRadius: '3px',
+                border: 'none',
+                outline: 'none'
+              }}
+            />
+          </div>
+
+          {/* Time and Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            {/* Time Display */}
+            <div style={{ fontSize: '12px', color: 'var(--muted)', minWidth: '80px' }}>
+              {formatTime(audioCurrentTime)} / {formatTime(audioDuration)}
+            </div>
+
+            {/* Control Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Backward 10s */}
+              <button
+                className="pill"
+                onClick={() => seekAudio(-10)}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '14px',
+                  minWidth: '40px'
+                }}
+                title="Rewind 10 seconds"
+              >
+                ⏪
+              </button>
+
+              {/* Play/Pause */}
+              <button
+                className="pill"
+                onClick={pausePlayAudio}
+                style={{
+                  padding: '8px 12px',
+                  fontSize: '16px',
+                  minWidth: '48px'
+                }}
+                title={audioRef.current && !audioRef.current.paused ? "Pause" : "Play"}
+              >
+                {audioRef.current && !audioRef.current.paused ? '⏸' : '▶'}
+              </button>
+
+              {/* Forward 10s */}
+              <button
+                className="pill"
+                onClick={() => seekAudio(10)}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '14px',
+                  minWidth: '40px'
+                }}
+                title="Forward 10 seconds"
+              >
+                ⏩
+              </button>
+
+              {/* Stop */}
+              <button
+                className="pill"
+                onClick={stopTTS}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '14px',
+                  minWidth: '40px'
+                }}
+                title="Stop"
+              >
+                ⏹
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

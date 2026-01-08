@@ -1,7 +1,7 @@
 import express from "express";
 import path from "node:path";
 import fs from "node:fs";
-import { exec } from "node:child_process";
+import { exec, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import morgan from "morgan";
 import multer from "multer";
@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import epubParser from "epub";
 import session from "express-session";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
+import os from "node:os";
 
 const execAsync = promisify(exec);
 
@@ -966,6 +967,233 @@ app.delete("/api/dictionary", (req, res) => {
   } catch (err) {
     console.error("Error deleting dictionary:", err);
     res.status(500).json({ error: "Failed to delete dictionary" });
+  }
+});
+
+// --- TTS API ---
+// Get available TTS voices
+app.get("/api/tts/voices", (req, res) => {
+  try {
+    const platform = os.platform();
+    const voices = [];
+
+    if (platform === 'darwin') {
+      // macOS - use 'say -v ?' to list voices
+      exec('say -v ?', (error, stdout) => {
+        if (error) {
+          console.error('Error getting macOS voices:', error);
+          return res.json({ voices: [] });
+        }
+        
+        // Parse say output: "Alex                 en_US    # Default voice"
+        const lines = stdout.split('\n').filter(line => line.trim());
+        const parsedVoices = lines.map(line => {
+          const parts = line.trim().split(/\s+/);
+          const name = parts[0];
+          const lang = parts[1] || 'en_US';
+          const isDefault = line.includes('# Default');
+          
+          return {
+            name,
+            lang,
+            langName: lang.replace('_', '-'),
+            default: isDefault
+          };
+        });
+        
+        res.json({ voices: parsedVoices });
+      });
+    } else if (platform === 'linux') {
+      // Linux - use espeak-ng to list voices
+      exec('espeak-ng --voices', (error, stdout) => {
+        if (error) {
+          console.error('Error getting espeak voices:', error);
+          return res.json({ voices: [] });
+        }
+        
+        // Parse espeak output: "Pty Language Age/Gender VoiceName          File"
+        const lines = stdout.split('\n').slice(1).filter(line => line.trim());
+        const parsedVoices = lines.map(line => {
+          const parts = line.trim().split(/\s+/);
+          const lang = parts[1] || 'en';
+          const gender = parts[2] || '';
+          const name = parts.slice(3).join(' ').trim();
+          
+          return {
+            name: name || `${lang}-${gender}`,
+            lang,
+            langName: lang,
+            gender: gender.includes('f') ? 'female' : gender.includes('m') ? 'male' : null
+          };
+        });
+        
+        res.json({ voices: parsedVoices });
+      });
+    } else {
+      // Windows or other - return empty for now
+      res.json({ voices: [] });
+    }
+  } catch (err) {
+    console.error("Error getting TTS voices:", err);
+    res.status(500).json({ error: "Failed to get TTS voices" });
+  }
+});
+
+// Generate TTS audio
+app.post("/api/tts/speak", async (req, res) => {
+  try {
+    const { text, voice, rate, pitch, lang } = req.body;
+
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    const platform = os.platform();
+    let tempFile = null;
+
+    // Set response headers for audio stream
+    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Content-Disposition', 'inline; filename="tts.wav"');
+    res.setHeader('Cache-Control', 'no-cache');
+
+    try {
+      if (platform === 'darwin') {
+        // macOS - use 'say' command (requires temp file)
+        tempFile = path.join(os.tmpdir(), `tts-${nanoid()}.aiff`);
+        const wavFile = tempFile.replace('.aiff', '.wav');
+        
+        const sayArgs = [];
+        if (voice) {
+          sayArgs.push('-v', voice);
+        }
+        if (rate) {
+          // say uses words per minute, rate is 0.5-2.0, default ~180 WPM
+          const wpm = Math.round(180 * rate);
+          sayArgs.push('-r', wpm.toString());
+        }
+        sayArgs.push('-o', tempFile, text);
+
+        // Generate audio file using spawn (say takes text as last argument)
+        await new Promise((resolve, reject) => {
+          const sayProcess = spawn('say', sayArgs, {
+            stdio: ['ignore', 'ignore', 'pipe']
+          });
+
+          sayProcess.on('close', (code) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`say process exited with code ${code}`));
+            }
+          });
+
+          sayProcess.on('error', (error) => {
+            reject(error);
+          });
+
+          let stderr = '';
+          sayProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+          });
+        });
+        
+        // Convert AIFF to WAV using afconvert (built into macOS)
+        try {
+          await execAsync(`afconvert -f WAVE -d LEI16 "${tempFile}" "${wavFile}"`);
+          // Read and stream the WAV file
+          const audioData = fs.readFileSync(wavFile);
+          res.write(audioData);
+          res.end();
+          // Clean up
+          try { fs.unlinkSync(tempFile); } catch {}
+          try { fs.unlinkSync(wavFile); } catch {}
+        } catch (convertErr) {
+          // If afconvert fails, try reading AIFF directly (browsers may support it)
+          const audioData = fs.readFileSync(tempFile);
+          res.setHeader('Content-Type', 'audio/aiff');
+          res.write(audioData);
+          res.end();
+          try { fs.unlinkSync(tempFile); } catch {}
+        }
+      } else if (platform === 'linux') {
+        // Linux - use espeak-ng (can output directly to stdout)
+        const command = 'espeak-ng';
+        const args = ['-s', '150', '-w', '-']; // Output to stdout as WAV
+        
+        if (voice) {
+          args.push('-v', voice);
+        } else if (lang) {
+          args.push('-v', lang);
+        }
+        
+        if (rate) {
+          // espeak uses words per minute, rate is 0.5-2.0, default ~175 WPM
+          const wpm = Math.round(175 * rate);
+          args[1] = wpm.toString(); // Update speed
+        }
+        
+        if (pitch) {
+          // espeak pitch is 0-99, default 50. Map 0.5-2.0 to 20-80
+          const espeakPitch = Math.round(50 + (pitch - 1.0) * 30);
+          args.push('-p', espeakPitch.toString());
+        }
+        
+        args.push('--stdout', text);
+
+        // Spawn the TTS process
+        const ttsProcess = spawn(command, args, {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        // Stream audio data to response
+        ttsProcess.stdout.on('data', (chunk) => {
+          res.write(chunk);
+        });
+
+        ttsProcess.stdout.on('end', () => {
+          res.end();
+        });
+
+        ttsProcess.stderr.on('data', (data) => {
+          console.error(`TTS stderr: ${data}`);
+        });
+
+        ttsProcess.on('error', (error) => {
+          console.error('TTS process error:', error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: "TTS generation failed" });
+          } else {
+            res.end();
+          }
+        });
+
+        ttsProcess.on('close', (code) => {
+          if (code !== 0 && !res.headersSent) {
+            console.error(`TTS process exited with code ${code}`);
+            res.status(500).json({ error: "TTS generation failed" });
+          }
+        });
+
+        // Handle client disconnect
+        req.on('close', () => {
+          ttsProcess.kill();
+        });
+      } else {
+        return res.status(501).json({ error: "TTS not supported on this platform" });
+      }
+    } catch (err) {
+      // Clean up temp file on error
+      if (tempFile && fs.existsSync(tempFile)) {
+        try { fs.unlinkSync(tempFile); } catch {}
+      }
+      throw err;
+    }
+
+  } catch (err) {
+    console.error("Error generating TTS:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to generate TTS audio" });
+    }
   }
 });
 

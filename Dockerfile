@@ -10,9 +10,9 @@ RUN npm run build
 FROM node:20-slim
 WORKDIR /app
 
-# Install Calibre for MOBI to EPUB conversion
+# Install Calibre for MOBI to EPUB conversion and espeak-ng for TTS
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends calibre && \
+    apt-get install -y --no-install-recommends calibre espeak-ng && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

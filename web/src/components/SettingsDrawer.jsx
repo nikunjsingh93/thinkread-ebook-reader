@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { apiGetFonts } from "../lib/api.js";
+import { apiGetFonts, apiGetTTSVoices } from "../lib/api.js";
 import { defaultPrefs } from "../lib/storage.js";
 
 // Language code to human-readable name mapping
@@ -157,31 +157,12 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
     }
   }, [open]);
 
-  function loadVoices() {
-    if (!('speechSynthesis' in window)) {
-      setVoices([]);
-      return;
-    }
-
-    const loadVoicesList = () => {
-      const availableVoices = speechSynthesis.getVoices();
+  async function loadVoices() {
+    try {
+      const data = await apiGetTTSVoices();
+      const availableVoices = data.voices || [];
       
-      if (availableVoices.length === 0) {
-        // Voices not loaded yet, try again after a short delay
-        setTimeout(() => {
-          const retryVoices = speechSynthesis.getVoices();
-          if (retryVoices.length > 0) {
-            formatAndSetVoices(retryVoices);
-          }
-        }, 100);
-        return;
-      }
-      
-      formatAndSetVoices(availableVoices);
-    };
-
-    const formatAndSetVoices = (availableVoices) => {
-      // Filter and format voices
+      // Format voices from server
       const formattedVoices = availableVoices
         .filter(voice => {
           // Only show voices with a name
@@ -189,8 +170,8 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         })
         .map(voice => ({
           name: voice.name,
-          lang: voice.lang,
-          langName: getLanguageName(voice.lang),
+          lang: voice.lang || voice.langName || 'en',
+          langName: voice.langName || getLanguageName(voice.lang || 'en'),
           voice: voice
         }))
         // Sort by language name, then by voice name
@@ -202,14 +183,9 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         });
       
       setVoices(formattedVoices);
-    };
-
-    // Load voices immediately if available
-    loadVoicesList();
-
-    // Listen for voices to be loaded (important for Chrome)
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-      speechSynthesis.onvoiceschanged = loadVoicesList;
+    } catch (err) {
+      console.error("Failed to load TTS voices:", err);
+      setVoices([]);
     }
   }
 
@@ -352,11 +328,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         <div className="row">
           <label>Read the Book</label>
           <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
-            {!('speechSynthesis' in window) ? (
-              <div className="muted" style={{fontSize: 11}}>
-                Text-to-speech is not supported in this browser
-              </div>
-            ) : voices.length === 0 ? (
+            {voices.length === 0 ? (
               <div className="muted" style={{fontSize: 11}}>
                 Loading voices...
               </div>
@@ -366,13 +338,13 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                   value={prefs.voiceName || ''}
                   onChange={(e) => onChange({ voiceName: e.target.value || null })}
                 >
-                  <option value="">Default (browser will choose)</option>
+                  <option value="">Default (server will choose)</option>
                   {voices.map((voiceInfo, index) => (
                     <option key={index} value={voiceInfo.name}>
                       {voiceInfo.name} ({voiceInfo.langName})
                     </option>
                   ))}
-                  {/* Show saved voice even if not in current list (may have changed browsers) */}
+                  {/* Show saved voice even if not in current list */}
                   {prefs.voiceName && !voices.some(v => v.name === prefs.voiceName) && (
                     <option value={prefs.voiceName} disabled>
                       {prefs.voiceName} (not available)
@@ -380,7 +352,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                   )}
                 </select>
                 <div className="muted" style={{fontSize: 11}}>
-                  Requires browser support for text-to-speech
+                  Text-to-speech is processed on the server
                 </div>
                 <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px'}}>
                   <label style={{fontSize: '12px', minWidth: '80px'}}>Reading Speed</label>
