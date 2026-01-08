@@ -4,7 +4,7 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS, apiGetTTSVoices } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS, apiGetTTSVoices, apiSaveTTSProgress, apiGetTTSProgress, apiDeleteTTSProgress } from "../lib/api.js";
 import { cacheBook } from "../lib/serviceWorker.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
@@ -309,6 +309,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [audioDuration, setAudioDuration] = useState(0);
   const [currentChapterName, setCurrentChapterName] = useState('');
   const [ttsVoices, setTtsVoices] = useState([]);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+  const savedAudioPositionRef = useRef(0); // Store position to resume from
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -2281,6 +2284,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Store text
       ttsTextRef.current = text;
 
+      // Try to load saved TTS progress
+      let resumeFromTime = 0;
+      try {
+        const savedProgress = await apiGetTTSProgress(book.id);
+        if (savedProgress && savedProgress.currentTime > 0) {
+          // Create a simple hash of the text to verify it's the same text
+          const textHash = text.length.toString(); // Simple hash based on length
+          if (savedProgress.textHash === textHash || savedProgress.chapterName === currentChapterName) {
+            resumeFromTime = savedProgress.currentTime;
+            savedAudioPositionRef.current = resumeFromTime;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load TTS progress:', err);
+      }
+
       // Update chapter name from current location
       if (renditionRef.current && toc.length > 0) {
         try {
@@ -2351,8 +2370,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
       // Generate TTS audio from server
       try {
+        setTtsLoading(true);
         setIsSpeaking(true);
-        setAudioCurrentTime(0);
+        setShowAudioPlayer(true); // Show modal when starting
+        setAudioCurrentTime(resumeFromTime);
         setAudioDuration(0);
 
         const audioBlob = await apiGenerateTTS(text, {
@@ -2377,7 +2398,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
         // Update audio time and duration
         const updateTime = () => {
-          setAudioCurrentTime(audio.currentTime);
+          const currentTime = audio.currentTime;
+          setAudioCurrentTime(currentTime);
           if (audio.duration && !isNaN(audio.duration)) {
             setAudioDuration(audio.duration);
           }
@@ -2387,11 +2409,37 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         audio.addEventListener('loadedmetadata', () => {
           if (audio.duration && !isNaN(audio.duration)) {
             setAudioDuration(audio.duration);
+            setShowAudioPlayer(true);
+            // Resume from saved position if available
+            if (resumeFromTime > 0 && resumeFromTime < audio.duration) {
+              audio.currentTime = resumeFromTime;
+              setAudioCurrentTime(resumeFromTime);
+            }
           }
         });
 
+        // Save progress periodically (every 2 seconds)
+        let startTTSProgressInterval = null;
+        const saveProgress = async () => {
+          if (audio.currentTime > 0 && audio.duration > 0) {
+            try {
+              await apiSaveTTSProgress(book.id, {
+                currentTime: audio.currentTime,
+                textHash: text.length.toString(),
+                chapterName: currentChapterName
+              });
+            } catch (err) {
+              console.warn('Failed to save TTS progress:', err);
+            }
+          }
+        };
+        
+        startTTSProgressInterval = setInterval(saveProgress, 2000);
+
         audio.onplay = () => {
           setIsSpeaking(true);
+          setTtsLoading(false);
+          setShowAudioPlayer(true);
         };
 
         audio.onpause = () => {
@@ -2401,6 +2449,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         audio.onended = () => {
           setIsSpeaking(false);
           setAudioCurrentTime(0);
+          setTtsLoading(false);
+          setShowAudioPlayer(false);
+          if (startTTSProgressInterval) {
+            clearInterval(startTTSProgressInterval);
+          }
+          // Delete saved progress when finished
+          apiDeleteTTSProgress(book.id).catch(err => console.warn('Failed to delete TTS progress:', err));
           // Clean up
           if (audioSourceRef.current) {
             URL.revokeObjectURL(audioSourceRef.current);
@@ -2415,6 +2470,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           setIsSpeaking(false);
           setAudioCurrentTime(0);
           setAudioDuration(0);
+          setTtsLoading(false);
+          if (startTTSProgressInterval) {
+            clearInterval(startTTSProgressInterval);
+          }
           onToast?.('Error playing audio');
         };
 
@@ -2427,6 +2486,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setIsSpeaking(false);
         setAudioCurrentTime(0);
         setAudioDuration(0);
+        setTtsLoading(false);
         onToast?.('Failed to start text-to-speech: ' + (err.message || 'Unknown error'));
       }
     } catch (err) {
@@ -2438,9 +2498,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   function stopTTS() {
     try {
+      // Save current position before stopping (only if user might want to resume)
+      // Actually, when user clicks X, they want to stop completely, so don't save
+      // But we'll keep this for now in case they accidentally click
+      
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
+        // Remove all event listeners by creating a new audio object reference
+        const audio = audioRef.current;
+        audio.onplay = null;
+        audio.onpause = null;
+        audio.onended = null;
+        audio.onerror = null;
         audioRef.current = null;
       }
       if (audioSourceRef.current) {
@@ -2450,6 +2520,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       setIsSpeaking(false);
       setAudioCurrentTime(0);
       setAudioDuration(0);
+      setTtsLoading(false);
+      setShowAudioPlayer(false); // Close modal immediately
+      savedAudioPositionRef.current = 0;
+      ttsTextRef.current = null; // Clear text reference
+      
+      // Delete saved progress when explicitly stopped (user wants to start fresh)
+      apiDeleteTTSProgress(book.id).catch(err => console.warn('Failed to delete TTS progress on stop:', err));
     } catch (err) {
       console.error('Failed to stop text-to-speech:', err);
     }
@@ -2506,13 +2583,135 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const newPrefs = { ...prefs, voiceName: newVoice || null };
     onPrefsChange(newPrefs);
     
-    // If TTS is currently playing, restart with new voice
-    if (audioRef.current && ttsTextRef.current && !audioRef.current.paused) {
-      stopTTS();
-      // Small delay to ensure cleanup completes
-      setTimeout(() => {
-        startTTS();
-      }, 100);
+    // If TTS is currently playing or loaded, regenerate with new voice
+    if ((audioRef.current || audioDuration > 0) && ttsTextRef.current) {
+      const wasPlaying = audioRef.current && !audioRef.current.paused && !audioRef.current.ended;
+      const currentTime = audioRef.current ? audioRef.current.currentTime : audioCurrentTime;
+      savedAudioPositionRef.current = currentTime;
+      
+      // Save current position
+      if (currentTime > 0) {
+        try {
+          await apiSaveTTSProgress(book.id, {
+            currentTime: currentTime,
+            textHash: ttsTextRef.current.length.toString(),
+            chapterName: currentChapterName
+          });
+        } catch (err) {
+          console.warn('Failed to save TTS progress on voice change:', err);
+        }
+      }
+      
+      // Clean up old audio but keep modal open (preserve duration)
+      const currentDuration = audioDuration; // Preserve duration to keep modal visible
+      if (audioRef.current) {
+        audioRef.current.pause();
+        if (audioSourceRef.current) {
+          URL.revokeObjectURL(audioSourceRef.current);
+        }
+        audioRef.current = null;
+        audioSourceRef.current = null;
+      }
+      // Keep duration set so modal stays visible
+      setAudioDuration(currentDuration);
+      
+      // Regenerate audio with new voice
+      setTtsLoading(true);
+      setShowAudioPlayer(true); // Keep modal visible
+      try {
+        const audioBlob = await apiGenerateTTS(ttsTextRef.current, {
+          voice: newVoice || null,
+          rate: prefs.readingSpeed || 1.0,
+          pitch: 1.0,
+          lang: 'en-US'
+        });
+
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioSourceRef.current = audioUrl;
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+        
+        // Set up event handlers
+        const updateTime = () => {
+          setAudioCurrentTime(audio.currentTime);
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
+          }
+        };
+
+        audio.addEventListener('timeupdate', updateTime);
+        audio.addEventListener('loadedmetadata', () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
+            setShowAudioPlayer(true);
+            // Resume from saved position
+            if (savedAudioPositionRef.current > 0 && savedAudioPositionRef.current < audio.duration) {
+              audio.currentTime = savedAudioPositionRef.current;
+              setAudioCurrentTime(savedAudioPositionRef.current);
+            }
+          }
+        });
+
+        // Save progress periodically
+        let voiceChangeProgressInterval = null;
+        const saveProgressVoice = async () => {
+          if (audio.currentTime > 0 && audio.duration > 0) {
+            try {
+              await apiSaveTTSProgress(book.id, {
+                currentTime: audio.currentTime,
+                textHash: ttsTextRef.current.length.toString(),
+                chapterName: currentChapterName
+              });
+            } catch (err) {
+              console.warn('Failed to save TTS progress:', err);
+            }
+          }
+        };
+        voiceChangeProgressInterval = setInterval(saveProgressVoice, 2000);
+
+        audio.onplay = () => {
+          setIsSpeaking(true);
+          setTtsLoading(false);
+          setShowAudioPlayer(true);
+        };
+
+        audio.onpause = () => {
+          setIsSpeaking(false);
+        };
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setTtsLoading(false);
+          setShowAudioPlayer(false);
+          if (voiceChangeProgressInterval) {
+            clearInterval(voiceChangeProgressInterval);
+          }
+          apiDeleteTTSProgress(book.id).catch(() => {});
+          if (audioSourceRef.current) {
+            URL.revokeObjectURL(audioSourceRef.current);
+            audioSourceRef.current = null;
+          }
+          audioRef.current = null;
+        };
+
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          setTtsLoading(false);
+          if (voiceChangeProgressInterval) {
+            clearInterval(voiceChangeProgressInterval);
+          }
+          onToast?.('Error playing audio');
+        };
+
+        // Start playing if it was playing before
+        if (wasPlaying) {
+          await audio.play();
+        }
+      } catch (err) {
+        console.error('Failed to regenerate TTS:', err);
+        setTtsLoading(false);
+        onToast?.('Failed to regenerate audio: ' + (err.message || 'Unknown error'));
+      }
     }
   }
 
@@ -2521,13 +2720,135 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const newPrefs = { ...prefs, readingSpeed: newSpeed };
     onPrefsChange(newPrefs);
     
-    // If TTS is currently playing, restart with new speed
-    if (audioRef.current && ttsTextRef.current && !audioRef.current.paused) {
-      stopTTS();
-      // Small delay to ensure cleanup completes
-      setTimeout(() => {
-        startTTS();
-      }, 100);
+    // If TTS is currently playing or loaded, regenerate with new speed
+    if ((audioRef.current || audioDuration > 0) && ttsTextRef.current) {
+      const wasPlaying = audioRef.current && !audioRef.current.paused && !audioRef.current.ended;
+      const currentTime = audioRef.current ? audioRef.current.currentTime : audioCurrentTime;
+      savedAudioPositionRef.current = currentTime;
+      
+      // Save current position
+      if (currentTime > 0) {
+        try {
+          await apiSaveTTSProgress(book.id, {
+            currentTime: currentTime,
+            textHash: ttsTextRef.current.length.toString(),
+            chapterName: currentChapterName
+          });
+        } catch (err) {
+          console.warn('Failed to save TTS progress on speed change:', err);
+        }
+      }
+      
+      // Clean up old audio but keep modal open (preserve duration)
+      const currentDuration = audioDuration; // Preserve duration to keep modal visible
+      if (audioRef.current) {
+        audioRef.current.pause();
+        if (audioSourceRef.current) {
+          URL.revokeObjectURL(audioSourceRef.current);
+        }
+        audioRef.current = null;
+        audioSourceRef.current = null;
+      }
+      // Keep duration set so modal stays visible
+      setAudioDuration(currentDuration);
+      
+      // Regenerate audio with new speed
+      setTtsLoading(true);
+      setShowAudioPlayer(true); // Keep modal visible
+      try {
+        const audioBlob = await apiGenerateTTS(ttsTextRef.current, {
+          voice: prefs.voiceName || null,
+          rate: newSpeed,
+          pitch: 1.0,
+          lang: 'en-US'
+        });
+
+        const audioUrl = URL.createObjectURL(audioBlob);
+        audioSourceRef.current = audioUrl;
+        const audio = new Audio(audioUrl);
+        audioRef.current = audio;
+        
+        // Set up event handlers (same as voice change)
+        const updateTime = () => {
+          setAudioCurrentTime(audio.currentTime);
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
+          }
+        };
+
+        audio.addEventListener('timeupdate', updateTime);
+        audio.addEventListener('loadedmetadata', () => {
+          if (audio.duration && !isNaN(audio.duration)) {
+            setAudioDuration(audio.duration);
+            setShowAudioPlayer(true);
+            // Resume from saved position
+            if (savedAudioPositionRef.current > 0 && savedAudioPositionRef.current < audio.duration) {
+              audio.currentTime = savedAudioPositionRef.current;
+              setAudioCurrentTime(savedAudioPositionRef.current);
+            }
+          }
+        });
+
+        // Save progress periodically
+        let speedChangeProgressInterval = null;
+        const saveProgressSpeed = async () => {
+          if (audio.currentTime > 0 && audio.duration > 0) {
+            try {
+              await apiSaveTTSProgress(book.id, {
+                currentTime: audio.currentTime,
+                textHash: ttsTextRef.current.length.toString(),
+                chapterName: currentChapterName
+              });
+            } catch (err) {
+              console.warn('Failed to save TTS progress:', err);
+            }
+          }
+        };
+        speedChangeProgressInterval = setInterval(saveProgressSpeed, 2000);
+
+        audio.onplay = () => {
+          setIsSpeaking(true);
+          setTtsLoading(false);
+          setShowAudioPlayer(true);
+        };
+
+        audio.onpause = () => {
+          setIsSpeaking(false);
+        };
+
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setTtsLoading(false);
+          setShowAudioPlayer(false);
+          if (speedChangeProgressInterval) {
+            clearInterval(speedChangeProgressInterval);
+          }
+          apiDeleteTTSProgress(book.id).catch(() => {});
+          if (audioSourceRef.current) {
+            URL.revokeObjectURL(audioSourceRef.current);
+            audioSourceRef.current = null;
+          }
+          audioRef.current = null;
+        };
+
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          setTtsLoading(false);
+          if (speedChangeProgressInterval) {
+            clearInterval(speedChangeProgressInterval);
+          }
+          onToast?.('Error playing audio');
+        };
+
+        // Start playing if it was playing before
+        if (wasPlaying) {
+          await audio.play();
+        }
+      } catch (err) {
+        console.error('Failed to regenerate TTS:', err);
+        setTtsLoading(false);
+        onToast?.('Failed to regenerate audio: ' + (err.message || 'Unknown error'));
+      }
     }
   }
 
@@ -2805,8 +3126,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         />
       )}
 
-      {/* Audio Player Modal */}
-      {audioRef.current && audioDuration > 0 && (
+      {/* Audio Player Modal - show when audio exists or loading */}
+      {showAudioPlayer && (
         <div
           style={{
             position: 'fixed',
@@ -2820,16 +3141,75 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             padding: '16px 20px',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
             border: '1px solid var(--border)',
-            minWidth: '360px',
+            minWidth: '280px',
             maxWidth: '90vw',
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
-            transition: 'top 0.3s ease'
+            transition: 'top 0.3s ease',
+            position: 'relative'
           }}
         >
+          {/* Close Button (X) */}
+          <button
+            className="pill"
+            onClick={stopTTS}
+            style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              padding: '4px 8px',
+              fontSize: '14px',
+              minWidth: 'auto',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid var(--border)'
+            }}
+            title="Stop and close"
+          >
+            ✕
+          </button>
+
+          {/* Loading Overlay */}
+          {ttsLoading && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0,0,0,0.7)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+                backdropFilter: 'blur(4px)'
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    border: '3px solid rgba(255,255,255,0.3)',
+                    borderTopColor: 'var(--accent)',
+                    borderRadius: '50%',
+                    animation: 'spin 0.8s linear infinite'
+                  }}
+                />
+                <div style={{ fontSize: '12px', color: 'var(--text)' }}>Loading audio...</div>
+              </div>
+            </div>
+          )}
+
           {/* Chapter Name */}
-          <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text)', textAlign: 'center', marginBottom: '4px' }}>
+          <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text)', textAlign: 'center', marginBottom: '4px', paddingRight: '30px' }}>
             {currentChapterName || 'Reading'}
           </div>
 
@@ -2841,6 +3221,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <select
                 value={prefs.voiceName || ''}
                 onChange={(e) => handleVoiceChange(e.target.value || null)}
+                disabled={ttsLoading}
                 style={{
                   flex: 1,
                   padding: '6px 8px',
@@ -2849,7 +3230,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   border: '1px solid var(--input-border)',
                   borderRadius: '6px',
                   color: 'var(--text)',
-                  cursor: 'pointer'
+                  cursor: ttsLoading ? 'not-allowed' : 'pointer',
+                  opacity: ttsLoading ? 0.6 : 1
                 }}
               >
                 <option value="">Default (server will choose)</option>
@@ -2876,10 +3258,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 step="0.1"
                 value={prefs.readingSpeed || 1.0}
                 onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                disabled={ttsLoading}
                 style={{
                   flex: 1,
                   height: '4px',
-                  cursor: 'pointer'
+                  cursor: ttsLoading ? 'not-allowed' : 'pointer',
+                  opacity: ttsLoading ? 0.6 : 1
                 }}
               />
               <div style={{ width: '38px', textAlign: 'right', fontSize: '11px', color: 'var(--muted)' }}>
@@ -2897,14 +3281,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               value={audioCurrentTime || 0}
               onChange={(e) => seekTo(parseFloat(e.target.value))}
               step={0.1}
+              disabled={ttsLoading}
               style={{
                 flex: 1,
                 height: '6px',
-                cursor: 'pointer',
-                background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${(audioCurrentTime / audioDuration) * 100}%, rgba(255,255,255,0.2) ${(audioCurrentTime / audioDuration) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                cursor: ttsLoading ? 'not-allowed' : 'pointer',
+                background: audioDuration > 0 ? `linear-gradient(to right, var(--accent) 0%, var(--accent) ${((audioCurrentTime || 0) / audioDuration) * 100}%, rgba(255,255,255,0.2) ${((audioCurrentTime || 0) / audioDuration) * 100}%, rgba(255,255,255,0.2) 100%)` : 'rgba(255,255,255,0.2)',
                 borderRadius: '3px',
                 border: 'none',
-                outline: 'none'
+                outline: 'none',
+                opacity: ttsLoading ? 0.6 : 1
               }}
             />
           </div>
@@ -2922,10 +3308,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <button
                 className="pill"
                 onClick={() => seekAudio(-10)}
+                disabled={ttsLoading}
                 style={{
                   padding: '6px 10px',
                   fontSize: '14px',
-                  minWidth: '40px'
+                  minWidth: '40px',
+                  opacity: ttsLoading ? 0.6 : 1,
+                  cursor: ttsLoading ? 'not-allowed' : 'pointer'
                 }}
                 title="Rewind 10 seconds"
               >
@@ -2936,10 +3325,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <button
                 className="pill"
                 onClick={pausePlayAudio}
+                disabled={ttsLoading || !audioRef.current}
                 style={{
                   padding: '8px 12px',
                   fontSize: '16px',
-                  minWidth: '48px'
+                  minWidth: '48px',
+                  opacity: (ttsLoading || !audioRef.current) ? 0.6 : 1,
+                  cursor: (ttsLoading || !audioRef.current) ? 'not-allowed' : 'pointer'
                 }}
                 title={audioRef.current && !audioRef.current.paused ? "Pause" : "Play"}
               >
@@ -2950,28 +3342,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <button
                 className="pill"
                 onClick={() => seekAudio(10)}
+                disabled={ttsLoading}
                 style={{
                   padding: '6px 10px',
                   fontSize: '14px',
-                  minWidth: '40px'
+                  minWidth: '40px',
+                  opacity: ttsLoading ? 0.6 : 1,
+                  cursor: ttsLoading ? 'not-allowed' : 'pointer'
                 }}
                 title="Forward 10 seconds"
               >
                 ⏩
-              </button>
-
-              {/* Stop */}
-              <button
-                className="pill"
-                onClick={stopTTS}
-                style={{
-                  padding: '6px 10px',
-                  fontSize: '14px',
-                  minWidth: '40px'
-                }}
-                title="Stop"
-              >
-                ⏹
               </button>
             </div>
           </div>

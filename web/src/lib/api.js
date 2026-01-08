@@ -277,3 +277,27 @@ export async function apiGenerateTTS(text, options = {}) {
   // Return the audio blob
   return await r.blob();
 }
+
+// --- TTS Progress API ---
+export async function apiGetTTSProgress(bookId) {
+  const r = await fetch(`/api/tts/progress/${bookId}`);
+  if (!r.ok) throw new Error("Failed to fetch TTS progress");
+  return r.json();
+}
+
+export async function apiSaveTTSProgress(bookId, progress) {
+  const r = await fetch(`/api/tts/progress/${bookId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(progress),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data?.error || "TTS progress save failed");
+  return data;
+}
+
+export async function apiDeleteTTSProgress(bookId) {
+  const r = await fetch(`/api/tts/progress/${bookId}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("TTS progress delete failed");
+  return r.json();
+}

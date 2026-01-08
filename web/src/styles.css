@@ -27,6 +27,10 @@
   --search-border: rgba(255,255,255,.12);
   --progress-bg: rgba(255,255,255,0.2);
 }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 *{ 
   box-sizing: border-box;
 }

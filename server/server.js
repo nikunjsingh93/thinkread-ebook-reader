@@ -1197,6 +1197,72 @@ app.post("/api/tts/speak", async (req, res) => {
   }
 });
 
+// --- TTS Progress API ---
+app.get("/api/tts/progress/:bookId", (req, res) => {
+  try {
+    const { bookId } = req.params;
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    const ttsProgress = state.ttsProgress?.[req.session.userId]?.[bookId] || null;
+    res.json(ttsProgress);
+  } catch (err) {
+    console.error("Error loading TTS progress:", err);
+    res.status(500).json({ error: "Failed to load TTS progress" });
+  }
+});
+
+app.post("/api/tts/progress/:bookId", async (req, res) => {
+  try {
+    const { bookId } = req.params;
+    const { currentTime, textHash, chapterName } = req.body;
+
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    if (!state.ttsProgress) state.ttsProgress = {};
+    if (!state.ttsProgress[req.session.userId]) state.ttsProgress[req.session.userId] = {};
+
+    state.ttsProgress[req.session.userId][bookId] = {
+      currentTime: currentTime || 0,
+      textHash: textHash || null,
+      chapterName: chapterName || null,
+      updatedAt: Date.now()
+    };
+
+    await saveStateAtomic(statePath, state);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error saving TTS progress:", err);
+    res.status(500).json({ error: "Failed to save TTS progress" });
+  }
+});
+
+app.delete("/api/tts/progress/:bookId", async (req, res) => {
+  try {
+    const { bookId } = req.params;
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const state = loadState(statePath);
+    if (state.ttsProgress?.[req.session.userId]?.[bookId]) {
+      delete state.ttsProgress[req.session.userId][bookId];
+      await saveStateAtomic(statePath, state);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting TTS progress:", err);
+    res.status(500).json({ error: "Failed to delete TTS progress" });
+  }
+});
+
 // Multer error handler (and others)
 app.use((err, req, res, next) => {
   if (err) {
