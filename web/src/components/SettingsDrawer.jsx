@@ -382,6 +382,21 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                 <div className="muted" style={{fontSize: 11}}>
                   Requires browser support for text-to-speech
                 </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px'}}>
+                  <label style={{fontSize: '12px', minWidth: '80px'}}>Reading Speed</label>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.1"
+                    value={prefs.readingSpeed || 1.0}
+                    onChange={(e) => onChange({ readingSpeed: Number(e.target.value) })}
+                    style={{flex: 1}}
+                  />
+                  <div style={{width: 42, textAlign:"right", fontSize: '12px'}}>
+                    {prefs.readingSpeed ? prefs.readingSpeed.toFixed(1) : '1.0'}x
+                  </div>
+                </div>
               </>
             )}
           </div>

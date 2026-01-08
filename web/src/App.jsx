@@ -40,6 +40,7 @@ function defaultPrefs() {
     twoPageLayout: false,
     voiceGender: "female",
     voiceName: null,
+    readingSpeed: 1.0,
   };
 }
 

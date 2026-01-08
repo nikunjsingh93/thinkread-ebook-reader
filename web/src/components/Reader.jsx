@@ -2192,7 +2192,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       ttsTextRef.current = text;
 
       // Configure speech parameters
-      utterance.rate = 1.0;
+      utterance.rate = prefs.readingSpeed || 1.0;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       utterance.lang = 'en-US';
@@ -2458,7 +2458,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const utterance = new SpeechSynthesisUtterance(textToRead);
         speechUtteranceRef.current = utterance;
         
-        utterance.rate = 1.0;
+        utterance.rate = prefs.readingSpeed || 1.0;
         utterance.pitch = 1.0;
         utterance.volume = 1.0;
         utterance.lang = 'en-US';

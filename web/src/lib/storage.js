@@ -77,6 +77,7 @@ export function defaultPrefs() {
     twoPageLayout: false, // Enable two-page side-by-side layout
     voiceGender: "female", // "male" or "female" for text-to-speech (legacy, kept for backward compatibility)
     voiceName: null, // Name of the selected voice (if null, uses voiceGender or default)
+    readingSpeed: 1.0, // Speech rate (0.1 to 10, where 1.0 is normal speed)
   };
 }
 
