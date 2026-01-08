@@ -2147,6 +2147,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
+  // Detect Android devices
+  function isAndroid() {
+    return /Android/i.test(navigator.userAgent);
+  }
+
   function startTTS() {
     try {
       const text = extractTextFromCurrentPage();
@@ -2168,8 +2173,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Add click handlers to text elements while TTS is active
       addTTSClickHandlers();
 
-      // Cancel any ongoing speech and wait
-      synth.cancel();
+      // Android-specific handling: split text into smaller chunks if too long
+      const isAndroidDevice = isAndroid();
+      const androidMaxLength = 5000; // Android has stricter limits
       
       // Chrome requires voices to be loaded before speaking
       // Force voice loading by accessing getVoices() multiple times
@@ -2186,18 +2192,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Try to load voices immediately
       checkVoicesLoaded();
       
-      // Create utterance
-      const utterance = new SpeechSynthesisUtterance(text);
+      // Create utterance - Android may need shorter text
+      let textToSpeak = text;
+      if (isAndroidDevice && text.length > androidMaxLength) {
+        // Split into sentences for Android
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        textToSpeak = sentences[0]; // Start with first sentence for now
+        console.log('[TTS] Android: Using first sentence chunk, length:', textToSpeak.length);
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
       speechUtteranceRef.current = utterance;
       ttsTextRef.current = text;
 
-      // Configure speech parameters
-      utterance.rate = prefs.readingSpeed || 1.0;
+      // Configure speech parameters - Android may need different defaults
+      utterance.rate = Math.max(0.5, Math.min(2.0, prefs.readingSpeed || 1.0)); // Clamp for Android
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
       utterance.lang = 'en-US';
 
-      // Extract words for highlighting
+      // Extract words for highlighting (use original text for highlighting, not textToSpeak)
       const words = text.split(/\s+/).filter(w => w.trim().length > 0);
 
       // Function to setup and start speech
@@ -2214,9 +2228,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               // Try to find the voice by name
               selectedVoice = voices.find(v => v.name === prefs.voiceName);
               if (selectedVoice) {
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang || 'en-US';
-                console.log('[TTS] Using selected voice:', selectedVoice.name, selectedVoice.lang);
+                // For Android, prefer local voices (localService === true or undefined)
+                // Avoid remote voices which may cause synthesis-failed
+                if (!isAndroidDevice || selectedVoice.localService !== false) {
+                  utterance.voice = selectedVoice;
+                  utterance.lang = selectedVoice.lang || 'en-US';
+                  console.log('[TTS] Using selected voice:', selectedVoice.name, selectedVoice.lang, 'localService:', selectedVoice.localService);
+                } else {
+                  console.warn('[TTS] Selected voice is remote, finding local alternative for Android');
+                  // Find a local voice with same language
+                  const localAlt = voices.find(v => 
+                    v.lang === selectedVoice.lang && v.localService !== false
+                  );
+                  if (localAlt) {
+                    utterance.voice = localAlt;
+                    utterance.lang = localAlt.lang;
+                    console.log('[TTS] Using local alternative:', localAlt.name);
+                  } else {
+                    utterance.lang = selectedVoice.lang || 'en-US';
+                  }
+                }
               } else {
                 console.warn('[TTS] Selected voice not found, using default');
               }
@@ -2225,9 +2256,43 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               if (prefs.voiceGender) {
                 const genderVoice = getVoiceForGender(prefs.voiceGender);
                 if (genderVoice) {
-                  utterance.voice = genderVoice;
-                  utterance.lang = genderVoice.lang || 'en-US';
-                  console.log('[TTS] Using gender-based voice:', genderVoice.name, genderVoice.lang);
+                  // For Android, prefer local voices
+                  if (!isAndroidDevice || genderVoice.localService !== false) {
+                    utterance.voice = genderVoice;
+                    utterance.lang = genderVoice.lang || 'en-US';
+                    console.log('[TTS] Using gender-based voice:', genderVoice.name, genderVoice.lang);
+                  } else {
+                    utterance.lang = genderVoice.lang || 'en-US';
+                  }
+                }
+              }
+            }
+            
+            // Android fallback: ensure we have a valid local voice
+            if (isAndroidDevice) {
+              // If no voice set or voice is remote, find a local one
+              if (!utterance.voice || utterance.voice.localService === false) {
+                // Find any local English voice first
+                const localEnVoice = voices.find(v => 
+                  v.lang.toLowerCase().startsWith('en') && v.localService !== false
+                );
+                if (localEnVoice) {
+                  utterance.voice = localEnVoice;
+                  utterance.lang = localEnVoice.lang;
+                  console.log('[TTS] Android: Using local English voice:', localEnVoice.name);
+                } else {
+                  // Find any local voice
+                  const localVoice = voices.find(v => v.localService !== false);
+                  if (localVoice) {
+                    utterance.voice = localVoice;
+                    utterance.lang = localVoice.lang;
+                    console.log('[TTS] Android: Using local voice:', localVoice.name);
+                  } else if (voices.length > 0) {
+                    // Last resort: use first voice even if remote
+                    utterance.lang = voices[0].lang;
+                    utterance.voice = voices[0];
+                    console.warn('[TTS] Android: No local voices found, using remote:', voices[0].name);
+                  }
                 }
               }
             }
@@ -2269,12 +2334,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           };
 
           utterance.onerror = (event) => {
-            console.error('[TTS] Speech synthesis error:', event.error);
+            console.error('[TTS] Speech synthesis error:', event.error, event);
             setIsSpeaking(false);
             speechUtteranceRef.current = null;
             clearHighlight();
             if (event.error !== 'interrupted') {
-              onToast?.('Error reading text: ' + event.error);
+              // Android-specific error messages
+              if (isAndroidDevice) {
+                if (event.error === 'synthesis-failed' || event.error === 'synthesis-unavailable') {
+                  onToast?.('Android TTS error. Try selecting a different voice in settings.');
+                  console.error('[TTS] Android synthesis failed. Voice:', utterance.voice?.name, 'Voice local:', utterance.voice?.localService, 'Lang:', utterance.lang, 'Text length:', textToSpeak.length);
+                } else {
+                  onToast?.('Error reading text: ' + event.error);
+                }
+              } else {
+                onToast?.('Error reading text: ' + event.error);
+              }
             }
           };
 
@@ -2282,17 +2357,41 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           // Set state immediately for UI feedback
           setIsSpeaking(true);
           
-          // Actually start speaking
-          synth.speak(utterance);
-          
-          // Verify speech started (Chrome sometimes doesn't start immediately)
-          setTimeout(() => {
-            if (!synth.speaking && !synth.pending) {
-              console.warn('[TTS] Speech did not start');
-              setIsSpeaking(false);
-              clearHighlight();
-            }
-          }, 200);
+          // Android: Ensure we're ready before speaking
+          if (isAndroidDevice) {
+            // Wait a bit for Android to be ready
+            setTimeout(() => {
+              try {
+                synth.speak(utterance);
+                // Android verification
+                setTimeout(() => {
+                  if (!synth.speaking && !synth.pending) {
+                    console.warn('[TTS] Android: Speech did not start');
+                    setIsSpeaking(false);
+                    clearHighlight();
+                    onToast?.('Failed to start reading. Try selecting a different voice.');
+                  }
+                }, 300);
+              } catch (androidErr) {
+                console.error('[TTS] Android speak error:', androidErr);
+                setIsSpeaking(false);
+                clearHighlight();
+                onToast?.('Android TTS failed. Please try a different voice.');
+              }
+            }, 100);
+          } else {
+            // Actually start speaking for other platforms
+            synth.speak(utterance);
+            
+            // Verify speech started (Chrome sometimes doesn't start immediately)
+            setTimeout(() => {
+              if (!synth.speaking && !synth.pending) {
+                console.warn('[TTS] Speech did not start');
+                setIsSpeaking(false);
+                clearHighlight();
+              }
+            }, 200);
+          }
 
         } catch (err) {
           console.error('[TTS] Error setting up speech:', err);
@@ -2751,7 +2850,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           <button
             className="pill"
             onClick={toggleTTS}
-            title={isSpeaking ? "Stop reading" : "Read current page"}
+            title={isSpeaking ? "Stop reading" : "Read Chapter"}
             style={{
               padding: '6px 8px',
               display: 'flex',
