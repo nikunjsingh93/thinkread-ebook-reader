@@ -3254,13 +3254,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 left: 0,
                 right: 0,
                 bottom: 0,
-                background: 'rgba(0,0,0,0.7)',
+                background: 'var(--drawer-bg)',
                 borderRadius: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 zIndex: 10,
-                backdropFilter: 'blur(4px)'
+                backdropFilter: 'blur(20px)'
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
@@ -3268,7 +3268,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   style={{
                     width: '32px',
                     height: '32px',
-                    border: '3px solid rgba(255,255,255,0.3)',
+                    border: '3px solid rgba(255,255,255,0.2)',
                     borderTopColor: 'var(--accent)',
                     borderRadius: '50%',
                     animation: 'spin 0.8s linear infinite'
