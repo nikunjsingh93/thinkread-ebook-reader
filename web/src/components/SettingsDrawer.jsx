@@ -2,6 +2,134 @@ import React, { useEffect, useState, useRef } from "react";
 import { apiGetFonts } from "../lib/api.js";
 import { defaultPrefs } from "../lib/storage.js";
 
+// Language code to human-readable name mapping
+function getLanguageName(langCode) {
+  const langMap = {
+    'en': 'English',
+    'en-us': 'English (US)',
+    'en-gb': 'English (UK)',
+    'en-au': 'English (Australia)',
+    'en-ca': 'English (Canada)',
+    'en-ie': 'English (Ireland)',
+    'en-nz': 'English (New Zealand)',
+    'en-za': 'English (South Africa)',
+    'es': 'Spanish',
+    'es-es': 'Spanish (Spain)',
+    'es-mx': 'Spanish (Mexico)',
+    'es-ar': 'Spanish (Argentina)',
+    'es-co': 'Spanish (Colombia)',
+    'es-us': 'Spanish (US)',
+    'fr': 'French',
+    'fr-fr': 'French (France)',
+    'fr-ca': 'French (Canada)',
+    'fr-be': 'French (Belgium)',
+    'de': 'German',
+    'de-de': 'German (Germany)',
+    'de-at': 'German (Austria)',
+    'de-ch': 'German (Switzerland)',
+    'it': 'Italian',
+    'it-it': 'Italian (Italy)',
+    'pt': 'Portuguese',
+    'pt-br': 'Portuguese (Brazil)',
+    'pt-pt': 'Portuguese (Portugal)',
+    'ru': 'Russian',
+    'ru-ru': 'Russian',
+    'ja': 'Japanese',
+    'ja-jp': 'Japanese',
+    'zh': 'Chinese',
+    'zh-cn': 'Chinese (Simplified)',
+    'zh-tw': 'Chinese (Traditional)',
+    'zh-hk': 'Chinese (Hong Kong)',
+    'ko': 'Korean',
+    'ko-kr': 'Korean',
+    'ar': 'Arabic',
+    'ar-sa': 'Arabic (Saudi Arabia)',
+    'ar-ae': 'Arabic (UAE)',
+    'nl': 'Dutch',
+    'nl-nl': 'Dutch (Netherlands)',
+    'nl-be': 'Dutch (Belgium)',
+    'pl': 'Polish',
+    'pl-pl': 'Polish',
+    'tr': 'Turkish',
+    'tr-tr': 'Turkish',
+    'sv': 'Swedish',
+    'sv-se': 'Swedish',
+    'da': 'Danish',
+    'da-dk': 'Danish',
+    'no': 'Norwegian',
+    'no-no': 'Norwegian',
+    'fi': 'Finnish',
+    'fi-fi': 'Finnish',
+    'el': 'Greek',
+    'el-gr': 'Greek',
+    'he': 'Hebrew',
+    'he-il': 'Hebrew',
+    'hi': 'Hindi',
+    'hi-in': 'Hindi',
+    'th': 'Thai',
+    'th-th': 'Thai',
+    'vi': 'Vietnamese',
+    'vi-vn': 'Vietnamese',
+    'cs': 'Czech',
+    'cs-cz': 'Czech',
+    'hu': 'Hungarian',
+    'hu-hu': 'Hungarian',
+    'ro': 'Romanian',
+    'ro-ro': 'Romanian',
+    'uk': 'Ukrainian',
+    'uk-ua': 'Ukrainian',
+    'id': 'Indonesian',
+    'id-id': 'Indonesian',
+    'ms': 'Malay',
+    'ms-my': 'Malay',
+    'ca': 'Catalan',
+    'ca-es': 'Catalan',
+    'sk': 'Slovak',
+    'sk-sk': 'Slovak',
+    'hr': 'Croatian',
+    'hr-hr': 'Croatian',
+    'bg': 'Bulgarian',
+    'bg-bg': 'Bulgarian',
+    'sr': 'Serbian',
+    'sr-rs': 'Serbian',
+    'sl': 'Slovenian',
+    'sl-si': 'Slovenian',
+    'et': 'Estonian',
+    'et-ee': 'Estonian',
+    'lv': 'Latvian',
+    'lv-lv': 'Latvian',
+    'lt': 'Lithuanian',
+    'lt-lt': 'Lithuanian',
+    'ga': 'Irish',
+    'ga-ie': 'Irish',
+    'mt': 'Maltese',
+    'mt-mt': 'Maltese',
+    'is': 'Icelandic',
+    'is-is': 'Icelandic',
+    'cy': 'Welsh',
+    'cy-gb': 'Welsh',
+  };
+
+  // Normalize language code to lowercase
+  const normalized = langCode.toLowerCase();
+  
+  // Try exact match first
+  if (langMap[normalized]) {
+    return langMap[normalized];
+  }
+  
+  // Try with just the base language (e.g., 'en' from 'en-us')
+  const baseLang = normalized.split('-')[0];
+  if (langMap[baseLang]) {
+    return langMap[baseLang];
+  }
+  
+  // If no match found, return formatted version of the code
+  return langCode.split('-').map(part => 
+    part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+  ).join('-');
+}
+
 export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   const [fonts, setFonts] = useState([]);
   const [voices, setVoices] = useState([]);
@@ -62,12 +190,13 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         .map(voice => ({
           name: voice.name,
           lang: voice.lang,
+          langName: getLanguageName(voice.lang),
           voice: voice
         }))
-        // Sort by language, then by name
+        // Sort by language name, then by voice name
         .sort((a, b) => {
-          if (a.lang !== b.lang) {
-            return a.lang.localeCompare(b.lang);
+          if (a.langName !== b.langName) {
+            return a.langName.localeCompare(b.langName);
           }
           return a.name.localeCompare(b.name);
         });
@@ -240,7 +369,7 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
                   <option value="">Default (browser will choose)</option>
                   {voices.map((voiceInfo, index) => (
                     <option key={index} value={voiceInfo.name}>
-                      {voiceInfo.name} ({voiceInfo.lang})
+                      {voiceInfo.name} ({voiceInfo.langName})
                     </option>
                   ))}
                   {/* Show saved voice even if not in current list (may have changed browsers) */}
