@@ -794,44 +794,118 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
       
       // Update current chapter name
-      if (toc.length > 0 && loc) {
+      if (toc.length > 0) {
         try {
-          // Get the href from the location
-          const currentHref = loc?.start?.href || loc?.start?.displayed?.href;
+          // Try to get href from location object first
+          let currentHref = null;
+          
+          if (loc) {
+            currentHref = loc?.start?.href || 
+                         loc?.start?.displayed?.href || 
+                         loc?.start?.loc?.href ||
+                         loc?.displayed?.href ||
+                         loc?.href;
+          }
+          
+          // Fallback: try to get from rendition's current location
+          if (!currentHref && renditionRef.current) {
+            try {
+              const currentLocation = renditionRef.current.currentLocation();
+              if (currentLocation) {
+                currentHref = currentLocation.start?.href || 
+                             currentLocation.start?.displayed?.href ||
+                             currentLocation.href;
+              }
+            } catch (e) {
+              // Current location not available yet
+            }
+          }
+          
           if (currentHref) {
-            // Find the chapter that matches this href
-            // Remove fragment identifier if present
-            const hrefWithoutFragment = currentHref.split('#')[0];
+            // Normalize href for comparison - extract just the filename/base name
+            const normalizeHref = (href) => {
+              if (!href) return '';
+              // Remove fragment and query params
+              let normalized = href.split('#')[0].split('?')[0];
+              // Extract filename from path
+              const parts = normalized.split('/');
+              const filename = parts[parts.length - 1];
+              return filename || normalized;
+            };
+            
+            const currentHrefNormalized = normalizeHref(currentHref);
             
             // Find matching TOC item
-            const matchingChapter = toc.find(item => {
-              const itemHref = item.href.split('#')[0];
-              // Check if the hrefs match (handle relative paths)
-              return itemHref === hrefWithoutFragment || 
-                     itemHref.endsWith(hrefWithoutFragment) || 
-                     hrefWithoutFragment.endsWith(itemHref);
+            let matchingChapter = toc.find(item => {
+              const itemHrefNormalized = normalizeHref(item.href);
+              // Exact filename match
+              if (itemHrefNormalized === currentHrefNormalized) return true;
+              // Check if filenames match (case-insensitive)
+              if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
+              // Partial match - check if one contains the other
+              return itemHrefNormalized.includes(currentHrefNormalized) || 
+                     currentHrefNormalized.includes(itemHrefNormalized);
             });
+            
+            // If no direct match, try matching by full href path
+            if (!matchingChapter) {
+              const currentFullHref = currentHref.split('#')[0].split('?')[0];
+              matchingChapter = toc.find(item => {
+                const itemFullHref = item.href.split('#')[0].split('?')[0];
+                return currentFullHref === itemFullHref ||
+                       currentFullHref.endsWith(itemFullHref) ||
+                       itemFullHref.endsWith(currentFullHref);
+              });
+            }
+            
+            // If still no match, try finding by position in TOC (closest previous chapter)
+            if (!matchingChapter && epubBookRef.current && cfi) {
+              try {
+                // Find the chapter that's closest to current position
+                let bestMatch = null;
+                let bestIndex = -1;
+                
+                for (let i = 0; i < toc.length; i++) {
+                  const item = toc[i];
+                  try {
+                    const itemCfi = epubBookRef.current.locations?.cfiFromHref?.(item.href);
+                    if (itemCfi && cfi >= itemCfi) {
+                      // Current position is at or after this chapter
+                      if (i > bestIndex) {
+                        bestIndex = i;
+                        bestMatch = item;
+                      }
+                    }
+                  } catch (e) {
+                    // Skip items that can't be converted
+                  }
+                }
+                
+                if (bestMatch) {
+                  matchingChapter = bestMatch;
+                }
+              } catch (e) {
+                // CFI comparison failed
+              }
+            }
             
             if (matchingChapter) {
               setCurrentChapterName(matchingChapter.label);
             } else {
-              // Fallback: find the closest chapter by checking if current href contains the TOC href
-              const closestChapter = toc.find(item => {
-                const itemHref = item.href.split('#')[0];
-                return hrefWithoutFragment.includes(itemHref) || itemHref.includes(hrefWithoutFragment);
-              });
-              if (closestChapter) {
-                setCurrentChapterName(closestChapter.label);
-              } else if (toc.length > 0) {
-                // Last resort: show first chapter or "Unknown Chapter"
-                setCurrentChapterName(toc[0].label || 'Unknown Chapter');
-              }
+              // Default if no match found
+              setCurrentChapterName('Reading');
             }
+          } else {
+            // No href available yet
+            setCurrentChapterName('Reading');
           }
         } catch (err) {
           console.warn('Failed to get chapter name:', err);
-          setCurrentChapterName('Unknown Chapter');
+          setCurrentChapterName('Reading');
         }
+      } else if (!currentChapterName) {
+        // No TOC available yet
+        setCurrentChapterName('Reading');
       }
       
       try {
@@ -2199,6 +2273,74 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Store text
       ttsTextRef.current = text;
 
+      // Update chapter name from current location
+      if (renditionRef.current && toc.length > 0) {
+        try {
+          // Try to get location from rendition object
+          let currentHref = null;
+          
+          // Method 1: Use rendition.location (most reliable)
+          if (renditionRef.current.location) {
+            currentHref = renditionRef.current.location.start?.href || 
+                         renditionRef.current.location.href;
+          }
+          
+          // Method 2: Try currentLocation() if available
+          if (!currentHref) {
+            try {
+              const location = renditionRef.current.currentLocation();
+              if (location) {
+                currentHref = location.start?.href || location.href;
+              }
+            } catch (e) {
+              // currentLocation() not available
+            }
+          }
+          
+          if (currentHref) {
+            const normalizeHref = (href) => {
+              if (!href) return '';
+              let normalized = href.split('#')[0].split('?')[0];
+              const parts = normalized.split('/');
+              return parts[parts.length - 1] || normalized;
+            };
+            
+            const currentHrefNormalized = normalizeHref(currentHref);
+            
+            // Find matching chapter - try multiple matching strategies
+            let matchingChapter = toc.find(item => {
+              const itemHrefNormalized = normalizeHref(item.href);
+              // Exact match
+              if (itemHrefNormalized === currentHrefNormalized) return true;
+              // Case-insensitive match
+              if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
+              // Partial match
+              if (itemHrefNormalized.includes(currentHrefNormalized) ||
+                  currentHrefNormalized.includes(itemHrefNormalized)) return true;
+              return false;
+            });
+            
+            // Also try matching full href paths
+            if (!matchingChapter) {
+              const currentFullHref = currentHref.split('#')[0].split('?')[0];
+              matchingChapter = toc.find(item => {
+                const itemFullHref = item.href.split('#')[0].split('?')[0];
+                return currentFullHref === itemFullHref ||
+                       currentFullHref.endsWith(itemFullHref) ||
+                       itemFullHref.endsWith(currentFullHref);
+              });
+            }
+            
+            if (matchingChapter) {
+              setCurrentChapterName(matchingChapter.label);
+              console.log('[TTS] Chapter name set to:', matchingChapter.label, 'from href:', currentHref);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to get chapter name on TTS start:', err);
+        }
+      }
+
       // Generate TTS audio from server
       try {
         setIsSpeaking(true);
@@ -2611,7 +2753,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         <div
           style={{
             position: 'fixed',
-            bottom: '20px',
+            top: uiVisible ? '60px' : '10px',
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 1000,
@@ -2625,7 +2767,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             maxWidth: '90vw',
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px'
+            gap: '12px',
+            transition: 'top 0.3s ease'
           }}
         >
           {/* Chapter Name */}
