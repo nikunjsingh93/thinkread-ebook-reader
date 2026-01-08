@@ -4,10 +4,17 @@ import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
-import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS } from "../lib/api.js";
+import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS, apiGetTTSVoices } from "../lib/api.js";
 import { cacheBook } from "../lib/serviceWorker.js";
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+// Simple language name formatter
+function formatLanguageName(langCode) {
+  if (!langCode) return '';
+  // Replace underscores with hyphens and capitalize
+  return langCode.replace('_', '-');
+}
 
 // Detect iOS devices
 function isIOS() {
@@ -301,6 +308,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [currentChapterName, setCurrentChapterName] = useState('');
+  const [ttsVoices, setTtsVoices] = useState([]);
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -2481,6 +2489,55 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
+  // Load TTS voices
+  async function loadTTSVoices() {
+    try {
+      const data = await apiGetTTSVoices();
+      const availableVoices = data.voices || [];
+      setTtsVoices(availableVoices);
+    } catch (err) {
+      console.error("Failed to load TTS voices:", err);
+      setTtsVoices([]);
+    }
+  }
+
+  // Handle voice change - restart TTS with new voice
+  async function handleVoiceChange(newVoice) {
+    const newPrefs = { ...prefs, voiceName: newVoice || null };
+    onPrefsChange(newPrefs);
+    
+    // If TTS is currently playing, restart with new voice
+    if (audioRef.current && ttsTextRef.current && !audioRef.current.paused) {
+      stopTTS();
+      // Small delay to ensure cleanup completes
+      setTimeout(() => {
+        startTTS();
+      }, 100);
+    }
+  }
+
+  // Handle reading speed change - restart TTS with new speed
+  async function handleSpeedChange(newSpeed) {
+    const newPrefs = { ...prefs, readingSpeed: newSpeed };
+    onPrefsChange(newPrefs);
+    
+    // If TTS is currently playing, restart with new speed
+    if (audioRef.current && ttsTextRef.current && !audioRef.current.paused) {
+      stopTTS();
+      // Small delay to ensure cleanup completes
+      setTimeout(() => {
+        startTTS();
+      }, 100);
+    }
+  }
+
+  // Load voices when audio player is shown
+  useEffect(() => {
+    if (audioDuration > 0 && ttsVoices.length === 0) {
+      loadTTSVoices();
+    }
+  }, [audioDuration]);
+
   // Cleanup TTS on unmount
   useEffect(() => {
     return () => {
@@ -2763,7 +2820,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             padding: '16px 20px',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
             border: '1px solid var(--border)',
-            minWidth: '320px',
+            minWidth: '360px',
             maxWidth: '90vw',
             display: 'flex',
             flexDirection: 'column',
@@ -2774,6 +2831,61 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           {/* Chapter Name */}
           <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text)', textAlign: 'center', marginBottom: '4px' }}>
             {currentChapterName || 'Reading'}
+          </div>
+
+          {/* Voice and Speed Controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+            {/* Voice Dropdown */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--muted)', minWidth: '50px' }}>Voice:</label>
+              <select
+                value={prefs.voiceName || ''}
+                onChange={(e) => handleVoiceChange(e.target.value || null)}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontSize: '12px',
+                  background: 'var(--input-bg)',
+                  border: '1px solid var(--input-border)',
+                  borderRadius: '6px',
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">Default (server will choose)</option>
+                {ttsVoices.map((voiceInfo, index) => (
+                  <option key={index} value={voiceInfo.name}>
+                    {voiceInfo.name} {voiceInfo.langName ? `(${voiceInfo.langName})` : voiceInfo.lang ? `(${formatLanguageName(voiceInfo.lang)})` : ''}
+                  </option>
+                ))}
+                {prefs.voiceName && !ttsVoices.some(v => v.name === prefs.voiceName) && (
+                  <option value={prefs.voiceName} disabled>
+                    {prefs.voiceName} (not available)
+                  </option>
+                )}
+              </select>
+            </div>
+
+            {/* Reading Speed */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--muted)', minWidth: '50px' }}>Speed:</label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.1"
+                value={prefs.readingSpeed || 1.0}
+                onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                style={{
+                  flex: 1,
+                  height: '4px',
+                  cursor: 'pointer'
+                }}
+              />
+              <div style={{ width: '38px', textAlign: 'right', fontSize: '11px', color: 'var(--muted)' }}>
+                {(prefs.readingSpeed || 1.0).toFixed(1)}x
+              </div>
+            </div>
           </div>
 
           {/* Seekbar */}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { apiGetFonts, apiGetTTSVoices } from "../lib/api.js";
+import { apiGetFonts } from "../lib/api.js";
 import { defaultPrefs } from "../lib/storage.js";
 
 // Language code to human-readable name mapping
@@ -132,7 +132,6 @@ function getLanguageName(langCode) {
 
 export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
   const [fonts, setFonts] = useState([]);
-  const [voices, setVoices] = useState([]);
   const bgColorInputRef = useRef(null);
   const fgColorInputRef = useRef(null);
 
@@ -153,41 +152,8 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
     // Also load fonts when drawer opens (in case fonts were added)
     if (open) {
       loadFonts();
-      loadVoices();
     }
   }, [open]);
-
-  async function loadVoices() {
-    try {
-      const data = await apiGetTTSVoices();
-      const availableVoices = data.voices || [];
-      
-      // Format voices from server
-      const formattedVoices = availableVoices
-        .filter(voice => {
-          // Only show voices with a name
-          return voice.name && voice.name.trim().length > 0;
-        })
-        .map(voice => ({
-          name: voice.name,
-          lang: voice.lang || voice.langName || 'en',
-          langName: voice.langName || getLanguageName(voice.lang || 'en'),
-          voice: voice
-        }))
-        // Sort by language name, then by voice name
-        .sort((a, b) => {
-          if (a.langName !== b.langName) {
-            return a.langName.localeCompare(b.langName);
-          }
-          return a.name.localeCompare(b.name);
-        });
-      
-      setVoices(formattedVoices);
-    } catch (err) {
-      console.error("Failed to load TTS voices:", err);
-      setVoices([]);
-    }
-  }
 
   async function loadFonts() {
     try {
@@ -323,55 +289,6 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
             />
             <span style={{fontSize: '14px'}}>Enable side-by-side pages</span>
           </label>
-        </div>
-
-        <div className="row">
-          <label>Read the Book</label>
-          <div style={{display: 'flex', flexDirection: 'column', gap: '4px', width: '100%'}}>
-            {voices.length === 0 ? (
-              <div className="muted" style={{fontSize: 11}}>
-                Loading voices...
-              </div>
-            ) : (
-              <>
-                <select
-                  value={prefs.voiceName || ''}
-                  onChange={(e) => onChange({ voiceName: e.target.value || null })}
-                >
-                  <option value="">Default (server will choose)</option>
-                  {voices.map((voiceInfo, index) => (
-                    <option key={index} value={voiceInfo.name}>
-                      {voiceInfo.name} ({voiceInfo.langName})
-                    </option>
-                  ))}
-                  {/* Show saved voice even if not in current list */}
-                  {prefs.voiceName && !voices.some(v => v.name === prefs.voiceName) && (
-                    <option value={prefs.voiceName} disabled>
-                      {prefs.voiceName} (not available)
-                    </option>
-                  )}
-                </select>
-                <div className="muted" style={{fontSize: 11}}>
-                  Text-to-speech is processed on the server
-                </div>
-                <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px'}}>
-                  <label style={{fontSize: '12px', minWidth: '80px'}}>Reading Speed</label>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2.0"
-                    step="0.1"
-                    value={prefs.readingSpeed || 1.0}
-                    onChange={(e) => onChange({ readingSpeed: Number(e.target.value) })}
-                    style={{flex: 1}}
-                  />
-                  <div style={{width: 42, textAlign:"right", fontSize: '12px'}}>
-                    {prefs.readingSpeed ? prefs.readingSpeed.toFixed(1) : '1.0'}x
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
         </div>
 
         <div className="row">
