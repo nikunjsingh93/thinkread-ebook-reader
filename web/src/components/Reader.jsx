@@ -2766,10 +2766,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor"/>
               </svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 6C4 5.44772 4.44772 5 5 5H7C7.55228 5 8 5.44772 8 6V10C8 10.5523 7.55228 11 7 11H5C4.44772 11 4 10.5523 4 10V6Z" fill="currentColor"/>
-                <path d="M9 4C8.44772 4 8 4.44772 8 5V11C8 11.5523 8.44772 12 9 12H11C11.5523 12 12 11.5523 12 11V5C12 4.44772 11.5523 4 11 4H9Z" fill="currentColor"/>
-                <path d="M13 3C12.4477 3 12 3.44772 12 4V12C12 12.5523 12.4477 13 13 13H14C14.5523 13 15 12.5523 15 12V4C15 3.44772 14.5523 3 14 3H13Z" fill="currentColor"/>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor"/>
+                <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor"/>
+                <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor"/>
+                <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor"/>
               </svg>
             )}
           </button>
