@@ -164,6 +164,17 @@ export default function SettingsDrawer({ open, prefs, onChange, onClose }) {
         </div>
 
         <div className="row">
+          <label>Text-to-Speech Voice</label>
+          <select
+            value={prefs.voiceGender || 'female'}
+            onChange={(e) => onChange({ voiceGender: e.target.value })}
+          >
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select>
+        </div>
+
+        <div className="row">
           <label>Background</label>
           <div style={{display: 'flex', alignItems: 'center', gap: '8px', position: 'relative'}}>
             <div

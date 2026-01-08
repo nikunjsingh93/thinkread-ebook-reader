@@ -294,6 +294,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const longPressPreventRef = useRef(null); // Timer to start preventing default
   const dictionaryCleanupRef = useRef(null);
   const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speechSynthesisRef = useRef(null);
+  const speechUtteranceRef = useRef(null);
+  const highlightedWordRef = useRef(null); // Track currently highlighted word
+  const ttsTextRef = useRef(null); // Store extracted text for highlighting
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -780,6 +785,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       let p = 0;
       let currentPage = 0;
       let totalPages = 0;
+      
+      // Stop TTS when page changes
+      if (isSpeaking && speechSynthesisRef.current) {
+        stopTTS();
+      }
       
       try {
         if (epub.locations?.length()) {
@@ -1854,6 +1864,823 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
+  // Text-to-speech functions
+  function extractTextFromCurrentPage() {
+    try {
+      const iframe = hostRef.current?.querySelector('iframe');
+      if (!iframe || !iframe.contentDocument || !iframe.contentWindow) {
+        return null;
+      }
+
+      const doc = iframe.contentDocument;
+      const win = iframe.contentWindow;
+      const body = doc.body;
+      if (!body) {
+        return null;
+      }
+
+      // Get viewport using elementFromPoint to sample visible content
+      const iframeRect = iframe.getBoundingClientRect();
+      const centerX = iframeRect.left + iframeRect.width / 2;
+      const centerY = iframeRect.top + iframeRect.height / 2;
+      
+      // Sample multiple points across the viewport
+      const samplePoints = [];
+      const viewportWidth = iframeRect.width;
+      const viewportHeight = iframeRect.height;
+      
+      // Sample grid of points across visible area
+      for (let y = 0; y < viewportHeight; y += Math.max(50, viewportHeight / 10)) {
+        for (let x = 0; x < viewportWidth; x += Math.max(50, viewportWidth / 10)) {
+          samplePoints.push({
+            x: iframeRect.left + x,
+            y: iframeRect.top + y
+          });
+        }
+      }
+
+      // Collect unique visible elements using elementFromPoint
+      const visibleElements = new Set();
+      samplePoints.forEach(point => {
+        try {
+          const element = doc.elementFromPoint(point.x - iframeRect.left, point.y - iframeRect.top);
+          if (element) {
+            // Walk up to find the text-containing parent
+            let parent = element;
+            while (parent && parent !== body) {
+              const tagName = parent.tagName?.toUpperCase();
+              if (tagName && ['P', 'DIV', 'SPAN', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'SECTION', 'ARTICLE'].includes(tagName)) {
+                visibleElements.add(parent);
+                break;
+              }
+              parent = parent.parentElement;
+            }
+          }
+        } catch (e) {
+          // Ignore cross-origin or other errors
+        }
+      });
+
+      // If no elements found, use fallback: check all text elements with getBoundingClientRect
+      if (visibleElements.size === 0) {
+        const allTextElements = body.querySelectorAll('p, div, span, li, td, th, h1, h2, h3, h4, h5, h6, blockquote, section, article');
+        allTextElements.forEach(el => {
+          try {
+            const rect = el.getBoundingClientRect();
+            const iframeRect = iframe.getBoundingClientRect();
+            
+            // Check if element is visible and overlaps with iframe viewport
+            if (rect.width > 0 && rect.height > 0 &&
+                rect.bottom > iframeRect.top &&
+                rect.top < iframeRect.bottom &&
+                rect.right > iframeRect.left &&
+                rect.left < iframeRect.right) {
+              visibleElements.add(el);
+            }
+          } catch (e) {
+            // Ignore errors
+          }
+        });
+      }
+
+      // Extract text from visible elements, maintaining order
+      // Only get elements that are actually in the current viewport (not the whole chapter)
+      const visibleTextParts = [];
+      const processedElements = new Set();
+      
+      // Get current scroll position to determine what's actually visible
+      const scrollTop = win.scrollY || doc.documentElement.scrollTop || 0;
+      const scrollLeft = win.scrollX || doc.documentElement.scrollLeft || 0;
+      const viewportTop = scrollTop;
+      const viewportBottom = scrollTop + viewportHeight;
+      const viewportLeft = scrollLeft;
+      const viewportRight = scrollLeft + viewportWidth;
+      
+      // Walk through document to maintain reading order, but only include visible ones
+      const walker = doc.createTreeWalker(
+        body,
+        NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: (node) => {
+            if (!visibleElements.has(node) || processedElements.has(node)) {
+              return NodeFilter.FILTER_SKIP;
+            }
+            
+            // Double-check visibility using getBoundingClientRect to ensure only current page
+            try {
+              const rect = node.getBoundingClientRect();
+              const iframeRect = iframe.getBoundingClientRect();
+              
+              // Calculate position relative to document (not viewport)
+              const elementTop = rect.top - iframeRect.top + scrollTop;
+              const elementBottom = rect.bottom - iframeRect.top + scrollTop;
+              const elementLeft = rect.left - iframeRect.left + scrollLeft;
+              const elementRight = rect.right - iframeRect.left + scrollLeft;
+              
+              // Only include if element overlaps with current viewport (current page)
+              const inViewport = (
+                elementBottom > viewportTop &&
+                elementTop < viewportBottom &&
+                elementRight > viewportLeft &&
+                elementLeft < viewportRight
+              );
+              
+              if (inViewport) {
+                processedElements.add(node);
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            } catch (e) {
+              // If we can't determine position, skip it
+            }
+            
+            return NodeFilter.FILTER_SKIP;
+          }
+        }
+      );
+
+      let element;
+      while ((element = walker.nextNode())) {
+        // Clone element to avoid modifying original
+        const clone = element.cloneNode(true);
+        const scripts = clone.querySelectorAll('script, style');
+        scripts.forEach(s => s.remove());
+        
+        const text = clone.textContent?.trim();
+        if (text && text.length > 0) {
+          visibleTextParts.push(text);
+        }
+      }
+
+      // Combine text parts
+      let text = visibleTextParts.join(' ').trim();
+      
+      // Clean up whitespace
+      text = text
+        .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+        .replace(/\n\s*\n/g, ' ')  // Replace multiple newlines with space
+        .trim();
+
+      return text || null;
+    } catch (err) {
+      console.error('Failed to extract text from current page:', err);
+      return null;
+    }
+  }
+
+  function getVoiceForGender(gender) {
+    if (!('speechSynthesis' in window)) {
+      return null;
+    }
+
+    const voices = speechSynthesis.getVoices();
+    if (voices.length === 0) {
+      return null;
+    }
+
+    // Filter voices by gender preference
+    // Note: Voice gender property is not standard, so we'll look for common patterns
+    const preferredGender = gender === 'male' ? 'male' : 'female';
+    
+    // Chrome-specific voice names and common patterns
+    const femaleVoicePatterns = [
+      'female', 'woman', 'karen', 'samantha', 'victoria', 'zira', 'susan', 'hazel',
+      'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer',  // Some newer voice patterns
+      'google uk english female', 'microsoft zira', 'microsoft hazel'
+    ];
+    
+    const maleVoicePatterns = [
+      'male', 'man', 'david', 'mark', 'alex', 'tom', 'daniel', 'john',
+      'google us english', 'microsoft david', 'microsoft mark',
+      // Chrome/Windows male voices
+      'google uk english male', 'en-gb',
+      // Check voice localService property - male voices often have different characteristics
+    ];
+    
+    // Try to find voices that match the preference
+    let matchingVoices = voices.filter(voice => {
+      const name = voice.name.toLowerCase();
+      const lang = voice.lang.toLowerCase();
+      
+      if (preferredGender === 'female') {
+        return femaleVoicePatterns.some(pattern => name.includes(pattern));
+      } else {
+        // For male, check multiple patterns
+        const hasMalePattern = maleVoicePatterns.some(pattern => name.includes(pattern));
+        
+        // Also check if it's NOT a known female voice (fallback)
+        const isNotFemale = !femaleVoicePatterns.some(pattern => name.includes(pattern));
+        
+        // In Chrome, male voices often appear later in the list and may not have explicit gender in name
+        // Check language and position
+        const isEnUs = lang.startsWith('en-us');
+        
+        return hasMalePattern || (isEnUs && isNotFemale && voices.indexOf(voice) > voices.length / 2);
+      }
+    });
+
+    // If no matches, try using the voice list order and language hints
+    if (matchingVoices.length === 0) {
+      // Filter English voices first
+      const englishVoices = voices.filter(v => v.lang.toLowerCase().startsWith('en'));
+      
+      if (englishVoices.length > 0) {
+        if (preferredGender === 'female') {
+          // Female voices often come first
+          matchingVoices = [englishVoices[0]];
+        } else {
+          // Male voices often come later - try middle to end of list
+          const maleIndex = Math.floor(englishVoices.length * 0.6);
+          matchingVoices = [englishVoices[maleIndex] || englishVoices[englishVoices.length - 1]];
+        }
+      } else {
+        // No English voices, use general list position
+        if (preferredGender === 'female') {
+          matchingVoices = [voices[0]];
+        } else {
+          const maleIndex = Math.floor(voices.length * 0.6);
+          matchingVoices = [voices[maleIndex] || voices[voices.length - 1]];
+        }
+      }
+    }
+
+    // Prefer English voices if available
+    const englishMatching = matchingVoices.filter(v => v.lang.toLowerCase().startsWith('en'));
+    if (englishMatching.length > 0) {
+      return englishMatching[0];
+    }
+
+    return matchingVoices[0] || voices[0];
+  }
+
+  function toggleTTS() {
+    if (!('speechSynthesis' in window)) {
+      onToast?.('Text-to-speech is not supported in your browser');
+      return;
+    }
+
+    if (isSpeaking) {
+      // Stop speaking
+      stopTTS();
+    } else {
+      // Start speaking
+      startTTS();
+    }
+  }
+
+  function startTTS() {
+    try {
+      const text = extractTextFromCurrentPage();
+      if (!text) {
+        onToast?.('No text found on current page');
+        return;
+      }
+
+      // Initialize speech synthesis
+      const synth = window.speechSynthesis;
+      speechSynthesisRef.current = synth;
+
+      // Cancel any ongoing speech
+      synth.cancel();
+
+      // Store text for highlighting
+      ttsTextRef.current = text;
+
+      // Add click handlers to text elements while TTS is active
+      addTTSClickHandlers();
+
+      // Cancel any ongoing speech and wait
+      synth.cancel();
+      
+      // Chrome requires voices to be loaded before speaking
+      // Force voice loading by accessing getVoices() multiple times
+      let voicesLoaded = false;
+      const checkVoicesLoaded = () => {
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          voicesLoaded = true;
+          return true;
+        }
+        return false;
+      };
+
+      // Try to load voices immediately
+      checkVoicesLoaded();
+      
+      // Create utterance
+      const utterance = new SpeechSynthesisUtterance(text);
+      speechUtteranceRef.current = utterance;
+      ttsTextRef.current = text;
+
+      // Configure speech parameters
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      utterance.lang = 'en-US';
+
+      // Extract words for highlighting
+      const words = text.split(/\s+/).filter(w => w.trim().length > 0);
+
+      // Function to setup and start speech
+      const setupAndStartSpeech = () => {
+        try {
+          // Get voices
+          const voices = speechSynthesis.getVoices();
+          
+          if (voices.length > 0) {
+            // Select voice based on gender preference
+            const voice = getVoiceForGender(prefs.voiceGender || 'female');
+            if (voice) {
+              utterance.voice = voice;
+              utterance.lang = voice.lang || 'en-US';
+              console.log('[TTS] Using voice:', voice.name, voice.lang);
+            } else {
+              console.warn('[TTS] No matching voice found, using default');
+            }
+          }
+
+          // Set up word boundary tracking for highlighting
+          utterance.onboundary = (event) => {
+            if (event.name === 'word') {
+              // Update highlighting based on word boundary
+              const charIndex = event.charIndex;
+              let currentWordIndex = 0;
+              let charCount = 0;
+              
+              for (let i = 0; i < words.length; i++) {
+                const wordLength = words[i].length;
+                if (charCount + wordLength > charIndex) {
+                  currentWordIndex = i;
+                  break;
+                }
+                charCount += wordLength + 1; // +1 for space
+              }
+              
+              highlightWord(currentWordIndex, words);
+            }
+          };
+
+          // Event handlers
+          utterance.onstart = () => {
+            setIsSpeaking(true);
+            highlightWord(0, words);
+            console.log('[TTS] Speech started');
+          };
+
+          utterance.onend = () => {
+            setIsSpeaking(false);
+            speechUtteranceRef.current = null;
+            clearHighlight();
+            console.log('[TTS] Speech ended');
+          };
+
+          utterance.onerror = (event) => {
+            console.error('[TTS] Speech synthesis error:', event.error);
+            setIsSpeaking(false);
+            speechUtteranceRef.current = null;
+            clearHighlight();
+            if (event.error !== 'interrupted') {
+              onToast?.('Error reading text: ' + event.error);
+            }
+          };
+
+          // Start speaking - Chrome requires this to be in response to user action
+          // Set state immediately for UI feedback
+          setIsSpeaking(true);
+          
+          // Actually start speaking
+          synth.speak(utterance);
+          
+          // Verify speech started (Chrome sometimes doesn't start immediately)
+          setTimeout(() => {
+            if (!synth.speaking && !synth.pending) {
+              console.warn('[TTS] Speech did not start');
+              setIsSpeaking(false);
+              clearHighlight();
+            }
+          }, 200);
+
+        } catch (err) {
+          console.error('[TTS] Error setting up speech:', err);
+          setIsSpeaking(false);
+          onToast?.('Failed to start text-to-speech');
+        }
+      };
+
+      // Wait a bit for cancel to process, then setup
+      setTimeout(() => {
+        if (checkVoicesLoaded()) {
+          // Voices already loaded
+          setupAndStartSpeech();
+        } else {
+          // Wait for voices to load
+          const voicesChangedHandler = () => {
+            if (checkVoicesLoaded()) {
+              speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
+              setupAndStartSpeech();
+            }
+          };
+          
+          speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
+          
+          // Fallback: try after timeout
+          setTimeout(() => {
+            speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
+            if (checkVoicesLoaded()) {
+              setupAndStartSpeech();
+            } else {
+              // Try anyway with default
+              console.warn('[TTS] Voices not loaded, attempting with default');
+              setupAndStartSpeech();
+            }
+          }, 1000);
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Failed to start text-to-speech:', err);
+      onToast?.('Failed to start text-to-speech');
+      setIsSpeaking(false);
+    }
+  }
+
+  function stopTTS() {
+    try {
+      if (speechSynthesisRef.current) {
+        speechSynthesisRef.current.cancel();
+      }
+      setIsSpeaking(false);
+      speechUtteranceRef.current = null;
+      clearHighlight();
+      removeTTSClickHandlers();
+    } catch (err) {
+      console.error('Failed to stop text-to-speech:', err);
+    }
+  }
+
+  const ttsClickHandlerRef = useRef(null);
+
+  function addTTSClickHandlers() {
+    try {
+      const iframe = hostRef.current?.querySelector('iframe');
+      if (!iframe || !iframe.contentDocument) return;
+
+      const doc = iframe.contentDocument;
+      
+      // Remove existing handler if any
+      removeTTSClickHandlers();
+      
+      // Create click handler
+      const handler = (e) => {
+        if (!isSpeaking || !ttsTextRef.current) return;
+        
+        // Get clicked element
+        let target = e.target;
+        while (target && target !== doc.body) {
+          if (target.nodeType === Node.TEXT_NODE || 
+              ['P', 'DIV', 'SPAN', 'LI', 'TD', 'TH', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(target.tagName)) {
+            break;
+          }
+          target = target.parentElement;
+        }
+        
+        if (!target) return;
+        
+        // Get text up to click point
+        const textNode = target.nodeType === Node.TEXT_NODE ? target : target.firstChild;
+        if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return;
+        
+        // Create range to get text up to click point
+        const range = doc.createRange();
+        range.setStart(doc.body, 0);
+        range.setEnd(e.target, 0);
+        
+        const textBefore = range.toString();
+        const fullText = ttsTextRef.current;
+        const words = fullText.split(/\s+/).filter(w => w.trim().length > 0);
+        const wordsBefore = textBefore.split(/\s+/).filter(w => w.trim().length > 0);
+        
+        // Estimate word index based on position
+        const estimatedIndex = Math.min(wordsBefore.length, words.length - 1);
+        
+        stopTTS();
+        setTimeout(() => {
+          resumeTTSFromWord(estimatedIndex);
+        }, 100);
+        
+        e.stopPropagation();
+        e.preventDefault();
+      };
+      
+      ttsClickHandlerRef.current = handler;
+      doc.body.addEventListener('click', handler, true);
+    } catch (err) {
+      console.error('[TTS] Error adding click handlers:', err);
+    }
+  }
+
+  function removeTTSClickHandlers() {
+    try {
+      if (ttsClickHandlerRef.current) {
+        const iframe = hostRef.current?.querySelector('iframe');
+        if (iframe && iframe.contentDocument) {
+          iframe.contentDocument.body.removeEventListener('click', ttsClickHandlerRef.current, true);
+        }
+        ttsClickHandlerRef.current = null;
+      }
+    } catch (err) {
+      console.error('[TTS] Error removing click handlers:', err);
+    }
+  }
+
+  function resumeTTSFromWord(startWordIndex) {
+    try {
+      if (!ttsTextRef.current) {
+        startTTS();
+        return;
+      }
+
+      const text = ttsTextRef.current;
+      const words = text.split(/\s+/).filter(w => w.trim().length > 0);
+      
+      if (startWordIndex >= words.length) {
+        onToast?.('Reached end of page');
+        return;
+      }
+
+      // Get text from start word index onwards
+      const textToRead = words.slice(startWordIndex).join(' ');
+      
+      if (!textToRead || !textToRead.trim()) {
+        onToast?.('No text found from this position');
+        return;
+      }
+
+      // Start TTS with the remaining text
+      const synth = window.speechSynthesis;
+      speechSynthesisRef.current = synth;
+      synth.cancel();
+
+      setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(textToRead);
+        speechUtteranceRef.current = utterance;
+        
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        utterance.lang = 'en-US';
+
+        const setupAndStart = () => {
+          try {
+            const voices = speechSynthesis.getVoices();
+            if (voices.length > 0) {
+              const voice = getVoiceForGender(prefs.voiceGender || 'female');
+              if (voice) {
+                utterance.voice = voice;
+                utterance.lang = voice.lang || 'en-US';
+              }
+            }
+
+            // Set up word boundary tracking (adjust for start word index)
+            const remainingWords = words.slice(startWordIndex);
+            utterance.onboundary = (event) => {
+              if (event.name === 'word') {
+                const charIndex = event.charIndex;
+                let currentWordIndex = 0;
+                let charCount = 0;
+                
+                for (let i = 0; i < remainingWords.length; i++) {
+                  const wordLength = remainingWords[i].length;
+                  if (charCount + wordLength > charIndex) {
+                    currentWordIndex = i;
+                    break;
+                  }
+                  charCount += wordLength + 1;
+                }
+                
+                highlightWord(startWordIndex + currentWordIndex, words);
+              }
+            };
+
+            utterance.onstart = () => {
+              setIsSpeaking(true);
+              highlightWord(startWordIndex, words);
+            };
+
+            utterance.onend = () => {
+              setIsSpeaking(false);
+              speechUtteranceRef.current = null;
+              clearHighlight();
+            };
+
+            utterance.onerror = (event) => {
+              setIsSpeaking(false);
+              speechUtteranceRef.current = null;
+              clearHighlight();
+              if (event.error !== 'interrupted') {
+                onToast?.('Error reading text');
+              }
+            };
+
+            setIsSpeaking(true);
+            synth.speak(utterance);
+          } catch (err) {
+            console.error('[TTS] Error resuming speech:', err);
+            setIsSpeaking(false);
+          }
+        };
+
+        const voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          setupAndStart();
+        } else {
+          const handler = () => {
+            speechSynthesis.removeEventListener('voiceschanged', handler);
+            setupAndStart();
+          };
+          speechSynthesis.addEventListener('voiceschanged', handler);
+          setTimeout(() => {
+            speechSynthesis.removeEventListener('voiceschanged', handler);
+            setupAndStart();
+          }, 500);
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Failed to resume TTS:', err);
+      onToast?.('Failed to resume reading');
+    }
+  }
+
+  // Word highlighting functions
+  function highlightWord(wordIndex, words) {
+    try {
+      // Clear previous highlight
+      clearHighlight();
+      
+      if (wordIndex < 0 || wordIndex >= words.length) return;
+
+      const iframe = hostRef.current?.querySelector('iframe');
+      if (!iframe || !iframe.contentDocument) return;
+
+      const doc = iframe.contentDocument;
+      const word = words[wordIndex];
+      
+      // Clean word for matching (remove punctuation at start/end)
+      const cleanWord = word.replace(/^[^\w]+|[^\w]+$/g, '').toLowerCase();
+      if (!cleanWord) return;
+
+      // Find and highlight the word in the document
+      const walker = doc.createTreeWalker(
+        doc.body,
+        NodeFilter.SHOW_TEXT,
+        null
+      );
+
+      let found = false;
+      let node;
+      while ((node = walker.nextNode()) && !found) {
+        const text = node.textContent;
+        if (!text || !text.toLowerCase().includes(cleanWord)) continue;
+
+        // Find word boundaries (case-insensitive)
+        const regex = new RegExp(`\\b${cleanWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        const match = regex.exec(text);
+        
+        if (match) {
+          const wordStart = match.index;
+          const wordEnd = wordStart + match[0].length;
+          
+          // Create range and highlight
+          const range = doc.createRange();
+          range.setStart(node, wordStart);
+          range.setEnd(node, wordEnd);
+          
+          // Create highlight span
+          const highlight = doc.createElement('span');
+          highlight.style.backgroundColor = 'rgba(255, 255, 0, 0.6)';
+          highlight.style.borderRadius = '3px';
+          highlight.style.padding = '2px 0';
+          highlight.className = 'tts-highlight';
+          highlight.style.cursor = 'pointer';
+          highlight.title = 'Click to resume reading from here';
+          
+          // Store word index in data attribute for click handler
+          highlight.dataset.wordIndex = wordIndex;
+          
+          // Add click handler to resume TTS from this position
+          highlight.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (isSpeaking && ttsTextRef.current) {
+              const clickedWordIndex = parseInt(highlight.dataset.wordIndex);
+              stopTTS();
+              // Small delay to ensure stopTTS completes
+              setTimeout(() => {
+                resumeTTSFromWord(clickedWordIndex);
+              }, 100);
+            }
+          });
+          
+          try {
+            // Try to wrap the range contents
+            range.surroundContents(highlight);
+            highlightedWordRef.current = highlight;
+            
+            // Only scroll if we're on the current page (don't change page position)
+            // Check if highlight is already in viewport
+            const highlightRect = highlight.getBoundingClientRect();
+            const iframeRect = iframe.getBoundingClientRect();
+            const isInViewport = (
+              highlightRect.top >= iframeRect.top &&
+              highlightRect.bottom <= iframeRect.bottom &&
+              highlightRect.left >= iframeRect.left &&
+              highlightRect.right <= iframeRect.right
+            );
+            
+            // Only scroll if highlight is not in viewport (don't change page position unnecessarily)
+            if (!isInViewport) {
+              setTimeout(() => {
+                try {
+                  highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                } catch (e) {
+                  highlight.scrollIntoView({ block: 'center' });
+                }
+              }, 50);
+            }
+            
+            found = true;
+            break;
+          } catch (e) {
+            // If surroundContents fails, try extractContents approach
+            try {
+              const contents = range.extractContents();
+              highlight.appendChild(contents);
+              range.insertNode(highlight);
+              highlightedWordRef.current = highlight;
+              
+              setTimeout(() => {
+                try {
+                  highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                } catch (e2) {
+                  highlight.scrollIntoView({ block: 'center' });
+                }
+              }, 50);
+              
+              found = true;
+              break;
+            } catch (e2) {
+              // If both methods fail, skip this occurrence
+              console.warn('[TTS] Could not highlight word:', e2);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[TTS] Error highlighting word:', err);
+    }
+  }
+
+  function clearHighlight() {
+    try {
+      if (highlightedWordRef.current) {
+        const highlight = highlightedWordRef.current;
+        const parent = highlight.parentNode;
+        if (parent) {
+          // Replace highlight with its contents
+          while (highlight.firstChild) {
+            parent.insertBefore(highlight.firstChild, highlight);
+          }
+          parent.removeChild(highlight);
+        }
+        highlightedWordRef.current = null;
+      }
+
+      // Also clear any remaining highlights
+      const iframe = hostRef.current?.querySelector('iframe');
+      if (iframe && iframe.contentDocument) {
+        const doc = iframe.contentDocument;
+        const highlights = doc.querySelectorAll('.tts-highlight');
+        highlights.forEach(hl => {
+          const parent = hl.parentNode;
+          if (parent) {
+            while (hl.firstChild) {
+              parent.insertBefore(hl.firstChild, hl);
+            }
+            parent.removeChild(hl);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[TTS] Error clearing highlight:', err);
+    }
+  }
+
+  // Cleanup TTS on unmount
+  useEffect(() => {
+    return () => {
+      stopTTS();
+    };
+  }, []);
+
+
   const pct = Math.round((percent || 0) * 100);
 
   const verticalMargin = clamp(prefs.verticalMargin || 30, 1, 180);
@@ -1877,6 +2704,31 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+          <button
+            className="pill"
+            onClick={toggleTTS}
+            title={isSpeaking ? "Stop reading" : "Read current page"}
+            style={{
+              padding: '6px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: isSpeaking ? 0.8 : 1
+            }}
+          >
+            {isSpeaking ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="5" y="4" width="2" height="8" rx="0.5" fill="currentColor"/>
+                <rect x="9" y="4" width="2" height="8" rx="0.5" fill="currentColor"/>
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 10C4 9.44772 4.44772 9 5 9H7C7.55228 9 8 9.44772 8 10V12C8 12.5523 7.55228 13 7 13H5C4.44772 13 4 12.5523 4 12V10Z" fill="currentColor"/>
+                <path d="M9 5C8.44772 5 8 5.44772 8 6V10C8 10.5523 8.44772 11 9 11H11C11.5523 11 12 10.5523 12 10V6C12 5.44772 11.5523 5 11 5H9Z" fill="currentColor"/>
+                <path d="M12 3C11.4477 3 11 3.44772 11 4V12C11 12.5523 11.4477 13 12 13H13C13.5523 13 14 12.5523 14 12V4C14 3.44772 13.5523 3 13 3H12Z" fill="currentColor"/>
+              </svg>
+            )}
+          </button>
           <button
             className="pill"
             onClick={() => setTocOpen(true)}

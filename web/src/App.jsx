@@ -38,6 +38,7 @@ function defaultPrefs() {
     fg: "#ffebbd",
     sortBy: "upload",
     twoPageLayout: false,
+    voiceGender: "female",
   };
 }
 
