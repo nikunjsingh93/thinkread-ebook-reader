@@ -1004,30 +1004,24 @@ app.get("/api/tts/voices", (req, res) => {
         res.json({ voices: parsedVoices });
       });
     } else if (platform === 'linux') {
-      // Linux - use espeak-ng to list voices
-      exec('espeak-ng --voices', (error, stdout) => {
+      // Linux - use pico2wave to list voices (pico2wave supports limited languages)
+      // pico2wave supports: en-US, en-GB, de-DE, es-ES, fr-FR, it-IT
+      const picoVoices = [
+        { name: 'en-US', lang: 'en', langName: 'en-US', default: true },
+        { name: 'en-GB', lang: 'en', langName: 'en-GB' },
+        { name: 'de-DE', lang: 'de', langName: 'de-DE' },
+        { name: 'es-ES', lang: 'es', langName: 'es-ES' },
+        { name: 'fr-FR', lang: 'fr', langName: 'fr-FR' },
+        { name: 'it-IT', lang: 'it', langName: 'it-IT' }
+      ];
+      
+      // Verify pico2wave is available
+      exec('which pico2wave', (error) => {
         if (error) {
-          console.error('Error getting espeak voices:', error);
+          console.error('pico2wave not found:', error);
           return res.json({ voices: [] });
         }
-        
-        // Parse espeak output: "Pty Language Age/Gender VoiceName          File"
-        const lines = stdout.split('\n').slice(1).filter(line => line.trim());
-        const parsedVoices = lines.map(line => {
-          const parts = line.trim().split(/\s+/);
-          const lang = parts[1] || 'en';
-          const gender = parts[2] || '';
-          const name = parts.slice(3).join(' ').trim();
-          
-          return {
-            name: name || `${lang}-${gender}`,
-            lang,
-            langName: lang,
-            gender: gender.includes('f') ? 'female' : gender.includes('m') ? 'male' : null
-          };
-        });
-        
-        res.json({ voices: parsedVoices });
+        res.json({ voices: picoVoices });
       });
     } else {
       // Windows or other - return empty for now
@@ -1116,68 +1110,91 @@ app.post("/api/tts/speak", async (req, res) => {
           try { fs.unlinkSync(tempFile); } catch {}
         }
       } else if (platform === 'linux') {
-        // Linux - use espeak-ng (can output directly to stdout)
-        const command = 'espeak-ng';
-        const args = ['-s', '150', '-w', '-']; // Output to stdout as WAV
+        // Linux - use pico2wave
+        tempFile = path.join(os.tmpdir(), `tts-${nanoid()}.wav`);
         
+        // pico2wave supported languages: en-US, en-GB, de-DE, es-ES, fr-FR, it-IT
+        let language = 'en-US'; // default
         if (voice) {
-          args.push('-v', voice);
+          // Validate voice is one of the supported languages
+          const supportedLanguages = ['en-US', 'en-GB', 'de-DE', 'es-ES', 'fr-FR', 'it-IT'];
+          if (supportedLanguages.includes(voice)) {
+            language = voice;
+          }
         } else if (lang) {
-          args.push('-v', lang);
+          // Try to map lang code to pico2wave language
+          const langMap = {
+            'en': 'en-US',
+            'en-us': 'en-US',
+            'en-gb': 'en-GB',
+            'de': 'de-DE',
+            'es': 'es-ES',
+            'fr': 'fr-FR',
+            'it': 'it-IT'
+          };
+          language = langMap[lang.toLowerCase()] || 'en-US';
         }
+
+        console.log(`[TTS] Generating audio: length=${text.length}, preview="${text.substring(0, 100)}..."`);
+        console.log(`[TTS] Using pico2wave with language: ${language}`);
+
+        // Generate audio file using pico2wave
+        await new Promise((resolve, reject) => {
+          const picoProcess = spawn('pico2wave', ['-w', tempFile, '-l', language, text], {
+            stdio: ['ignore', 'ignore', 'pipe']
+          });
+
+          let stderr = '';
+          picoProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+            console.log(`pico2wave stderr: ${data}`);
+          });
+
+          picoProcess.on('close', (code) => {
+            if (code === 0) {
+              resolve();
+            } else {
+              reject(new Error(`pico2wave process exited with code ${code}: ${stderr}`));
+            }
+          });
+
+          picoProcess.on('error', (error) => {
+            reject(error);
+          });
+
+          // Handle client disconnect
+          req.on('close', () => {
+            picoProcess.kill();
+          });
+        });
+
+        // Read the generated WAV file
+        let audioData = fs.readFileSync(tempFile);
         
-        if (rate) {
-          // espeak uses words per minute, rate is 0.5-2.0, default ~175 WPM
-          const wpm = Math.round(175 * rate);
-          args[1] = wpm.toString(); // Update speed
-        }
-        
-        if (pitch) {
-          // espeak pitch is 0-99, default 50. Map 0.5-2.0 to 20-80
-          const espeakPitch = Math.round(50 + (pitch - 1.0) * 30);
-          args.push('-p', espeakPitch.toString());
-        }
-        
-        args.push('--stdout', text);
-
-        // Spawn the TTS process
-        const ttsProcess = spawn(command, args, {
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-
-        // Stream audio data to response
-        ttsProcess.stdout.on('data', (chunk) => {
-          res.write(chunk);
-        });
-
-        ttsProcess.stdout.on('end', () => {
-          res.end();
-        });
-
-        ttsProcess.stderr.on('data', (data) => {
-          console.error(`TTS stderr: ${data}`);
-        });
-
-        ttsProcess.on('error', (error) => {
-          console.error('TTS process error:', error);
-          if (!res.headersSent) {
-            res.status(500).json({ error: "TTS generation failed" });
-          } else {
-            res.end();
+        // Apply speed/pitch adjustments if needed using sox or ffmpeg
+        if (rate && rate !== 1.0) {
+          try {
+            // Try using sox to change tempo (speed) without changing pitch
+            const adjustedFile = tempFile.replace('.wav', '-adjusted.wav');
+            const tempo = Math.max(0.5, Math.min(2.0, rate)); // Clamp between 0.5 and 2.0
+            
+            await execAsync(`sox "${tempFile}" "${adjustedFile}" tempo ${tempo}`);
+            audioData = fs.readFileSync(adjustedFile);
+            
+            // Clean up adjusted file
+            try { fs.unlinkSync(adjustedFile); } catch {}
+          } catch (soxError) {
+            // If sox is not available, use the original audio
+            console.warn('sox not available for speed adjustment, using original audio');
           }
-        });
+        }
 
-        ttsProcess.on('close', (code) => {
-          if (code !== 0 && !res.headersSent) {
-            console.error(`TTS process exited with code ${code}`);
-            res.status(500).json({ error: "TTS generation failed" });
-          }
-        });
-
-        // Handle client disconnect
-        req.on('close', () => {
-          ttsProcess.kill();
-        });
+        // Stream the audio data to response
+        res.write(audioData);
+        res.end();
+        
+        // Clean up temp file
+        try { fs.unlinkSync(tempFile); } catch {}
       } else {
         return res.status(501).json({ error: "TTS not supported on this platform" });
       }
