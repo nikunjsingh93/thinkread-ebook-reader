@@ -1168,33 +1168,54 @@ app.post("/api/tts/speak", async (req, res) => {
           });
         });
 
-        // Read the generated WAV file
-        let audioData = fs.readFileSync(tempFile);
+        // Apply audio enhancement to improve clarity (treble boost + gain)
+        // This addresses the muffled/captain-like sound quality issue
+        const enhancedFile = tempFile.replace('.wav', '-enhanced.wav');
+        let currentFile = tempFile;
         
-        // Apply speed/pitch adjustments if needed using sox or ffmpeg
+        try {
+          // Apply treble boost (12 dB) and gain (1.5 dB) to improve clarity
+          // treble 12: boosts high frequencies moderately for clearer speech
+          // gain -l 1.5: increases volume slightly with limiter to prevent clipping
+          await execAsync(`sox "${tempFile}" "${enhancedFile}" treble 12 gain -l 1.5`);
+          currentFile = enhancedFile;
+          console.log('[TTS] Applied audio enhancement (treble + gain)');
+        } catch (soxError) {
+          // If sox enhancement fails, use original audio
+          console.warn('sox audio enhancement not available, using original audio:', soxError.message);
+        }
+        
+        // Apply speed adjustment if needed (after enhancement for better quality)
+        let finalFile = currentFile;
+        const speedAdjustedFile = path.join(os.tmpdir(), `tts-${nanoid()}-speed.wav`);
         if (rate && rate !== 1.0) {
           try {
-            // Try using sox to change tempo (speed) without changing pitch
-            const adjustedFile = tempFile.replace('.wav', '-adjusted.wav');
             const tempo = Math.max(0.5, Math.min(2.0, rate)); // Clamp between 0.5 and 2.0
             
-            await execAsync(`sox "${tempFile}" "${adjustedFile}" tempo ${tempo}`);
-            audioData = fs.readFileSync(adjustedFile);
-            
-            // Clean up adjusted file
-            try { fs.unlinkSync(adjustedFile); } catch {}
+            await execAsync(`sox "${currentFile}" "${speedAdjustedFile}" tempo ${tempo}`);
+            finalFile = speedAdjustedFile;
+            console.log(`[TTS] Applied speed adjustment: ${tempo}x`);
           } catch (soxError) {
-            // If sox is not available, use the original audio
-            console.warn('sox not available for speed adjustment, using original audio');
+            // If speed adjustment fails, use enhanced audio
+            console.warn('sox speed adjustment not available, using enhanced audio:', soxError.message);
           }
         }
-
+        
+        // Read the final processed audio file
+        const audioData = fs.readFileSync(finalFile);
+        
         // Stream the audio data to response
         res.write(audioData);
         res.end();
         
-        // Clean up temp file
-        try { fs.unlinkSync(tempFile); } catch {}
+        // Clean up temp files (delete all intermediate and final files)
+        const filesToDelete = new Set([tempFile, finalFile]);
+        if (currentFile === enhancedFile) filesToDelete.add(enhancedFile);
+        if (finalFile === speedAdjustedFile) filesToDelete.add(speedAdjustedFile);
+        
+        for (const file of filesToDelete) {
+          try { fs.unlinkSync(file); } catch {}
+        }
       } else {
         return res.status(501).json({ error: "TTS not supported on this platform" });
       }
