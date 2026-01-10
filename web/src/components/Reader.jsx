@@ -548,7 +548,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       wrapper.className = 'pdf-page-wrapper';
       wrapper.style.display = 'flex';
       wrapper.style.justifyContent = 'center';
-      wrapper.style.alignItems = 'flex-start';
+      wrapper.style.alignItems = 'center';
       wrapper.style.width = '100%';
       wrapper.style.height = '100%';
       wrapper.style.minHeight = `${scaledViewport.height}px`;
