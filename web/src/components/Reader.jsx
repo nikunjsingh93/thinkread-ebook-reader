@@ -307,6 +307,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const pdfTotalPagesRef = useRef(0); // Total PDF pages
   const pdfZoomRef = useRef(1.0); // PDF zoom level (default 1.0, will be set based on container)
   const pdfDefaultScaleRef = useRef(1.0); // Default scale for fitting container
+  const [pdfScrollMode, setPdfScrollMode] = useState('vertical'); // 'vertical' or 'horizontal' - default vertical
   const longPressStartRef = useRef(null);
   const longPressPreventRef = useRef(null); // Timer to start preventing default
   const dictionaryCleanupRef = useRef(null);
@@ -628,6 +629,209 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   };
 
+  // Function to render all PDF pages in vertical scrolling mode
+  const renderPDFVertical = async (pdf, container, startPage = 1) => {
+    if (!pdf || !container) return;
+    
+    try {
+      const totalPages = pdf.numPages;
+      if (totalPages === 0) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Get container dimensions - in vertical mode, padding should be 0, so use full width
+      const containerRect = container.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(container);
+      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+      
+      // In vertical mode, use full container width (padding is 0)
+      const availableWidth = Math.max(containerRect.width - paddingLeft - paddingRight, containerRect.width);
+      
+      // Clear container
+      container.innerHTML = '';
+      
+      // Create a scrollable container that fills the entire viewport
+      const scrollContainer = document.createElement('div');
+      scrollContainer.className = 'pdf-vertical-scroll-container';
+      scrollContainer.style.width = '100%';
+      scrollContainer.style.height = '100%';
+      scrollContainer.style.overflowY = 'auto';
+      scrollContainer.style.overflowX = 'hidden';
+      scrollContainer.style.position = 'absolute';
+      scrollContainer.style.top = '0';
+      scrollContainer.style.left = '0';
+      scrollContainer.style.right = '0';
+      scrollContainer.style.bottom = '0';
+      
+      // Create wrapper for all pages
+      const pagesWrapper = document.createElement('div');
+      pagesWrapper.style.width = '100%';
+      pagesWrapper.style.display = 'flex';
+      pagesWrapper.style.flexDirection = 'column';
+      pagesWrapper.style.alignItems = 'center';
+      pagesWrapper.style.padding = '0';
+      pagesWrapper.style.margin = '0';
+      
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      let totalHeight = 0;
+      
+      // Render all pages
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.0 });
+        
+        // Calculate scale to fit width to available width
+        const scale = availableWidth / viewport.width;
+        const scaledViewport = page.getViewport({ scale });
+        
+        // Create page wrapper
+        const pageWrapper = document.createElement('div');
+        pageWrapper.className = 'pdf-page-wrapper-vertical';
+        pageWrapper.style.width = '100%';
+        pageWrapper.style.display = 'flex';
+        pageWrapper.style.justifyContent = 'center';
+        pageWrapper.style.alignItems = 'flex-start';
+        pageWrapper.style.padding = '0';
+        pageWrapper.style.margin = '0';
+        pageWrapper.style.position = 'relative';
+        
+        // Create canvas with high-DPI support
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        
+        // Logical display dimensions (CSS pixels)
+        const displayWidth = scaledViewport.width;
+        const displayHeight = scaledViewport.height;
+        
+        // Internal canvas resolution (for high-DPI displays)
+        canvas.width = displayWidth * devicePixelRatio;
+        canvas.height = displayHeight * devicePixelRatio;
+        
+        // CSS size (what shows on screen)
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.style.display = 'block';
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = 'auto';
+        canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+        
+        // Scale the drawing context to match the internal resolution
+        context.scale(devicePixelRatio, devicePixelRatio);
+        
+        pageWrapper.appendChild(canvas);
+        pagesWrapper.appendChild(pageWrapper);
+        
+        // Render page
+        const renderContext = {
+          canvasContext: context,
+          viewport: scaledViewport
+        };
+        
+        await page.render(renderContext).promise;
+        totalHeight += displayHeight;
+        
+        // Update progress as we render
+        const currentPercent = pageNum / totalPages;
+        setPercent(currentPercent);
+        setLocationText(`Page ${pageNum} of ${totalPages}`);
+      }
+      
+      scrollContainer.appendChild(pagesWrapper);
+      container.appendChild(scrollContainer);
+      
+      // Scroll to saved position if available
+      const savedProgress = savedProgressRef.current;
+      if (savedProgress) {
+        // Use saved scrollTop if available (more accurate), otherwise calculate from page number
+        let scrollToY = savedProgress.scrollTop || 0;
+        
+        if (scrollToY === 0 && savedProgress.page && savedProgress.page > 1) {
+          // Calculate scroll position for the target page if scrollTop not available
+          setTimeout(() => {
+            for (let i = 1; i < savedProgress.page; i++) {
+              const pageWrapper = pagesWrapper.children[i - 1];
+              if (pageWrapper) {
+                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+              }
+            }
+            scrollContainer.scrollTop = scrollToY;
+          }, 100);
+        } else if (scrollToY > 0) {
+          // Use saved scrollTop - scroll after rendering is complete
+          setTimeout(() => {
+            scrollContainer.scrollTop = Math.min(scrollToY, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+          }, 200);
+        }
+      }
+      
+      // Track scroll position for progress saving
+      let scrollTimeout = null;
+      scrollContainer.addEventListener('scroll', () => {
+        // Clear previous timeout
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        
+        // Debounce scroll tracking
+        scrollTimeout = setTimeout(() => {
+          const scrollTop = scrollContainer.scrollTop;
+          const scrollHeight = scrollContainer.scrollHeight;
+          const clientHeight = scrollContainer.clientHeight;
+          
+          // Calculate which page is currently visible
+          let currentPage = 1;
+          let accumulatedHeight = 0;
+          
+          for (let i = 0; i < pagesWrapper.children.length; i++) {
+            const pageWrapper = pagesWrapper.children[i];
+            const pageHeight = pageWrapper.children[0]?.offsetHeight || 0;
+            
+            if (scrollTop >= accumulatedHeight && scrollTop < accumulatedHeight + pageHeight) {
+              currentPage = i + 1;
+              break;
+            }
+            
+            accumulatedHeight += pageHeight;
+            
+            // If we're past this page, update current page
+            if (scrollTop >= accumulatedHeight) {
+              currentPage = i + 2;
+            }
+          }
+          
+          pdfPageNumRef.current = Math.min(currentPage, totalPages);
+          
+          // Calculate progress percentage
+          const progress = scrollHeight > 0 ? (scrollTop / (scrollHeight - clientHeight)) : 0;
+          const percent = Math.min(1, Math.max(0, progress));
+          setPercent(percent);
+          setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+          
+          // Save progress (debounced)
+          if (!isRestoringRef.current && currentBookIdRef.current) {
+            const progressToSave = {
+              page: pdfPageNumRef.current,
+              totalPages: totalPages,
+              percent: percent,
+              scrollTop: scrollTop,
+              updatedAt: Date.now()
+            };
+            savedProgressRef.current = progressToSave;
+            saveProgress(currentBookIdRef.current, progressToSave).catch((err) => {
+              console.error(`Failed to save PDF progress:`, err);
+            });
+          }
+        }, 300); // Debounce for 300ms
+      });
+      
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Error rendering PDF in vertical mode:', err);
+      setIsLoading(false);
+      onToast?.("Failed to render PDF. Please try again.");
+    }
+  };
+
   useEffect(() => {
     if (book.type === "pdf") {
       // Handle PDF files using PDF.js
@@ -650,16 +854,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               pdfPageNumRef.current = 1;
             }
             
-            // Render initial page after a short delay to ensure container is sized
+            // Render PDF after a short delay to ensure container is sized
             if (hostRef.current) {
               setTimeout(() => {
                 pdfZoomRef.current = 1.0; // Reset zoom on initial load
-                renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0).then(() => {
-                  // Allow saving after a short delay
-                  setTimeout(() => {
-                    isRestoringRef.current = false;
-                  }, 1000);
-                });
+                // Use vertical mode by default
+                if (pdfScrollMode === 'vertical') {
+                  renderPDFVertical(pdf, hostRef.current, pdfPageNumRef.current).then(() => {
+                    // Allow saving after a short delay
+                    setTimeout(() => {
+                      isRestoringRef.current = false;
+                    }, 1000);
+                  });
+                } else {
+                  renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0).then(() => {
+                    // Allow saving after a short delay
+                    setTimeout(() => {
+                      isRestoringRef.current = false;
+                    }, 1000);
+                  });
+                }
               }, 100);
             }
           }).catch(() => {
@@ -669,11 +883,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             pdfZoomRef.current = 1.0; // Reset zoom on initial load
             if (hostRef.current) {
               setTimeout(() => {
-                renderPDFPage(1, hostRef.current, 1.0).then(() => {
-                  setTimeout(() => {
-                    isRestoringRef.current = false;
-                  }, 1000);
-                });
+                // Use vertical mode by default
+                if (pdfScrollMode === 'vertical') {
+                  renderPDFVertical(pdf, hostRef.current, 1).then(() => {
+                    setTimeout(() => {
+                      isRestoringRef.current = false;
+                    }, 1000);
+                  });
+                } else {
+                  renderPDFPage(1, hostRef.current, 1.0).then(() => {
+                    setTimeout(() => {
+                      isRestoringRef.current = false;
+                    }, 1000);
+                  });
+                }
               }, 100);
             }
           });
@@ -1997,13 +2220,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   async function goPrev() {
     if (book.type === "pdf") {
-      // PDF navigation - reset zoom to default when changing pages
-      if (pdfDocRef.current && pdfPageNumRef.current > 1) {
-        pdfPageNumRef.current--;
-        pdfZoomRef.current = 1.0; // Reset zoom to default
-        if (hostRef.current) {
-          setIsLoading(true);
-          await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
+      if (pdfScrollMode === 'vertical') {
+        // Vertical mode: scroll to previous page
+        const scrollContainer = hostRef.current?.querySelector('.pdf-vertical-scroll-container');
+        if (scrollContainer) {
+          const pagesWrapper = scrollContainer.firstElementChild;
+          if (pagesWrapper && pdfPageNumRef.current > 1) {
+            pdfPageNumRef.current--;
+            // Calculate scroll position for the previous page
+            let scrollToY = 0;
+            for (let i = 0; i < pdfPageNumRef.current - 1; i++) {
+              const pageWrapper = pagesWrapper.children[i];
+              if (pageWrapper) {
+                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+              }
+            }
+            scrollContainer.scrollTo({
+              top: scrollToY,
+              behavior: 'smooth'
+            });
+          }
+        }
+      } else {
+        // Horizontal mode: render previous page
+        if (pdfDocRef.current && pdfPageNumRef.current > 1) {
+          pdfPageNumRef.current--;
+          pdfZoomRef.current = 1.0; // Reset zoom to default
+          if (hostRef.current) {
+            setIsLoading(true);
+            await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
+          }
         }
       }
       return;
@@ -2013,13 +2259,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   }
   async function goNext() {
     if (book.type === "pdf") {
-      // PDF navigation - reset zoom to default when changing pages
-      if (pdfDocRef.current && pdfPageNumRef.current < pdfTotalPagesRef.current) {
-        pdfPageNumRef.current++;
-        pdfZoomRef.current = 1.0; // Reset zoom to default
-        if (hostRef.current) {
-          setIsLoading(true);
-          await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
+      if (pdfScrollMode === 'vertical') {
+        // Vertical mode: scroll to next page
+        const scrollContainer = hostRef.current?.querySelector('.pdf-vertical-scroll-container');
+        if (scrollContainer) {
+          const pagesWrapper = scrollContainer.firstElementChild;
+          if (pagesWrapper && pdfPageNumRef.current < pdfTotalPagesRef.current) {
+            pdfPageNumRef.current++;
+            // Calculate scroll position for the next page
+            let scrollToY = 0;
+            for (let i = 0; i < pdfPageNumRef.current - 1; i++) {
+              const pageWrapper = pagesWrapper.children[i];
+              if (pageWrapper) {
+                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+              }
+            }
+            scrollContainer.scrollTo({
+              top: scrollToY,
+              behavior: 'smooth'
+            });
+          }
+        }
+      } else {
+        // Horizontal mode: render next page
+        if (pdfDocRef.current && pdfPageNumRef.current < pdfTotalPagesRef.current) {
+          pdfPageNumRef.current++;
+          pdfZoomRef.current = 1.0; // Reset zoom to default
+          if (hostRef.current) {
+            setIsLoading(true);
+            await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
+          }
         }
       }
       return;
@@ -2045,12 +2314,34 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
         
         pdfPageNumRef.current = targetPage;
-        pdfZoomRef.current = 1.0; // Reset zoom when navigating by slider
-        setIsLoading(true);
-        await renderPDFPage(targetPage, hostRef.current, 1.0);
         
-        if (!isDragging) {
-          setNavigatingToPercent(null);
+        if (pdfScrollMode === 'vertical') {
+          // Vertical mode: scroll to position
+          const scrollContainer = hostRef.current?.querySelector('.pdf-vertical-scroll-container');
+          if (scrollContainer) {
+            const scrollHeight = scrollContainer.scrollHeight;
+            const clientHeight = scrollContainer.clientHeight;
+            const maxScroll = scrollHeight - clientHeight;
+            const scrollTo = (percent / 100) * maxScroll;
+            
+            scrollContainer.scrollTo({
+              top: scrollTo,
+              behavior: isDragging ? 'auto' : 'smooth'
+            });
+          }
+          
+          if (!isDragging) {
+            setNavigatingToPercent(null);
+          }
+        } else {
+          // Horizontal mode: render target page
+          pdfZoomRef.current = 1.0; // Reset zoom when navigating by slider
+          setIsLoading(true);
+          await renderPDFPage(targetPage, hostRef.current, 1.0);
+          
+          if (!isDragging) {
+            setNavigatingToPercent(null);
+          }
         }
       } catch (err) {
         console.warn("Failed to navigate PDF to percentage:", err);
@@ -3249,23 +3540,38 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         <div className="readerTitle" title={book.title}>{book.title}</div>
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
           {book.type === "pdf" ? (
-            // PDF-specific controls: Zoom in/out
+            // PDF-specific controls: Scroll mode toggle
             <>
               <button
                 className="pill"
-                onClick={zoomOutPDF}
-                title="Zoom Out"
-                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px'}}
+                onClick={async () => {
+                  const newMode = pdfScrollMode === 'vertical' ? 'horizontal' : 'vertical';
+                  setPdfScrollMode(newMode);
+                  // Re-render PDF with new mode - wait for DOM to update
+                  if (pdfDocRef.current && hostRef.current) {
+                    setIsLoading(true);
+                    pdfZoomRef.current = 1.0; // Reset zoom when switching modes
+                    try {
+                      // Wait for React to update the DOM (padding changes)
+                      await new Promise(resolve => requestAnimationFrame(() => {
+                        setTimeout(resolve, 50);
+                      }));
+                      
+                      if (newMode === 'vertical') {
+                        await renderPDFVertical(pdfDocRef.current, hostRef.current, pdfPageNumRef.current);
+                      } else {
+                        await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
+                      }
+                    } catch (err) {
+                      console.error('Error switching scroll mode:', err);
+                      onToast?.("Failed to switch scroll mode. Please try again.");
+                    }
+                  }
+                }}
+                title={pdfScrollMode === 'vertical' ? 'Switch to Horizontal Scroll (Tap Left/Right)' : 'Switch to Vertical Scroll (Continuous)'}
+                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', opacity: pdfScrollMode === 'vertical' ? 1 : 0.7}}
               >
-                −
-              </button>
-              <button
-                className="pill"
-                onClick={zoomInPDF}
-                title="Zoom In"
-                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px'}}
-              >
-                +
+                {pdfScrollMode === 'vertical' ? '↕' : '↔'}
               </button>
               {!isIOS() && (
                 <button
@@ -3377,10 +3683,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           className="renditionHost"
           ref={hostRef}
           style={{
-            paddingLeft: `${horizontalMargin}px`,
-            paddingRight: `${horizontalMargin}px`,
-            paddingTop: `${verticalMargin}px`,
-            paddingBottom: `${verticalMargin}px`,
+            paddingLeft: book.type === 'pdf' && pdfScrollMode === 'vertical' ? '0px' : `${horizontalMargin}px`,
+            paddingRight: book.type === 'pdf' && pdfScrollMode === 'vertical' ? '0px' : `${horizontalMargin}px`,
+            paddingTop: book.type === 'pdf' && pdfScrollMode === 'vertical' ? '0px' : `${verticalMargin}px`,
+            paddingBottom: book.type === 'pdf' && pdfScrollMode === 'vertical' ? '0px' : `${verticalMargin}px`,
             opacity: isLoading ? 0 : 1,
             transition: 'opacity 0.2s ease',
           }}

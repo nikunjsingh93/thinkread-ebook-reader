@@ -257,6 +257,27 @@ button, input, select {
   max-width: 100%;
   height: auto;
 }
+.renditionHost .pdf-vertical-scroll-container {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+.renditionHost .pdf-page-wrapper-vertical {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0;
+  margin: 0;
+}
+.renditionHost .pdf-page-wrapper-vertical canvas {
+  max-width: 100%;
+  width: 100%;
+  height: auto;
+  display: block;
+}
 .navZone{
   position:absolute;
   top:0;
