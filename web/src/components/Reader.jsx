@@ -837,32 +837,32 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
       }
 
-      // Track scroll position for progress saving and handle UI toggle on tap
+      // Track tap position for UI toggle
       let scrollTimeout = null;
+      let tapStartX = 0;
       let tapStartY = 0;
       let tapStartTime = 0;
-      let hasScrolled = false;
 
-      // Simple tap detection for UI toggle
-      const handleTapStart = (clientY) => {
-        tapStartY = scrollContainer.scrollTop;
+      const handleTapStart = (clientX, clientY) => {
+        tapStartX = clientX;
+        tapStartY = clientY;
         tapStartTime = Date.now();
-        hasScrolled = false;
       };
 
       const handleTapEnd = (clientX, clientY) => {
-        const scrollDelta = Math.abs(scrollContainer.scrollTop - tapStartY);
+        const moveX = Math.abs(clientX - tapStartX);
+        const moveY = Math.abs(clientY - tapStartY);
         const timeDelta = Date.now() - tapStartTime;
 
-        // If minimal scrolling (< 10px) and quick tap (< 300ms), toggle UI
-        if (scrollDelta < 10 && timeDelta < 300 && !hasScrolled) {
-          // Only toggle if tap is in middle area (30% to 70% of width)
+        // If finger/mouse moved less than 10px and released within 500ms, it's a tap
+        if (moveX < 10 && moveY < 10 && timeDelta < 500) {
           const viewportWidth = window.innerWidth;
           const relativePercent = clientX / viewportWidth;
 
+          // Only toggle if tap is in middle area (30% to 70% of width)
           if (relativePercent >= 0.3 && relativePercent <= 0.7) {
             toggleUIHandler();
-            return true; // Indicate tap was handled
+            return true;
           }
         }
         return false;
@@ -870,42 +870,33 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
       // Touch events
       scrollContainer.addEventListener('touchstart', (e) => {
-        handleTapStart(e.touches[0]?.clientY || 0);
-      }, { passive: true });
-
-      scrollContainer.addEventListener('touchmove', () => {
-        const currentScroll = scrollContainer.scrollTop;
-        if (Math.abs(currentScroll - tapStartY) > 5) {
-          hasScrolled = true;
+        const touch = e.touches[0];
+        if (touch) {
+          handleTapStart(touch.clientX, touch.clientY);
         }
       }, { passive: true });
 
       scrollContainer.addEventListener('touchend', (e) => {
         const touch = e.changedTouches[0];
         if (touch) {
-          handleTapEnd(touch.clientX, touch.clientY);
+          if (handleTapEnd(touch.clientX, touch.clientY)) {
+            // Prevent subsequent click event
+            if (e.cancelable) e.preventDefault();
+          }
         }
-        hasScrolled = false;
-      }, { passive: true });
+      }, { passive: false });
 
       // Mouse events for desktop
       scrollContainer.addEventListener('mousedown', (e) => {
-        handleTapStart(e.clientY);
-      });
-
-      scrollContainer.addEventListener('mousemove', () => {
-        const currentScroll = scrollContainer.scrollTop;
-        if (Math.abs(currentScroll - tapStartY) > 5) {
-          hasScrolled = true;
-        }
+        handleTapStart(e.clientX, e.clientY);
       });
 
       scrollContainer.addEventListener('click', (e) => {
+        // Only trigger if handleTapEnd determines it was a tap (not a drag)
         if (handleTapEnd(e.clientX, e.clientY)) {
           e.preventDefault();
           e.stopPropagation();
         }
-        hasScrolled = false;
       });
 
       scrollContainer.addEventListener('scroll', () => {
