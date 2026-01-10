@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs || true",
     "dev": "vite --port 5173",
     "build": "vite build",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
+    "pdfjs-dist": "^5.4.530",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "wink-eng-lite-web-model": "^1.8.1"

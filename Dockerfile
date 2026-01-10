@@ -4,6 +4,8 @@ WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm install
 COPY web ./
+# Copy PDF.js worker to public directory before building (in case it's not already there)
+RUN mkdir -p public && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs || true
 RUN npm run build
 
 # --- Runtime server (serves API + static web build) ---

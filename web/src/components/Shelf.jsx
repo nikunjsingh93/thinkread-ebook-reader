@@ -227,7 +227,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     const downloadUrl = `/api/books/${book.id}/file`;
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = book.originalName || `${book.title}.epub`;
+    const ext = book.type === "pdf" ? "pdf" : (book.type === "mobi" ? "mobi" : "epub");
+    link.download = book.originalName || `${book.title}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -439,7 +440,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
               <div className="muted" style={{fontSize: 12}}>
                 {currentUser?.isAdmin ?
-                  `EPUB, MOBI ${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}` :
+                  `EPUB, MOBI, PDF ${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}` :
                   `${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}`
                 }
               </div>
@@ -594,7 +595,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           <input
             ref={inputRef}
             type="file"
-            accept=".epub,.mobi"
+            accept=".epub,.mobi,.pdf"
             multiple
             onChange={onFileChange}
             style={{display:"none"}}
@@ -609,7 +610,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
           {isOffline ? (
             <>You're offline. No cached books available. Connect to the internet to view your library.</>
           ) : currentUser?.isAdmin ? (
-            <>No books yet. Click <b>Upload</b> to add EPUB or MOBI files.</>
+            <>No books yet. Click <b>Upload</b> to add EPUB, MOBI, or PDF files.</>
           ) : (
             <>No books yet. Contact an administrator to add books.</>
           )}
@@ -737,6 +738,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 <div className="cardBody">
                   <div className="title" title={b.title}>{b.title}</div>
                   <div className="small">
+                    {b.type === "pdf" && <span style={{fontWeight: "bold", color: "var(--accent, #007acc)", marginRight: "4px"}}>PDF</span>}
                     {pct != null ? `Progress: ${pct}%` : "New"}{currentUser?.isAdmin ? ` • ${formatBytes(b.sizeBytes)}` : ""}
                   </div>
                 </div>
@@ -912,7 +914,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 10V16M12 16L9 13M12 16L15 13M17 21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3H14L19 8V19C19 20.1046 18.1046 21 17 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                Download EPUB
+                Download {bookDetailsModal.book.type === "pdf" ? "PDF" : "EPUB"}
               </button>
               <button
                 onClick={() => setBookDetailsModal(null)}

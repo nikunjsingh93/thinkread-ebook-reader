@@ -32,6 +32,7 @@ function guessTypeByExt(ext) {
   const extLower = ext.toLowerCase();
   if (extLower === "epub") return "epub";
   if (extLower === "mobi") return "mobi";
+  if (extLower === "pdf") return "pdf";
   return "unknown";
 }
 
@@ -99,7 +100,7 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     const ext = getExt(file.originalname).toLowerCase();
-    const allowedExts = ["epub", "mobi"];
+    const allowedExts = ["epub", "mobi", "pdf"];
     if (!allowedExts.includes(ext)) {
       return cb(new Error(`File type .${ext} is not supported. Supported formats: ${allowedExts.join(", ")}`));
     }

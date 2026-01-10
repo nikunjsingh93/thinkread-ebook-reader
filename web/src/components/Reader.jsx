@@ -1,11 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ePub from "epubjs";
+import * as pdfjsLib from "pdfjs-dist";
 import SettingsDrawer from "./SettingsDrawer.jsx";
 import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS, apiGetTTSVoices, apiSaveTTSProgress, apiGetTTSProgress, apiDeleteTTSProgress } from "../lib/api.js";
 import { cacheBook } from "../lib/serviceWorker.js";
+
+// Configure PDF.js worker
+// Use local worker file for Docker compatibility
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -297,6 +302,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [tocOpen, setTocOpen] = useState(false);
   const [toc, setToc] = useState([]); // Table of contents
   const longPressTimerRef = useRef(null);
+  const pdfDocRef = useRef(null); // PDF document reference
+  const pdfPageNumRef = useRef(1); // Current PDF page number
+  const pdfTotalPagesRef = useRef(0); // Total PDF pages
   const longPressStartRef = useRef(null);
   const longPressPreventRef = useRef(null); // Timer to start preventing default
   const dictionaryCleanupRef = useRef(null);
@@ -487,9 +495,168 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
+  // Function to render a PDF page
+  const renderPDFPage = async (pageNum, container) => {
+    if (!pdfDocRef.current || !container) return;
+    
+    try {
+      const page = await pdfDocRef.current.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.0 });
+      
+      // Get container dimensions (accounting for padding)
+      const containerRect = container.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(container);
+      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+      const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+      const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+      
+      const availableWidth = containerRect.width - paddingLeft - paddingRight;
+      const availableHeight = containerRect.height - paddingTop - paddingBottom;
+      
+      // Calculate scale to fit container while maintaining aspect ratio
+      const scaleX = availableWidth / viewport.width;
+      const scaleY = availableHeight / viewport.height;
+      const scale = Math.min(scaleX, scaleY, 2.0); // Cap at 2x for quality
+      
+      const scaledViewport = page.getViewport({ scale });
+      
+      // Clear container
+      container.innerHTML = '';
+      
+      // Create canvas wrapper for centering
+      const wrapper = document.createElement('div');
+      wrapper.className = 'pdf-page-wrapper';
+      wrapper.style.display = 'flex';
+      wrapper.style.justifyContent = 'center';
+      wrapper.style.alignItems = 'center';
+      wrapper.style.width = '100%';
+      wrapper.style.height = '100%';
+      wrapper.style.minHeight = `${scaledViewport.height}px`;
+      wrapper.style.overflow = 'auto';
+      
+      // Create canvas
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = scaledViewport.height;
+      canvas.width = scaledViewport.width;
+      
+      // Style canvas
+      canvas.style.display = 'block';
+      canvas.style.maxWidth = '100%';
+      canvas.style.height = 'auto';
+      canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+      
+      wrapper.appendChild(canvas);
+      container.appendChild(wrapper);
+      
+      // Render page
+      const renderContext = {
+        canvasContext: context,
+        viewport: scaledViewport
+      };
+      
+      await page.render(renderContext).promise;
+      
+      // Update progress
+      const totalPages = pdfTotalPagesRef.current;
+      const currentPercent = totalPages > 0 ? (pageNum / totalPages) : 0;
+      setPercent(currentPercent);
+      setLocationText(`Page ${pageNum} of ${totalPages}`);
+      setLastPageInfo({ page: pageNum, percent: Math.round(currentPercent * 100) });
+      
+      // Save progress (but don't save if we're restoring position)
+      if (!isRestoringRef.current) {
+        const currentBookId = currentBookIdRef.current;
+        if (currentBookId) {
+          const progressToSave = {
+            page: pageNum,
+            totalPages: totalPages,
+            percent: currentPercent,
+            updatedAt: Date.now()
+          };
+          savedProgressRef.current = progressToSave;
+          saveProgress(currentBookId, progressToSave).catch((err) => {
+            console.error(`Failed to save PDF progress for book ${currentBookId}:`, err);
+          });
+        }
+      }
+      
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Error rendering PDF page:', err);
+      setIsLoading(false);
+      onToast?.("Failed to render PDF page. Please try again.");
+    }
+  };
+
   useEffect(() => {
+    if (book.type === "pdf") {
+      // Handle PDF files using PDF.js
+      setIsLoading(true);
+      currentBookIdRef.current = book.id;
+      
+      // Load PDF document
+      pdfjsLib.getDocument(fileUrl).promise
+        .then((pdf) => {
+          pdfDocRef.current = pdf;
+          pdfTotalPagesRef.current = pdf.numPages;
+          
+          // Load saved progress
+          loadProgress(book.id).then((progressData) => {
+            isRestoringRef.current = true;
+            if (progressData?.page && progressData.page > 0 && progressData.page <= pdf.numPages) {
+              pdfPageNumRef.current = progressData.page;
+              savedProgressRef.current = progressData;
+            } else {
+              pdfPageNumRef.current = 1;
+            }
+            
+            // Render initial page after a short delay to ensure container is sized
+            if (hostRef.current) {
+              setTimeout(() => {
+                renderPDFPage(pdfPageNumRef.current, hostRef.current).then(() => {
+                  // Allow saving after a short delay
+                  setTimeout(() => {
+                    isRestoringRef.current = false;
+                  }, 1000);
+                });
+              }, 100);
+            }
+          }).catch(() => {
+            // No saved progress, start at page 1
+            isRestoringRef.current = true;
+            pdfPageNumRef.current = 1;
+            if (hostRef.current) {
+              setTimeout(() => {
+                renderPDFPage(1, hostRef.current).then(() => {
+                  setTimeout(() => {
+                    isRestoringRef.current = false;
+                  }, 1000);
+                });
+              }, 100);
+            }
+          });
+        })
+        .catch((err) => {
+          console.error('Error loading PDF:', err);
+          setIsLoading(false);
+          onToast?.("Failed to load PDF. Please try again.");
+        });
+      
+      return () => {
+        // Cleanup: clear PDF on unmount
+        pdfDocRef.current = null;
+        pdfPageNumRef.current = 1;
+        pdfTotalPagesRef.current = 0;
+        if (hostRef.current) {
+          hostRef.current.innerHTML = '';
+        }
+      };
+    }
+
     if (book.type !== "epub") {
-      onToast?.("This simple build supports EPUB only.");
+      onToast?.("Unsupported file type. Supported formats: EPUB, PDF.");
       onBack?.();
       return;
     }
@@ -1766,9 +1933,33 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   };
 
   async function goPrev() {
+    if (book.type === "pdf") {
+      // PDF navigation
+      if (pdfDocRef.current && pdfPageNumRef.current > 1) {
+        pdfPageNumRef.current--;
+        if (hostRef.current) {
+          setIsLoading(true);
+          await renderPDFPage(pdfPageNumRef.current, hostRef.current);
+        }
+      }
+      return;
+    }
+    // EPUB navigation
     try { await renditionRef.current?.prev(); } catch {}
   }
   async function goNext() {
+    if (book.type === "pdf") {
+      // PDF navigation
+      if (pdfDocRef.current && pdfPageNumRef.current < pdfTotalPagesRef.current) {
+        pdfPageNumRef.current++;
+        if (hostRef.current) {
+          setIsLoading(true);
+          await renderPDFPage(pdfPageNumRef.current, hostRef.current);
+        }
+      }
+      return;
+    }
+    // EPUB navigation
     try { await renditionRef.current?.next(); } catch {}
   }
   function toggleUI() {
@@ -1776,6 +1967,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   }
 
   async function goToPercent(percent, isDragging = false) {
+    if (book.type === "pdf") {
+      // PDF navigation by percentage
+      if (!pdfDocRef.current || !hostRef.current) return;
+      
+      try {
+        if (!isDragging) {
+          setNavigatingToPercent(percent);
+        }
+        
+        const totalPages = pdfTotalPagesRef.current;
+        const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
+        
+        pdfPageNumRef.current = targetPage;
+        setIsLoading(true);
+        await renderPDFPage(targetPage, hostRef.current);
+        
+        if (!isDragging) {
+          setNavigatingToPercent(null);
+        }
+      } catch (err) {
+        console.warn("Failed to navigate PDF to percentage:", err);
+        setIsLoading(false);
+        if (!isDragging) {
+          setNavigatingToPercent(null);
+        }
+      }
+      return;
+    }
+    
+    // EPUB navigation
     if (!renditionRef.current || !epubBookRef.current) return;
 
     try {
