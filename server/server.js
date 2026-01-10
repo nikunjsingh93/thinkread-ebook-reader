@@ -52,7 +52,21 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR);
+const BOOKS_DIR = process.env.BOOKS_DIR; // Optional separate books directory
+const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR, BOOKS_DIR);
+
+console.log(`[Startup] RAW env.BOOKS_DIR: "${process.env.BOOKS_DIR}"`);
+console.log(`[Startup] Data Directory: ${DATA_DIR}`);
+console.log(`[Startup] Books Directory: ${booksDir}`);
+
+// Process-level error handling to catch crashes
+process.on('uncaughtException', (err) => {
+  console.error('[CRASH] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRASH] Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 function getExt(originalName = "") {
   const ext = path.extname(originalName).toLowerCase();
@@ -123,24 +137,24 @@ class NodeCanvasFactory {
     }
     const canvas = createCanvas(Math.round(width), Math.round(height));
     const context = canvas.getContext('2d');
-    
+
     // Ensure the canvas has proper properties that pdfjs-dist expects
     // Set white background initially
     context.fillStyle = 'white';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     return { canvas, context };
   }
-  
+
   reset(canvasAndContext, width, height) {
     canvasAndContext.canvas.width = Math.round(width);
     canvasAndContext.canvas.height = Math.round(height);
-    
+
     // Reset background
     canvasAndContext.context.fillStyle = 'white';
     canvasAndContext.context.fillRect(0, 0, canvasAndContext.canvas.width, canvasAndContext.canvas.height);
   }
-  
+
   destroy(canvasAndContext) {
     if (canvasAndContext && canvasAndContext.canvas) {
       canvasAndContext.canvas = null;
@@ -154,7 +168,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
   // If available, use it as it's specifically designed for PDF to image conversion
   const tempOutputBase = path.join(os.tmpdir(), `pdf-thumb-${nanoid()}`);
   const outputFile = `${tempOutputBase}.png`;
-  
+
   try {
     // Use pdftoppm to convert first page to PNG
     // -f 1: first page, -l 1: last page (only first page)
@@ -162,7 +176,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
     // This ensures the image fits within our target dimensions without stretching
     // Without -singlefile, pdftoppm outputs with -01.png, -02.png, etc. suffix
     await execAsync(`pdftoppm -f 1 -l 1 -png -scale-to 400 "${pdfPath}" "${tempOutputBase}"`);
-    
+
     // pdftoppm outputs with numbered suffix - try common formats
     // Also check if files exist in the temp directory
     const tempDir = path.dirname(tempOutputBase);
@@ -173,7 +187,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
       `${tempOutputBase}-1.png`,
       outputFile, // Some versions might output without suffix
     ];
-    
+
     // List directory to see what was actually created
     let actualOutputFile = null;
     try {
@@ -185,7 +199,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
     } catch (listError) {
       // If listing fails, try the expected outputs
     }
-    
+
     // If we didn't find it by listing, try the expected paths
     if (!actualOutputFile) {
       for (const candidate of possibleOutputs) {
@@ -195,7 +209,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
         }
       }
     }
-    
+
     if (actualOutputFile && fs.existsSync(actualOutputFile)) {
       const buffer = fs.readFileSync(actualOutputFile);
 
@@ -248,14 +262,14 @@ async function extractPDFThumbnail(pdfPath, bookId) {
 
       // Clean up temp files (try all possible outputs plus any matching files in temp dir)
       for (const candidate of possibleOutputs) {
-        try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch {}
+        try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch { }
       }
       try {
         const files = fs.readdirSync(tempDir);
         files.filter(f => f.startsWith(baseName) && f.endsWith('.png')).forEach(f => {
-          try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
+          try { fs.unlinkSync(path.join(tempDir, f)); } catch { }
         });
-      } catch {}
+      } catch { }
 
       console.log(`Extracted PDF thumbnail for book ${bookId} using pdftoppm, centered in 2:3 container (${finalBuffer.length} bytes)`);
       return { cover: coverFilename };
@@ -265,7 +279,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
   } catch (pdftoppmError) {
     // If pdftoppm fails, log the error and return null (no thumbnail)
     console.log(`pdftoppm failed for book ${bookId}:`, pdftoppmError.message);
-    
+
     // Clean up any partial output files
     const tempDir = path.dirname(tempOutputBase);
     const baseName = path.basename(tempOutputBase);
@@ -276,16 +290,16 @@ async function extractPDFThumbnail(pdfPath, bookId) {
       `${tempOutputBase}-1.png`,
     ];
     for (const candidate of possibleOutputs) {
-      try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch {}
+      try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch { }
     }
     // Also try to clean up any matching files in temp directory
     try {
       const files = fs.readdirSync(tempDir);
       files.filter(f => f.startsWith(baseName) && f.endsWith('.png')).forEach(f => {
-        try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
+        try { fs.unlinkSync(path.join(tempDir, f)); } catch { }
       });
-    } catch {}
-    
+    } catch { }
+
     // Return null if pdftoppm failed - pdfjs-dist fallback has issues with embedded images
     return { cover: null };
   }
@@ -726,22 +740,22 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
       try {
         const inputPath = path.join(booksDir, f.filename);
         const outputPath = path.join(booksDir, `${path.basename(f.filename, path.extname(f.filename))}-${nanoid(10)}.epub`);
-        
+
         // Use ebook-convert from Calibre to convert MOBI to EPUB
         await execAsync(`ebook-convert "${inputPath}" "${outputPath}"`);
-        
+
         // Delete original MOBI file
         try {
           fs.unlinkSync(inputPath);
         } catch (err) {
           console.error("Error deleting original MOBI file:", err);
         }
-        
+
         // Update file info
         storedName = path.basename(outputPath);
         finalType = "epub";
         ext = "epub";
-        
+
         // Update file size
         try {
           const stats = fs.statSync(outputPath);
@@ -855,7 +869,7 @@ app.delete("/api/books/:id", async (req, res) => {
     // best-effort remove file
     try {
       fs.unlinkSync(path.join(booksDir, book.storedName));
-    } catch {}
+    } catch { }
 
     res.json({ ok: true });
   } catch (err) {
@@ -865,19 +879,43 @@ app.delete("/api/books/:id", async (req, res) => {
 });
 
 app.get("/api/books/:id/file", (req, res) => {
-  const { id } = req.params;
-  const state = loadState(statePath);
-  const book = state.books.find((b) => b.id === id);
-  if (!book) return res.status(404).send("Not found");
+  try {
+    const { id } = req.params;
+    const state = loadState(statePath);
+    const book = state.books.find((b) => b.id === id);
+    if (!book) {
+      console.warn(`[File] Book not found: ${id}`);
+      return res.status(404).send("Not found");
+    }
 
-  const filePath = path.join(booksDir, book.storedName);
-  if (!fs.existsSync(filePath)) return res.status(404).send("Missing file");
+    const filePath = path.join(booksDir, book.storedName);
+    console.log(`[File] Serving book: ${book.title} from ${filePath}`);
 
-  const contentType = mime.lookup(filePath) || "application/octet-stream";
-  res.setHeader("Content-Type", contentType);
-  // inline so epubjs can fetch it
-  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(book.originalName)}`);
-  res.sendFile(filePath);
+    if (!fs.existsSync(filePath)) {
+      console.warn(`[File] File does not exist on disk: ${filePath}`);
+      return res.status(404).send("Missing file");
+    }
+
+    const contentType = mime.lookup(filePath) || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(book.originalName)}`);
+
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        if (!res.headersSent) {
+          console.error(`[File] Error sending file: ${err.message}`);
+          res.status(500).send("Error sending file");
+        } else {
+          console.error(`[File] Connection closed while sending file: ${err.message}`);
+        }
+      }
+    });
+  } catch (err) {
+    console.error(`[File] Major error in file route:`, err);
+    if (!res.headersSent) {
+      res.status(500).send("Server error");
+    }
+  }
 });
 
 app.get("/api/books/:id/cover", (req, res) => {
@@ -1103,8 +1141,8 @@ app.get("/api/dictionary/status", (req, res) => {
       const data = fs.readFileSync(dictionaryPath, "utf-8");
       const dict = JSON.parse(data);
       const wordCount = Object.keys(dict).length;
-      res.json({ 
-        exists: true, 
+      res.json({
+        exists: true,
         wordCount,
         sizeInMB: parseFloat(sizeInMB)
       });
@@ -1147,10 +1185,10 @@ app.post("/api/dictionary", (req, res) => {
 
     // Save to file
     fs.writeFileSync(dictionaryPath, dictString, "utf-8");
-    
+
     console.log(`Dictionary saved: ${wordCount} words, ${sizeInMB}MB`);
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       wordCount,
       sizeInMB: parseFloat(sizeInMB)
     });
@@ -1197,7 +1235,7 @@ app.get("/api/tts/voices", (req, res) => {
           console.error('Error getting macOS voices:', error);
           return res.json({ voices: [] });
         }
-        
+
         // Parse say output: "Alex                 en_US    # Default voice"
         const lines = stdout.split('\n').filter(line => line.trim());
         const parsedVoices = lines.map(line => {
@@ -1205,7 +1243,7 @@ app.get("/api/tts/voices", (req, res) => {
           const name = parts[0];
           const lang = parts[1] || 'en_US';
           const isDefault = line.includes('# Default');
-          
+
           return {
             name,
             lang,
@@ -1213,7 +1251,7 @@ app.get("/api/tts/voices", (req, res) => {
             default: isDefault
           };
         });
-        
+
         res.json({ voices: parsedVoices });
       });
     } else if (platform === 'linux') {
@@ -1227,7 +1265,7 @@ app.get("/api/tts/voices", (req, res) => {
         { name: 'fr-FR', lang: 'fr', langName: 'fr-FR' },
         { name: 'it-IT', lang: 'it', langName: 'it-IT' }
       ];
-      
+
       // Verify pico2wave is available
       exec('which pico2wave', (error) => {
         if (error) {
@@ -1268,7 +1306,7 @@ app.post("/api/tts/speak", async (req, res) => {
         // macOS - use 'say' command (requires temp file)
         tempFile = path.join(os.tmpdir(), `tts-${nanoid()}.aiff`);
         const wavFile = tempFile.replace('.aiff', '.wav');
-        
+
         const sayArgs = [];
         if (voice) {
           sayArgs.push('-v', voice);
@@ -1303,7 +1341,7 @@ app.post("/api/tts/speak", async (req, res) => {
             stderr += data.toString();
           });
         });
-        
+
         // Convert AIFF to WAV using afconvert (built into macOS)
         try {
           await execAsync(`afconvert -f WAVE -d LEI16 "${tempFile}" "${wavFile}"`);
@@ -1312,20 +1350,20 @@ app.post("/api/tts/speak", async (req, res) => {
           res.write(audioData);
           res.end();
           // Clean up
-          try { fs.unlinkSync(tempFile); } catch {}
-          try { fs.unlinkSync(wavFile); } catch {}
+          try { fs.unlinkSync(tempFile); } catch { }
+          try { fs.unlinkSync(wavFile); } catch { }
         } catch (convertErr) {
           // If afconvert fails, try reading AIFF directly (browsers may support it)
           const audioData = fs.readFileSync(tempFile);
           res.setHeader('Content-Type', 'audio/aiff');
           res.write(audioData);
           res.end();
-          try { fs.unlinkSync(tempFile); } catch {}
+          try { fs.unlinkSync(tempFile); } catch { }
         }
       } else if (platform === 'linux') {
         // Linux - use pico2wave
         tempFile = path.join(os.tmpdir(), `tts-${nanoid()}.wav`);
-        
+
         // pico2wave supported languages: en-US, en-GB, de-DE, es-ES, fr-FR, it-IT
         let language = 'en-US'; // default
         if (voice) {
@@ -1385,7 +1423,7 @@ app.post("/api/tts/speak", async (req, res) => {
         // This addresses the muffled/captain-like sound quality issue
         const enhancedFile = tempFile.replace('.wav', '-enhanced.wav');
         let currentFile = tempFile;
-        
+
         try {
           // Apply treble boost (12 dB) and gain (1.5 dB) to improve clarity
           // treble 12: boosts high frequencies moderately for clearer speech
@@ -1397,14 +1435,14 @@ app.post("/api/tts/speak", async (req, res) => {
           // If sox enhancement fails, use original audio
           console.warn('sox audio enhancement not available, using original audio:', soxError.message);
         }
-        
+
         // Apply speed adjustment if needed (after enhancement for better quality)
         let finalFile = currentFile;
         const speedAdjustedFile = path.join(os.tmpdir(), `tts-${nanoid()}-speed.wav`);
         if (rate && rate !== 1.0) {
           try {
             const tempo = Math.max(0.5, Math.min(2.0, rate)); // Clamp between 0.5 and 2.0
-            
+
             await execAsync(`sox "${currentFile}" "${speedAdjustedFile}" tempo ${tempo}`);
             finalFile = speedAdjustedFile;
             console.log(`[TTS] Applied speed adjustment: ${tempo}x`);
@@ -1413,21 +1451,21 @@ app.post("/api/tts/speak", async (req, res) => {
             console.warn('sox speed adjustment not available, using enhanced audio:', soxError.message);
           }
         }
-        
+
         // Read the final processed audio file
         const audioData = fs.readFileSync(finalFile);
-        
+
         // Stream the audio data to response
         res.write(audioData);
         res.end();
-        
+
         // Clean up temp files (delete all intermediate and final files)
         const filesToDelete = new Set([tempFile, finalFile]);
         if (currentFile === enhancedFile) filesToDelete.add(enhancedFile);
         if (finalFile === speedAdjustedFile) filesToDelete.add(speedAdjustedFile);
-        
+
         for (const file of filesToDelete) {
-          try { fs.unlinkSync(file); } catch {}
+          try { fs.unlinkSync(file); } catch { }
         }
       } else {
         return res.status(501).json({ error: "TTS not supported on this platform" });
@@ -1435,7 +1473,7 @@ app.post("/api/tts/speak", async (req, res) => {
     } catch (err) {
       // Clean up temp file on error
       if (tempFile && fs.existsSync(tempFile)) {
-        try { fs.unlinkSync(tempFile); } catch {}
+        try { fs.unlinkSync(tempFile); } catch { }
       }
       throw err;
     }
@@ -1548,7 +1586,15 @@ if (staticDir) {
   });
 }
 
+// Global error handler for Express
+app.use((err, req, res, next) => {
+  console.error('[Express Error]', err);
+  if (!res.headersSent) {
+    res.status(500).send('Internal Server Error');
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ThinkRead running on http://0.0.0.0:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
   console.log(`DATA_DIR: ${DATA_DIR}`);
 });

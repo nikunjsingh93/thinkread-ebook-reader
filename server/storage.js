@@ -18,8 +18,9 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
-export function getDataPaths(dataDir) {
-  const booksDir = path.join(dataDir, "books");
+export function getDataPaths(dataDir, booksDirOverride = null) {
+  // Support separate books directory for external storage
+  const booksDir = booksDirOverride || path.join(dataDir, "books");
   const coversDir = path.join(dataDir, "covers");
   const fontsDir = path.join(dataDir, "fonts");
   const statePath = path.join(dataDir, "state.json");
@@ -85,7 +86,7 @@ function sleep(ms) {
 
 export async function saveStateAtomic(statePath, stateObj) {
   const tmp = statePath + ".tmp";
-  
+
   // Retry logic to handle concurrent writes
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -93,10 +94,10 @@ export async function saveStateAtomic(statePath, stateObj) {
       while (saveLock.has(statePath)) {
         await sleep(RETRY_DELAY);
       }
-      
+
       // Acquire lock
       saveLock.set(statePath, true);
-      
+
       try {
         // Load current state to merge with any concurrent changes
         let currentState;
@@ -105,7 +106,7 @@ export async function saveStateAtomic(statePath, stateObj) {
         } catch {
           currentState = DEFAULT_STATE;
         }
-        
+
         // Merge the new state with current state (preserve other concurrent changes)
         // For progress, we want to merge at the book level to preserve all books' progress
         let mergedProgress = { ...(currentState.progress || {}) };
@@ -114,13 +115,13 @@ export async function saveStateAtomic(statePath, stateObj) {
           // This preserves all existing book progress while updating the specific book
           mergedProgress = { ...mergedProgress, ...stateObj.progress };
         }
-        
+
         // For bookmarks, if the new state has a bookmarks array, use it directly (replacement)
         // This handles deletions properly - if a bookmark is removed, the new array won't have it
         let mergedBookmarks = stateObj.bookmarks !== undefined && Array.isArray(stateObj.bookmarks)
           ? stateObj.bookmarks  // Full replacement (handles deletions)
           : (currentState.bookmarks || []);  // Keep existing if not provided
-        
+
         // For other top-level keys, merge them too (but don't overwrite progress/bookmarks)
         const mergedState = {
           ...currentState,
@@ -128,13 +129,13 @@ export async function saveStateAtomic(statePath, stateObj) {
           progress: mergedProgress,
           bookmarks: mergedBookmarks
         };
-        
+
         // Write to temp file
         fs.writeFileSync(tmp, JSON.stringify(mergedState, null, 2), "utf-8");
-        
+
         // Atomic rename
         fs.renameSync(tmp, statePath);
-        
+
         return; // Success
       } finally {
         // Release lock
@@ -143,11 +144,11 @@ export async function saveStateAtomic(statePath, stateObj) {
     } catch (err) {
       // Release lock on error
       saveLock.delete(statePath);
-      
+
       if (attempt === MAX_RETRIES - 1) {
         throw err; // Re-throw on final attempt
       }
-      
+
       // Wait before retrying
       await sleep(RETRY_DELAY * (attempt + 1));
     }
