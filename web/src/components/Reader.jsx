@@ -3660,9 +3660,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             </svg>
           </div>
         )}
-        {/* tap zones */}
-        <div className="navZone navLeft" onClick={goPrev} aria-label="Previous page" />
-        <div className="navZone navRight" onClick={goNext} aria-label="Next page" />
+        {/* tap zones - disabled for PDF vertical scroll mode */}
+        <div 
+          className="navZone navLeft" 
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goPrev} 
+          aria-label="Previous page"
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { pointerEvents: 'none' } : {}}
+        />
+        <div 
+          className="navZone navRight" 
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goNext} 
+          aria-label="Next page"
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { pointerEvents: 'none' } : {}}
+        />
         <div className="navZone navMid" onClick={toggleUI} aria-label="Toggle UI" />
 
         {isLoading && (
