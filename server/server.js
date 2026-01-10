@@ -52,7 +52,8 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
-const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR);
+const BOOKS_DIR = process.env.BOOKS_DIR; // Optional separate books directory
+const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR, BOOKS_DIR);
 
 function getExt(originalName = "") {
   const ext = path.extname(originalName).toLowerCase();

@@ -18,8 +18,9 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
-export function getDataPaths(dataDir) {
-  const booksDir = path.join(dataDir, "books");
+export function getDataPaths(dataDir, booksDirOverride = null) {
+  // Support separate books directory for external storage
+  const booksDir = booksDirOverride || path.join(dataDir, "books");
   const coversDir = path.join(dataDir, "covers");
   const fontsDir = path.join(dataDir, "fonts");
   const statePath = path.join(dataDir, "state.json");

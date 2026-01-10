@@ -5,5 +5,9 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/data
+      # Uncomment the line below to use separate volumes for books
+      # - ./books:/books
     environment:
       - DATA_DIR=/data
+      # Uncomment the line below to use separate books directory
+      # - BOOKS_DIR=/books
