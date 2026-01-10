@@ -14,7 +14,7 @@ import session from "express-session";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
 import os from "node:os";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import { createCanvas } from "canvas";
+import { createCanvas, loadImage } from "canvas";
 import { pathToFileURL } from "node:url";
 
 const execAsync = promisify(exec);
@@ -158,9 +158,11 @@ async function extractPDFThumbnail(pdfPath, bookId) {
   try {
     // Use pdftoppm to convert first page to PNG
     // -f 1: first page, -l 1: last page (only first page)
-    // -png: output format, -scale-to-x 300: width 300px, maintain aspect ratio
+    // -png: output format, -scale-to-y 600: scales height to 600px while maintaining original aspect ratio
+    // This preserves the original PDF page aspect ratio perfectly (e.g., A4, Letter, etc.)
+    // Width will be calculated automatically based on the PDF's aspect ratio
     // Without -singlefile, pdftoppm outputs with -01.png, -02.png, etc. suffix
-    await execAsync(`pdftoppm -f 1 -l 1 -png -scale-to-x 300 "${pdfPath}" "${tempOutputBase}"`);
+    await execAsync(`pdftoppm -f 1 -l 1 -png -scale-to-y 600 "${pdfPath}" "${tempOutputBase}"`);
     
     // pdftoppm outputs with numbered suffix - try common formats
     // Also check if files exist in the temp directory
@@ -203,10 +205,56 @@ async function extractPDFThumbnail(pdfPath, bookId) {
         throw new Error('pdftoppm created empty output file');
       }
       
+      // Resize and crop thumbnail to fill 2:3 container while maintaining aspect ratio
+      // For most PDFs (portrait like A4/Letter), scale to fill height and crop from sides
+      // For landscape PDFs, scale to fill width and crop from top/bottom
+      const img = await loadImage(buffer);
+      
+      // Target dimensions: 400x600 (2:3 aspect ratio)
+      const targetWidth = 400;
+      const targetHeight = 600;
+      const targetAspectRatio = targetWidth / targetHeight; // 2/3 = 0.667
+      const imgAspectRatio = img.width / img.height;
+      
+      // Create canvas with target dimensions
+      const canvas = createCanvas(targetWidth, targetHeight);
+      const ctx = canvas.getContext('2d');
+      
+      // Fill with white background
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+      
+      // Calculate crop area to match target aspect ratio exactly
+      // The cropped source region must have aspect ratio = targetAspectRatio
+      let sourceX = 0, sourceY = 0, sourceWidth = img.width, sourceHeight = img.height;
+      
+      if (imgAspectRatio > targetAspectRatio) {
+        // Image is wider than 2:3 (landscape) - keep full height, crop width
+        // Crop width to match: sourceHeight * targetAspectRatio
+        sourceWidth = img.height * targetAspectRatio;
+        sourceX = (img.width - sourceWidth) / 2; // Center crop horizontally
+      } else {
+        // Image is taller than 2:3 (portrait, most common) - keep full width, crop height
+        // Crop height to match: sourceWidth / targetAspectRatio
+        sourceHeight = img.width / targetAspectRatio;
+        sourceY = (img.height - sourceHeight) / 2; // Center crop vertically
+      }
+      
+      // Draw the cropped image scaled to fill the entire canvas
+      // The cropped source has aspect ratio = targetAspectRatio, so no stretching occurs
+      ctx.drawImage(
+        img,
+        Math.round(sourceX), Math.round(sourceY), Math.round(sourceWidth), Math.round(sourceHeight),
+        0, 0, targetWidth, targetHeight
+      );
+      
+      // Convert to buffer
+      const finalBuffer = canvas.toBuffer('image/png');
+      
       // Save thumbnail
       const coverFilename = `${bookId}.png`;
       const coverPath = path.join(coversDir, coverFilename);
-      fs.writeFileSync(coverPath, buffer);
+      fs.writeFileSync(coverPath, finalBuffer);
       
       // Clean up temp files (try all possible outputs plus any matching files in temp dir)
       for (const candidate of possibleOutputs) {
@@ -219,7 +267,7 @@ async function extractPDFThumbnail(pdfPath, bookId) {
         });
       } catch {}
       
-      console.log(`Extracted PDF thumbnail for book ${bookId} using pdftoppm (${buffer.length} bytes)`);
+      console.log(`Extracted PDF thumbnail for book ${bookId} using pdftoppm, resized to fill 2:3 container (${finalBuffer.length} bytes)`);
       return { cover: coverFilename };
     } else {
       throw new Error(`pdftoppm did not create expected output file. Tried: ${possibleOutputs.join(', ')}`);
