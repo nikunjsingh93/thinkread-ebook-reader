@@ -305,6 +305,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const pdfDocRef = useRef(null); // PDF document reference
   const pdfPageNumRef = useRef(1); // Current PDF page number
   const pdfTotalPagesRef = useRef(0); // Total PDF pages
+  const pdfZoomRef = useRef(1.0); // PDF zoom level (default 1.0, will be set based on container)
+  const pdfDefaultScaleRef = useRef(1.0); // Default scale for fitting container
   const longPressStartRef = useRef(null);
   const longPressPreventRef = useRef(null); // Timer to start preventing default
   const dictionaryCleanupRef = useRef(null);
@@ -495,8 +497,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
-  // Function to render a PDF page
-  const renderPDFPage = async (pageNum, container) => {
+  // Function to render a PDF page with zoom support
+  const renderPDFPage = async (pageNum, container, zoomLevel = null) => {
     if (!pdfDocRef.current || !container) return;
     
     try {
@@ -514,32 +516,62 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const availableWidth = containerRect.width - paddingLeft - paddingRight;
       const availableHeight = containerRect.height - paddingTop - paddingBottom;
       
-      // Calculate scale to fit container while maintaining aspect ratio
+      // Calculate default scale to fit container while maintaining aspect ratio
       const scaleX = availableWidth / viewport.width;
       const scaleY = availableHeight / viewport.height;
-      const scale = Math.min(scaleX, scaleY, 2.0); // Cap at 2x for quality
+      const fitScale = Math.min(scaleX, scaleY);
       
-      const scaledViewport = page.getViewport({ scale });
+      // Store default scale if not already set or if resetting
+      if (!pdfDefaultScaleRef.current || zoomLevel === null || zoomLevel === 1.0) {
+        pdfDefaultScaleRef.current = fitScale;
+      }
+      
+      // Use provided zoom level or current zoom, multiplied by default scale
+      const baseScale = pdfDefaultScaleRef.current;
+      const zoom = zoomLevel !== null ? zoomLevel : pdfZoomRef.current;
+      const finalScale = baseScale * zoom;
+      
+      // Cap scale for performance (max 3x zoom)
+      const cappedScale = Math.min(finalScale, 3.0);
+      
+      // Create viewport at the logical scale (what we want to display)
+      const scaledViewport = page.getViewport({ scale: cappedScale });
+      
+      // Use device pixel ratio for crisp rendering on high-DPI displays
+      const devicePixelRatio = window.devicePixelRatio || 1;
       
       // Clear container
       container.innerHTML = '';
       
-      // Create canvas wrapper for centering
+      // Create canvas wrapper for centering and scrolling
       const wrapper = document.createElement('div');
       wrapper.className = 'pdf-page-wrapper';
       wrapper.style.display = 'flex';
       wrapper.style.justifyContent = 'center';
-      wrapper.style.alignItems = 'center';
+      wrapper.style.alignItems = 'flex-start';
       wrapper.style.width = '100%';
       wrapper.style.height = '100%';
       wrapper.style.minHeight = `${scaledViewport.height}px`;
       wrapper.style.overflow = 'auto';
       
-      // Create canvas
+      // Create canvas with high-DPI support
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      canvas.height = scaledViewport.height;
-      canvas.width = scaledViewport.width;
+      
+      // Logical display dimensions (CSS pixels)
+      const displayWidth = scaledViewport.width;
+      const displayHeight = scaledViewport.height;
+      
+      // Internal canvas resolution (for high-DPI displays)
+      canvas.width = displayWidth * devicePixelRatio;
+      canvas.height = displayHeight * devicePixelRatio;
+      
+      // CSS size (what shows on screen)
+      canvas.style.width = `${displayWidth}px`;
+      canvas.style.height = `${displayHeight}px`;
+      
+      // Scale the drawing context to match the internal resolution
+      context.scale(devicePixelRatio, devicePixelRatio);
       
       // Style canvas
       canvas.style.display = 'block';
@@ -550,13 +582,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       wrapper.appendChild(canvas);
       container.appendChild(wrapper);
       
-      // Render page
+      // Render page - viewport is already at the correct logical scale
+      // The scaled context will handle the high-DPI rendering
       const renderContext = {
         canvasContext: context,
         viewport: scaledViewport
       };
       
       await page.render(renderContext).promise;
+      
+      // Update zoom ref if zoom level was provided
+      if (zoomLevel !== null) {
+        pdfZoomRef.current = zoomLevel;
+      }
       
       // Update progress
       const totalPages = pdfTotalPagesRef.current;
@@ -615,7 +653,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             // Render initial page after a short delay to ensure container is sized
             if (hostRef.current) {
               setTimeout(() => {
-                renderPDFPage(pdfPageNumRef.current, hostRef.current).then(() => {
+                pdfZoomRef.current = 1.0; // Reset zoom on initial load
+                renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0).then(() => {
                   // Allow saving after a short delay
                   setTimeout(() => {
                     isRestoringRef.current = false;
@@ -627,9 +666,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             // No saved progress, start at page 1
             isRestoringRef.current = true;
             pdfPageNumRef.current = 1;
+            pdfZoomRef.current = 1.0; // Reset zoom on initial load
             if (hostRef.current) {
               setTimeout(() => {
-                renderPDFPage(1, hostRef.current).then(() => {
+                renderPDFPage(1, hostRef.current, 1.0).then(() => {
                   setTimeout(() => {
                     isRestoringRef.current = false;
                   }, 1000);
@@ -1932,14 +1972,38 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   };
 
+  // PDF zoom functions
+  async function zoomInPDF() {
+    if (book.type !== "pdf" || !pdfDocRef.current || !hostRef.current) return;
+    
+    const currentZoom = pdfZoomRef.current;
+    const newZoom = Math.min(currentZoom + 0.25, 3.0); // Max 3x zoom
+    pdfZoomRef.current = newZoom;
+    
+    setIsLoading(true);
+    await renderPDFPage(pdfPageNumRef.current, hostRef.current, newZoom);
+  }
+
+  async function zoomOutPDF() {
+    if (book.type !== "pdf" || !pdfDocRef.current || !hostRef.current) return;
+    
+    const currentZoom = pdfZoomRef.current;
+    const newZoom = Math.max(currentZoom - 0.25, 0.5); // Min 0.5x zoom
+    pdfZoomRef.current = newZoom;
+    
+    setIsLoading(true);
+    await renderPDFPage(pdfPageNumRef.current, hostRef.current, newZoom);
+  }
+
   async function goPrev() {
     if (book.type === "pdf") {
-      // PDF navigation
+      // PDF navigation - reset zoom to default when changing pages
       if (pdfDocRef.current && pdfPageNumRef.current > 1) {
         pdfPageNumRef.current--;
+        pdfZoomRef.current = 1.0; // Reset zoom to default
         if (hostRef.current) {
           setIsLoading(true);
-          await renderPDFPage(pdfPageNumRef.current, hostRef.current);
+          await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
         }
       }
       return;
@@ -1949,12 +2013,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   }
   async function goNext() {
     if (book.type === "pdf") {
-      // PDF navigation
+      // PDF navigation - reset zoom to default when changing pages
       if (pdfDocRef.current && pdfPageNumRef.current < pdfTotalPagesRef.current) {
         pdfPageNumRef.current++;
+        pdfZoomRef.current = 1.0; // Reset zoom to default
         if (hostRef.current) {
           setIsLoading(true);
-          await renderPDFPage(pdfPageNumRef.current, hostRef.current);
+          await renderPDFPage(pdfPageNumRef.current, hostRef.current, 1.0);
         }
       }
       return;
@@ -1980,8 +2045,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
         
         pdfPageNumRef.current = targetPage;
+        pdfZoomRef.current = 1.0; // Reset zoom when navigating by slider
         setIsLoading(true);
-        await renderPDFPage(targetPage, hostRef.current);
+        await renderPDFPage(targetPage, hostRef.current, 1.0);
         
         if (!isDragging) {
           setNavigatingToPercent(null);
@@ -3182,55 +3248,90 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
         <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
-          <button
-            className="pill"
-            onClick={toggleTTS}
-            title={isSpeaking ? "Stop reading" : "Read Chapter"}
-            style={{
-              padding: '6px 8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: isSpeaking ? 0.8 : 1
-            }}
-          >
-            {isSpeaking ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor"/>
-                <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor"/>
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor"/>
-                <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor"/>
-                <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor"/>
-                <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor"/>
-              </svg>
-            )}
-          </button>
-          <button
-            className="pill"
-            onClick={() => setTocOpen(true)}
-            title="Table of Contents"
-            style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 3C2 2.44772 2.44772 2 3 2H13C13.5523 2 14 2.44772 14 3C14 3.55228 13.5523 4 13 4H3C2.44772 4 2 3.55228 2 3Z" fill="currentColor"/>
-              <path d="M2 7C2 6.44772 2.44772 6 3 6H13C13.5523 6 14 6.44772 14 7C14 7.55228 13.5523 8 13 8H3C2.44772 8 2 7.55228 2 7Z" fill="currentColor"/>
-              <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
-            </svg>
-          </button>
-          {!isIOS() && (
-            <button
-              className="pill"
-              onClick={toggleFullscreen}
-              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              style={isFullscreen ? {opacity: 0.8} : {}}
-            >
-              ⛶
-            </button>
+          {book.type === "pdf" ? (
+            // PDF-specific controls: Zoom in/out
+            <>
+              <button
+                className="pill"
+                onClick={zoomOutPDF}
+                title="Zoom Out"
+                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px'}}
+              >
+                −
+              </button>
+              <button
+                className="pill"
+                onClick={zoomInPDF}
+                title="Zoom In"
+                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px'}}
+              >
+                +
+              </button>
+              {!isIOS() && (
+                <button
+                  className="pill"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                  style={isFullscreen ? {opacity: 0.8} : {}}
+                >
+                  ⛶
+                </button>
+              )}
+            </>
+          ) : (
+            // EPUB-specific controls: TTS, TOC, Settings
+            <>
+              <button
+                className="pill"
+                onClick={toggleTTS}
+                title={isSpeaking ? "Stop reading" : "Read Chapter"}
+                style={{
+                  padding: '6px 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: isSpeaking ? 0.8 : 1
+                }}
+              >
+                {isSpeaking ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor"/>
+                    <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor"/>
+                    <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor"/>
+                    <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor"/>
+                    <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor"/>
+                  </svg>
+                )}
+              </button>
+              <button
+                className="pill"
+                onClick={() => setTocOpen(true)}
+                title="Table of Contents"
+                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 3C2 2.44772 2.44772 2 3 2H13C13.5523 2 14 2.44772 14 3C14 3.55228 13.5523 4 13 4H3C2.44772 4 2 3.55228 2 3Z" fill="currentColor"/>
+                  <path d="M2 7C2 6.44772 2.44772 6 3 6H13C13.5523 6 14 6.44772 14 7C14 7.55228 13.5523 8 13 8H3C2.44772 8 2 7.55228 2 7Z" fill="currentColor"/>
+                  <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
+                </svg>
+              </button>
+              {!isIOS() && (
+                <button
+                  className="pill"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                  style={isFullscreen ? {opacity: 0.8} : {}}
+                >
+                  ⛶
+                </button>
+              )}
+              <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
+            </>
           )}
-          <button className="pill" onClick={() => setDrawerOpen(true)}>Aa</button>
         </div>
       </div>
 
@@ -3346,15 +3447,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         </div>
       )}
 
-      <SettingsDrawer
-        open={drawerOpen}
-        prefs={prefs}
-        onChange={onPrefsChange}
-        onClose={() => setDrawerOpen(false)}
-      />
+      {book.type !== "pdf" && (
+        <SettingsDrawer
+          open={drawerOpen}
+          prefs={prefs}
+          onChange={onPrefsChange}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
 
-      {/* TOC Sidebar */}
-      {tocOpen && (
+      {/* TOC Sidebar - only for EPUB */}
+      {tocOpen && book.type !== "pdf" && (
         <div className="drawerBackdrop" onClick={() => setTocOpen(false)}>
           <div className="drawer" onClick={(e) => e.stopPropagation()}>
             <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
