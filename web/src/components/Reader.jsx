@@ -11,6 +11,17 @@ import { cacheBook } from "../lib/serviceWorker.js";
 // Configure PDF.js worker
 // Use local worker file for Docker compatibility
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+pdfjsLib.GlobalWorkerOptions.imageResourcesPath = '/image_decoders/';
+
+// Configure CMaps and Standard Fonts path
+// This is needed for many PDFs to render text correctly
+const PDF_ASSETS_CONFIG = {
+  cMapUrl: '/cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: '/standard_fonts/',
+  wasmUrl: '/wasm/',
+  imageResourcesPath: '/image_decoders/',
+};
 
 function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
@@ -24,7 +35,7 @@ function formatLanguageName(langCode) {
 // Detect iOS devices
 function isIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
 }
 
 // Selection API approach to extract word at coordinates
@@ -323,6 +334,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [ttsLoading, setTtsLoading] = useState(false);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
   const savedAudioPositionRef = useRef(0); // Store position to resume from
+  const pdfObserverRef = useRef(null); // Observer for lazy loading PDF pages in vertical mode
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
@@ -396,7 +408,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
       });
 
-        // Inject font CSS into the epub iframe if needed (for custom fonts)
+      // Inject font CSS into the epub iframe if needed (for custom fonts)
       if (needsFontLoading && fontFilename) {
         // Wait for the rendition to be ready, then inject font-face CSS
         rendition.hooks.content.register(async (contents) => {
@@ -427,11 +439,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           e.stopImmediatePropagation();
           return false;
         };
-        
+
         // Add context menu prevention at multiple levels with capture phase
         contents.document.addEventListener('contextmenu', preventContextMenu, true);
         contents.document.body.addEventListener('contextmenu', preventContextMenu, true);
-        
+
         // Prevent long press context menu on touch devices
         let touchTimer = null;
         const handleTouchStart = (e) => {
@@ -442,26 +454,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             }
           }, 500);
         };
-        
+
         const handleTouchEnd = () => {
           if (touchTimer) {
             clearTimeout(touchTimer);
             touchTimer = null;
           }
         };
-        
+
         const handleTouchMove = () => {
           if (touchTimer) {
             clearTimeout(touchTimer);
             touchTimer = null;
           }
         };
-        
+
         // Add touch event listeners with capture phase
         contents.document.addEventListener('touchstart', handleTouchStart, { passive: false, capture: true });
         contents.document.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
         contents.document.addEventListener('touchmove', handleTouchMove, { passive: true, capture: true });
-        
+
         // Add comprehensive CSS to prevent all selection and callout behaviors
         // Also prevent images from being split across pages
         const style = contents.document.createElement('style');
@@ -501,11 +513,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   // Function to render a PDF page with zoom support
   const renderPDFPage = async (pageNum, container, zoomLevel = null) => {
     if (!pdfDocRef.current || !container) return;
-    
+
     try {
       const page = await pdfDocRef.current.getPage(pageNum);
       const viewport = page.getViewport({ scale: 1.0 });
-      
+
       // Get container dimensions (accounting for padding)
       const containerRect = container.getBoundingClientRect();
       const computedStyle = window.getComputedStyle(container);
@@ -513,37 +525,37 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
       const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
       const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
-      
+
       const availableWidth = containerRect.width - paddingLeft - paddingRight;
       const availableHeight = containerRect.height - paddingTop - paddingBottom;
-      
+
       // Calculate default scale to fit container while maintaining aspect ratio
       const scaleX = availableWidth / viewport.width;
       const scaleY = availableHeight / viewport.height;
       const fitScale = Math.min(scaleX, scaleY);
-      
+
       // Store default scale if not already set or if resetting
       if (!pdfDefaultScaleRef.current || zoomLevel === null || zoomLevel === 1.0) {
         pdfDefaultScaleRef.current = fitScale;
       }
-      
+
       // Use provided zoom level or current zoom, multiplied by default scale
       const baseScale = pdfDefaultScaleRef.current;
       const zoom = zoomLevel !== null ? zoomLevel : pdfZoomRef.current;
       const finalScale = baseScale * zoom;
-      
+
       // Cap scale for performance (max 3x zoom)
       const cappedScale = Math.min(finalScale, 3.0);
-      
+
       // Create viewport at the logical scale (what we want to display)
       const scaledViewport = page.getViewport({ scale: cappedScale });
-      
+
       // Use device pixel ratio for crisp rendering on high-DPI displays
       const devicePixelRatio = window.devicePixelRatio || 1;
-      
+
       // Clear container
       container.innerHTML = '';
-      
+
       // Create canvas wrapper for centering and scrolling
       const wrapper = document.createElement('div');
       wrapper.className = 'pdf-page-wrapper';
@@ -554,56 +566,56 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       wrapper.style.height = '100%';
       wrapper.style.minHeight = `${scaledViewport.height}px`;
       wrapper.style.overflow = 'auto';
-      
+
       // Create canvas with high-DPI support
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      
+
       // Logical display dimensions (CSS pixels)
       const displayWidth = scaledViewport.width;
       const displayHeight = scaledViewport.height;
-      
+
       // Internal canvas resolution (for high-DPI displays)
       canvas.width = displayWidth * devicePixelRatio;
       canvas.height = displayHeight * devicePixelRatio;
-      
+
       // CSS size (what shows on screen)
       canvas.style.width = `${displayWidth}px`;
       canvas.style.height = `${displayHeight}px`;
-      
+
       // Scale the drawing context to match the internal resolution
       context.scale(devicePixelRatio, devicePixelRatio);
-      
+
       // Style canvas
       canvas.style.display = 'block';
       canvas.style.maxWidth = '100%';
       canvas.style.height = 'auto';
       canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-      
+
       wrapper.appendChild(canvas);
       container.appendChild(wrapper);
-      
+
       // Render page - viewport is already at the correct logical scale
       // The scaled context will handle the high-DPI rendering
       const renderContext = {
         canvasContext: context,
         viewport: scaledViewport
       };
-      
+
       await page.render(renderContext).promise;
-      
+
       // Update zoom ref if zoom level was provided
       if (zoomLevel !== null) {
         pdfZoomRef.current = zoomLevel;
       }
-      
+
       // Update progress
       const totalPages = pdfTotalPagesRef.current;
       const currentPercent = totalPages > 0 ? (pageNum / totalPages) : 0;
       setPercent(currentPercent);
       setLocationText(`Page ${pageNum} of ${totalPages}`);
       setLastPageInfo({ page: pageNum, percent: Math.round(currentPercent * 100) });
-      
+
       // Save progress (but don't save if we're restoring position)
       if (!isRestoringRef.current) {
         const currentBookId = currentBookIdRef.current;
@@ -620,7 +632,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           });
         }
       }
-      
+
       setIsLoading(false);
     } catch (err) {
       console.error('Error rendering PDF page:', err);
@@ -629,15 +641,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   };
 
-  // Function to render all PDF pages in vertical scrolling mode
+  // Function to render all PDF pages in vertical scrolling mode with lazy loading
   const renderPDFVertical = async (pdf, container, startPage = 1) => {
     if (!pdf || !container) return;
-    
+
+    // Cleanup previous observer if any
+    if (pdfObserverRef.current) {
+      pdfObserverRef.current.disconnect();
+      pdfObserverRef.current = null;
+    }
+
     // Store toggleUI reference for use in event handlers
     const toggleUIHandler = () => {
       setUiVisible(v => !v);
     };
-    
+
     try {
       const totalPages = pdf.numPages;
       if (totalPages === 0) {
@@ -645,18 +663,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         return;
       }
 
-      // Get container dimensions - in vertical mode, padding should be 0, so use full width
+      // Get container dimensions
       const containerRect = container.getBoundingClientRect();
-      const computedStyle = window.getComputedStyle(container);
-      const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
-      const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
-      
-      // In vertical mode, use full container width (padding is 0)
-      const availableWidth = Math.max(containerRect.width - paddingLeft - paddingRight, containerRect.width);
-      
+      const availableWidth = containerRect.width;
+
       // Clear container
       container.innerHTML = '';
-      
+
       // Create a scrollable container that fills the entire viewport
       const scrollContainer = document.createElement('div');
       scrollContainer.className = 'pdf-vertical-scroll-container';
@@ -669,7 +682,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       scrollContainer.style.left = '0';
       scrollContainer.style.right = '0';
       scrollContainer.style.bottom = '0';
-      
+
       // Create wrapper for all pages
       const pagesWrapper = document.createElement('div');
       pagesWrapper.style.width = '100%';
@@ -678,129 +691,143 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       pagesWrapper.style.alignItems = 'center';
       pagesWrapper.style.padding = '0';
       pagesWrapper.style.margin = '0';
-      
+
       const devicePixelRatio = window.devicePixelRatio || 1;
-      let totalHeight = 0;
-      
-      // Render all pages
+
+      // Get the first page to estimate dimensions for all placeholders
+      // This is much faster than loading all pages
+      const firstPage = await pdf.getPage(1);
+      const firstViewport = firstPage.getViewport({ scale: 1.0 });
+      const firstScale = availableWidth / firstViewport.width;
+      const estimatedPageHeight = firstViewport.height * firstScale;
+
+      const renderedPages = new Set();
+
+      // Setup IntersectionObserver for lazy rendering
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const pageNum = parseInt(entry.target.getAttribute('data-page-number'));
+            if (!renderedPages.has(pageNum)) {
+              renderedPages.add(pageNum);
+              renderLazyPage(pdf, pageNum, entry.target, availableWidth, devicePixelRatio);
+            }
+          }
+        });
+      }, {
+        root: scrollContainer,
+        rootMargin: '1000px', // Pre-render pages within 1000px of viewport
+        threshold: 0
+      });
+
+      pdfObserverRef.current = observer;
+
+      const renderLazyPage = async (pdfDoc, pageNum, pageWrapper, width, dpr) => {
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.0 });
+          const scale = width / viewport.width;
+          const scaledViewport = page.getViewport({ scale });
+
+          // Create canvas
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+
+          const displayWidth = scaledViewport.width;
+          const displayHeight = scaledViewport.height;
+
+          canvas.width = displayWidth * dpr;
+          canvas.height = displayHeight * dpr;
+          canvas.style.width = `${displayWidth}px`;
+          canvas.style.height = `${displayHeight}px`;
+          canvas.style.display = 'block';
+          canvas.style.maxWidth = '100%';
+          canvas.style.height = 'auto';
+          canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
+
+          context.scale(dpr, dpr);
+
+          const renderContext = {
+            canvasContext: context,
+            viewport: scaledViewport
+          };
+
+          await page.render(renderContext).promise;
+
+          // Clear placeholder content and add canvas
+          pageWrapper.innerHTML = '';
+          pageWrapper.appendChild(canvas);
+          // Adjust height to actual rendered height to handle different page sizes
+          pageWrapper.style.height = 'auto';
+          pageWrapper.style.minHeight = `${displayHeight}px`;
+        } catch (err) {
+          console.error(`Error rendering page ${pageNum}:`, err);
+        }
+      };
+
+      // Create placeholders for all pages
       for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 1.0 });
-        
-        // Calculate scale to fit width to available width
-        const scale = availableWidth / viewport.width;
-        const scaledViewport = page.getViewport({ scale });
-        
-        // Create page wrapper
         const pageWrapper = document.createElement('div');
         pageWrapper.className = 'pdf-page-wrapper-vertical';
+        pageWrapper.setAttribute('data-page-number', pageNum);
         pageWrapper.style.width = '100%';
+        pageWrapper.style.minHeight = `${estimatedPageHeight}px`;
         pageWrapper.style.display = 'flex';
         pageWrapper.style.justifyContent = 'center';
         pageWrapper.style.alignItems = 'flex-start';
         pageWrapper.style.padding = '0';
         pageWrapper.style.margin = '0';
-        pageWrapper.style.position = 'relative';
-        
-        // Create canvas with high-DPI support
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        
-        // Logical display dimensions (CSS pixels)
-        const displayWidth = scaledViewport.width;
-        const displayHeight = scaledViewport.height;
-        
-        // Internal canvas resolution (for high-DPI displays)
-        canvas.width = displayWidth * devicePixelRatio;
-        canvas.height = displayHeight * devicePixelRatio;
-        
-        // CSS size (what shows on screen)
-        canvas.style.width = `${displayWidth}px`;
-        canvas.style.height = `${displayHeight}px`;
-        canvas.style.display = 'block';
-        canvas.style.maxWidth = '100%';
-        canvas.style.height = 'auto';
-        canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
-        
-        // Scale the drawing context to match the internal resolution
-        context.scale(devicePixelRatio, devicePixelRatio);
-        
-        pageWrapper.appendChild(canvas);
+        pageWrapper.style.backgroundColor = '#f0f0f0'; // Light gray placeholder
+
+        // Add a simple loading indicator in the placeholder
+        const loader = document.createElement('div');
+        loader.textContent = `Page ${pageNum}`;
+        loader.style.padding = '20px';
+        loader.style.color = '#999';
+        pageWrapper.appendChild(loader);
+
         pagesWrapper.appendChild(pageWrapper);
-        
-        // Render page
-        const renderContext = {
-          canvasContext: context,
-          viewport: scaledViewport
-        };
-        
-        await page.render(renderContext).promise;
-        totalHeight += displayHeight;
+        observer.observe(pageWrapper);
       }
-      
+
       scrollContainer.appendChild(pagesWrapper);
       container.appendChild(scrollContainer);
-      
+
       // Scroll to saved position if available and update initial progress
       const savedProgress = savedProgressRef.current;
-      
+
       if (savedProgress && savedProgress.page) {
         // Update initial progress and page number from saved progress
         pdfPageNumRef.current = Math.max(1, Math.min(savedProgress.page, totalPages));
-        
-        // Set initial percentage (ensure it's in 0-1 range)
+
+        // Set initial percentage
         if (savedProgress.percent !== undefined && savedProgress.percent !== null) {
-          // Handle both 0-1 and 0-100 ranges
           let savedPercent = savedProgress.percent;
-          if (savedPercent > 1) {
-            savedPercent = savedPercent / 100; // Convert from 0-100 to 0-1
-          }
+          if (savedPercent > 1) savedPercent = savedPercent / 100;
           setPercent(Math.max(0, Math.min(1, savedPercent)));
         } else {
-          // Calculate percent from page number if percent not available
           const calculatedPercent = (savedProgress.page - 1) / totalPages;
           setPercent(calculatedPercent);
         }
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
-        
+
         // Scroll to saved position
         const scrollToY = savedProgress.scrollTop || 0;
-        
+
         if (scrollToY === 0 && savedProgress.page > 1) {
-          // Calculate scroll position for the target page if scrollTop not available
           setTimeout(() => {
             let calculatedScroll = 0;
             for (let i = 0; i < savedProgress.page - 1 && i < pagesWrapper.children.length; i++) {
-              const pageWrapper = pagesWrapper.children[i];
-              if (pageWrapper && pageWrapper.children[0]) {
-                calculatedScroll += pageWrapper.children[0].offsetHeight || 0;
-              }
+              calculatedScroll += pagesWrapper.children[i].offsetHeight || 0;
             }
             scrollContainer.scrollTop = calculatedScroll;
-            
-            // Update progress after scrolling
-            const scrollHeight = scrollContainer.scrollHeight;
-            const clientHeight = scrollContainer.clientHeight;
-            const maxScroll = Math.max(0, scrollHeight - clientHeight);
-            if (maxScroll > 0) {
-              const percent = Math.min(1, Math.max(0, calculatedScroll / maxScroll));
-              setPercent(percent);
-            }
           }, 300);
         } else if (scrollToY > 0) {
-          // Use saved scrollTop - scroll after rendering is complete
           setTimeout(() => {
             const scrollHeight = scrollContainer.scrollHeight;
             const clientHeight = scrollContainer.clientHeight;
             const maxScroll = Math.max(0, scrollHeight - clientHeight);
-            const finalScrollTo = Math.min(scrollToY, maxScroll);
-            scrollContainer.scrollTop = finalScrollTo;
-            
-            // Update progress after scrolling
-            if (maxScroll > 0) {
-              const percent = Math.min(1, Math.max(0, finalScrollTo / maxScroll));
-              setPercent(percent);
-            }
+            scrollContainer.scrollTop = Math.min(scrollToY, maxScroll);
           }, 300);
         }
       } else {
@@ -809,30 +836,30 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setPercent(0);
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
       }
-      
+
       // Track scroll position for progress saving and handle UI toggle on tap
       let scrollTimeout = null;
       let tapStartY = 0;
       let tapStartTime = 0;
       let hasScrolled = false;
-      
+
       // Simple tap detection for UI toggle
       const handleTapStart = (clientY) => {
         tapStartY = scrollContainer.scrollTop;
         tapStartTime = Date.now();
         hasScrolled = false;
       };
-      
+
       const handleTapEnd = (clientX, clientY) => {
         const scrollDelta = Math.abs(scrollContainer.scrollTop - tapStartY);
         const timeDelta = Date.now() - tapStartTime;
-        
+
         // If minimal scrolling (< 10px) and quick tap (< 300ms), toggle UI
         if (scrollDelta < 10 && timeDelta < 300 && !hasScrolled) {
           // Only toggle if tap is in middle area (30% to 70% of width)
           const viewportWidth = window.innerWidth;
           const relativePercent = clientX / viewportWidth;
-          
+
           if (relativePercent >= 0.3 && relativePercent <= 0.7) {
             toggleUIHandler();
             return true; // Indicate tap was handled
@@ -840,19 +867,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
         return false;
       };
-      
+
       // Touch events
       scrollContainer.addEventListener('touchstart', (e) => {
         handleTapStart(e.touches[0]?.clientY || 0);
       }, { passive: true });
-      
+
       scrollContainer.addEventListener('touchmove', () => {
         const currentScroll = scrollContainer.scrollTop;
         if (Math.abs(currentScroll - tapStartY) > 5) {
           hasScrolled = true;
         }
       }, { passive: true });
-      
+
       scrollContainer.addEventListener('touchend', (e) => {
         const touch = e.changedTouches[0];
         if (touch) {
@@ -860,19 +887,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
         hasScrolled = false;
       }, { passive: true });
-      
+
       // Mouse events for desktop
       scrollContainer.addEventListener('mousedown', (e) => {
         handleTapStart(e.clientY);
       });
-      
+
       scrollContainer.addEventListener('mousemove', () => {
         const currentScroll = scrollContainer.scrollTop;
         if (Math.abs(currentScroll - tapStartY) > 5) {
           hasScrolled = true;
         }
       });
-      
+
       scrollContainer.addEventListener('click', (e) => {
         if (handleTapEnd(e.clientX, e.clientY)) {
           e.preventDefault();
@@ -880,59 +907,59 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
         hasScrolled = false;
       });
-      
+
       scrollContainer.addEventListener('scroll', () => {
         // Clear previous timeout
         if (scrollTimeout) clearTimeout(scrollTimeout);
-        
+
         // Debounce scroll tracking
         scrollTimeout = setTimeout(() => {
           const scrollTop = scrollContainer.scrollTop;
           const scrollHeight = scrollContainer.scrollHeight;
           const clientHeight = scrollContainer.clientHeight;
-          
+
           // Calculate which page is currently visible based on scroll position
           let currentPage = 1;
           let accumulatedHeight = 0;
-          
+
           // Find which page the user is currently viewing
           for (let i = 0; i < pagesWrapper.children.length; i++) {
             const pageWrapper = pagesWrapper.children[i];
-            const pageHeight = pageWrapper.children[0]?.offsetHeight || 0;
+            const pageHeight = pageWrapper.offsetHeight || 0;
             const pageBottom = accumulatedHeight + pageHeight;
-            
+
             // Check if scroll position is within this page's bounds
             // Consider the page visible if we're in the top portion of the viewport
             const viewportTop = scrollTop;
             const viewportCenter = scrollTop + (clientHeight / 2);
-            
+
             // If viewport center is within this page, this is the current page
             if (viewportCenter >= accumulatedHeight && viewportCenter < pageBottom) {
               currentPage = i + 1;
               break;
             }
-            
+
             // If we haven't reached this page yet, update accumulated height
             accumulatedHeight = pageBottom;
-            
+
             // If we're past all pages, set to last page
             if (scrollTop >= accumulatedHeight) {
               currentPage = i + 1;
             }
           }
-          
+
           // Ensure current page is within valid range
           currentPage = Math.max(1, Math.min(currentPage, totalPages));
           pdfPageNumRef.current = currentPage;
-          
+
           // Calculate progress percentage (0-1 range, then convert to 0-100 for display)
           const maxScroll = scrollHeight - clientHeight;
           const percent = maxScroll > 0 ? Math.min(1, Math.max(0, scrollTop / maxScroll)) : 0;
-          
+
           // Update state - percent should be 0-1, but UI displays as 0-100
           setPercent(percent);
           setLocationText(`Page ${currentPage} of ${totalPages}`);
-          
+
           // Save progress (debounced)
           if (!isRestoringRef.current && currentBookIdRef.current) {
             const progressToSave = {
@@ -949,7 +976,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         }, 100); // Reduced debounce for more responsive updates
       });
-      
+
       setIsLoading(false);
     } catch (err) {
       console.error('Error rendering PDF in vertical mode:', err);
@@ -963,13 +990,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Handle PDF files using PDF.js
       setIsLoading(true);
       currentBookIdRef.current = book.id;
-      
+
       // Load PDF document
-      pdfjsLib.getDocument(fileUrl).promise
+      pdfjsLib.getDocument({
+        url: fileUrl,
+        ...PDF_ASSETS_CONFIG
+      }).promise
         .then((pdf) => {
           pdfDocRef.current = pdf;
           pdfTotalPagesRef.current = pdf.numPages;
-          
+
           // Load saved progress
           loadProgress(book.id).then((progressData) => {
             isRestoringRef.current = true;
@@ -979,7 +1009,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             } else {
               pdfPageNumRef.current = 1;
             }
-            
+
             // Render PDF after a short delay to ensure container is sized
             if (hostRef.current) {
               setTimeout(() => {
@@ -1032,7 +1062,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           setIsLoading(false);
           onToast?.("Failed to load PDF. Please try again.");
         });
-      
+
       return () => {
         // Cleanup: clear PDF on unmount
         pdfDocRef.current = null;
@@ -1067,7 +1097,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     // Declare variables in proper scope
     // Use bookmark CFI if provided, otherwise will be set from saved progress
     let startAt = bookmarkCfi || undefined;
-    
+
     // Track current book ID
     currentBookIdRef.current = book.id;
 
@@ -1154,7 +1184,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               if (epub.locations?.length() && currentCfi) {
                 currentPercent = epub.locations.percentageFromCfi(currentCfi) || 0;
               }
-            } catch {}
+            } catch { }
 
             const progressToSave = {
               ...savedProgressRef.current,
@@ -1255,10 +1285,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // Display after a small delay to ensure theme is registered
         setTimeout(() => {
           const saved = savedProgressRef.current;
-          
+
           // Set flag to prevent saving progress while restoring
           isRestoringRef.current = true;
-          
+
           if (startAt) {
             rendition.display(startAt).then(() => {
               setIsLoading(false);
@@ -1269,27 +1299,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             }).catch((err) => {
               console.warn("Failed to restore position, trying fallback methods", err);
 
-                // Try to restore by percentage if we have it
-                if (saved?.percent && saved.percent > 0 && epub.locations?.length()) {
-                  setTimeout(() => {
-                    try {
-                      const cfiFromPercent = epub.locations.cfiFromPercentage(saved.percent);
-                      if (cfiFromPercent) {
-                        rendition.display(cfiFromPercent).then(() => {
-                          setIsLoading(false);
-                          setTimeout(() => {
-                            isRestoringRef.current = false;
-                          }, 1000);
-                        }).catch(() => {
-                          rendition.display().then(() => {
-                            setIsLoading(false);
-                            isRestoringRef.current = false;
-                          }).catch(() => {
-                            setIsLoading(false);
-                            isRestoringRef.current = false;
-                          });
-                        });
-                      } else {
+              // Try to restore by percentage if we have it
+              if (saved?.percent && saved.percent > 0 && epub.locations?.length()) {
+                setTimeout(() => {
+                  try {
+                    const cfiFromPercent = epub.locations.cfiFromPercentage(saved.percent);
+                    if (cfiFromPercent) {
+                      rendition.display(cfiFromPercent).then(() => {
+                        setIsLoading(false);
+                        setTimeout(() => {
+                          isRestoringRef.current = false;
+                        }, 1000);
+                      }).catch(() => {
                         rendition.display().then(() => {
                           setIsLoading(false);
                           isRestoringRef.current = false;
@@ -1297,8 +1318,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                           setIsLoading(false);
                           isRestoringRef.current = false;
                         });
-                      }
-                    } catch {
+                      });
+                    } else {
                       rendition.display().then(() => {
                         setIsLoading(false);
                         isRestoringRef.current = false;
@@ -1307,17 +1328,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                         isRestoringRef.current = false;
                       });
                     }
-                  }, 500);
-                } else {
-                  rendition.display().then(() => {
-                    setIsLoading(false);
-                    isRestoringRef.current = false;
-                  }).catch(() => {
-                    setIsLoading(false);
-                    isRestoringRef.current = false;
-                  });
-                }
-              });
+                  } catch {
+                    rendition.display().then(() => {
+                      setIsLoading(false);
+                      isRestoringRef.current = false;
+                    }).catch(() => {
+                      setIsLoading(false);
+                      isRestoringRef.current = false;
+                    });
+                  }
+                }, 500);
+              } else {
+                rendition.display().then(() => {
+                  setIsLoading(false);
+                  isRestoringRef.current = false;
+                }).catch(() => {
+                  setIsLoading(false);
+                  isRestoringRef.current = false;
+                });
+              }
+            });
           } else {
             rendition.display().then(() => {
               setIsLoading(false);
@@ -1354,40 +1384,40 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       let p = 0;
       let currentPage = 0;
       let totalPages = 0;
-      
+
       // Stop TTS when page changes
       if (isSpeaking && audioRef.current) {
         stopTTS();
       }
-      
+
       // Update current chapter name
       if (toc.length > 0) {
         try {
           // Try to get href from location object first
           let currentHref = null;
-          
+
           if (loc) {
-            currentHref = loc?.start?.href || 
-                         loc?.start?.displayed?.href || 
-                         loc?.start?.loc?.href ||
-                         loc?.displayed?.href ||
-                         loc?.href;
+            currentHref = loc?.start?.href ||
+              loc?.start?.displayed?.href ||
+              loc?.start?.loc?.href ||
+              loc?.displayed?.href ||
+              loc?.href;
           }
-          
+
           // Fallback: try to get from rendition's current location
           if (!currentHref && renditionRef.current) {
             try {
               const currentLocation = renditionRef.current.currentLocation();
               if (currentLocation) {
-                currentHref = currentLocation.start?.href || 
-                             currentLocation.start?.displayed?.href ||
-                             currentLocation.href;
+                currentHref = currentLocation.start?.href ||
+                  currentLocation.start?.displayed?.href ||
+                  currentLocation.href;
               }
             } catch (e) {
               // Current location not available yet
             }
           }
-          
+
           if (currentHref) {
             // Normalize href for comparison - extract just the filename/base name
             const normalizeHref = (href) => {
@@ -1399,9 +1429,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               const filename = parts[parts.length - 1];
               return filename || normalized;
             };
-            
+
             const currentHrefNormalized = normalizeHref(currentHref);
-            
+
             // Find matching TOC item
             let matchingChapter = toc.find(item => {
               const itemHrefNormalized = normalizeHref(item.href);
@@ -1410,28 +1440,28 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               // Check if filenames match (case-insensitive)
               if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
               // Partial match - check if one contains the other
-              return itemHrefNormalized.includes(currentHrefNormalized) || 
-                     currentHrefNormalized.includes(itemHrefNormalized);
+              return itemHrefNormalized.includes(currentHrefNormalized) ||
+                currentHrefNormalized.includes(itemHrefNormalized);
             });
-            
+
             // If no direct match, try matching by full href path
             if (!matchingChapter) {
               const currentFullHref = currentHref.split('#')[0].split('?')[0];
               matchingChapter = toc.find(item => {
                 const itemFullHref = item.href.split('#')[0].split('?')[0];
                 return currentFullHref === itemFullHref ||
-                       currentFullHref.endsWith(itemFullHref) ||
-                       itemFullHref.endsWith(currentFullHref);
+                  currentFullHref.endsWith(itemFullHref) ||
+                  itemFullHref.endsWith(currentFullHref);
               });
             }
-            
+
             // If still no match, try finding by position in TOC (closest previous chapter)
             if (!matchingChapter && epubBookRef.current && cfi) {
               try {
                 // Find the chapter that's closest to current position
                 let bestMatch = null;
                 let bestIndex = -1;
-                
+
                 for (let i = 0; i < toc.length; i++) {
                   const item = toc[i];
                   try {
@@ -1447,7 +1477,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                     // Skip items that can't be converted
                   }
                 }
-                
+
                 if (bestMatch) {
                   matchingChapter = bestMatch;
                 }
@@ -1455,7 +1485,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 // CFI comparison failed
               }
             }
-            
+
             if (matchingChapter) {
               setCurrentChapterName(matchingChapter.label);
             } else {
@@ -1474,7 +1504,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // No TOC available yet
         setCurrentChapterName('Reading');
       }
-      
+
       try {
         if (epub.locations?.length()) {
           p = epub.locations.percentageFromCfi(cfi) || 0;
@@ -1483,8 +1513,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           currentPage = locationIndex > 0 ? locationIndex : 1;
           totalPages = epub.locations.length();
         }
-      } catch {}
-      
+      } catch { }
+
       setPercent(p);
       // Show "Loading..." until locations are ready, then show page numbers
       const pageText = locationsReadyRef.current && totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : "Loading...";
@@ -1505,7 +1535,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
       // Get current saved progress and preserve locations
       const saved = savedProgressRef.current || {};
-      
+
       // Get current locations from epub if available, otherwise use saved ones
       let locationsToSave = saved.locations;
       try {
@@ -1526,7 +1556,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         locations: locationsToSave,
         updatedAt: Date.now()
       };
-      
+
       // Preserve any other fields from saved progress
       if (saved && typeof saved === 'object') {
         Object.keys(saved).forEach(key => {
@@ -1535,16 +1565,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         });
       }
-      
+
       // Update the ref so future saves have the latest data
       savedProgressRef.current = progressToSave;
-      
+
       // Get the current book ID from ref to ensure we're saving to the right book
       const currentBookId = currentBookIdRef.current;
       if (!currentBookId) {
         return;
       }
-      
+
       // Save progress (fire and forget, but log errors)
       saveProgress(currentBookId, progressToSave).catch((err) => {
         console.error(`Failed to save progress for book ${currentBookId}:`, err);
@@ -1565,11 +1595,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             if (epub.locations?.length()) {
               p = epub.locations.percentageFromCfi(cfi) || 0;
             }
-          } catch {}
-          
+          } catch { }
+
           // Get current saved progress and preserve locations
           const saved = savedProgressRef.current || {};
-          
+
           // Get current locations from epub if available, otherwise use saved ones
           let locationsToSave = saved.locations;
           try {
@@ -1582,7 +1612,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           } catch (err) {
             console.warn('Failed to get current locations:', err);
           }
-          
+
           // Save progress while preserving locations
           const progressToSave = {
             cfi,
@@ -1590,7 +1620,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             locations: locationsToSave,
             updatedAt: Date.now()
           };
-          
+
           // Preserve any other fields from saved progress
           if (saved && typeof saved === 'object') {
             Object.keys(saved).forEach(key => {
@@ -1599,10 +1629,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               }
             });
           }
-          
+
           // Update the ref so future saves have the latest data
           savedProgressRef.current = progressToSave;
-          
+
           // Get the current book ID from ref
           const currentBookId = currentBookIdRef.current;
           if (currentBookId) {
@@ -1642,22 +1672,27 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       destroyed = true;
       clearInterval(progressInterval);
       clearLastPositionTimer();
-      
+
       // Clear long press timer
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
       }
-      
+
+      if (pdfObserverRef.current) {
+        pdfObserverRef.current.disconnect();
+        pdfObserverRef.current = null;
+      }
+
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("keydown", onKeyDown);
 
       // Save progress when component unmounts
       saveCurrentProgress();
 
-      try { rendition?.off("relocated", onRelocated); } catch {}
-      try { rendition?.destroy(); } catch {}
-      try { epub?.destroy(); } catch {}
+      try { rendition?.off("relocated", onRelocated); } catch { }
+      try { rendition?.destroy(); } catch { }
+      try { epub?.destroy(); } catch { }
       renditionRef.current = null;
       epubBookRef.current = null;
     };
@@ -1675,7 +1710,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
     // Get current location before applying prefs - use actual current location
     let currentCfi = r.location?.start?.cfi;
-    
+
     // If no current location yet, the book might not be loaded - skip re-display
     if (!currentCfi) {
       // Still apply the prefs, but don't re-display (book will display when ready)
@@ -1698,7 +1733,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           setTimeout(() => {
             r.resize();
             if (currentCfi) {
-              r.display(currentCfi).catch(() => {});
+              r.display(currentCfi).catch(() => { });
             }
           }, 50);
         } catch (err) {
@@ -1777,12 +1812,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               try {
                 const loc = r.location?.start?.cfi;
                 if (loc) {
-                  r.display(loc).catch(() => {});
+                  r.display(loc).catch(() => { });
                 } else {
                   // If no location, don't reset - just try next/prev to trigger re-render
-                  r.next().catch(() => r.prev().catch(() => {}));
+                  r.next().catch(() => r.prev().catch(() => { }));
                 }
-              } catch {}
+              } catch { }
             });
           } else {
             // If no location, don't reset to first page - just apply prefs
@@ -1800,11 +1835,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     loadDictionary().then(() => {
       console.log('[Dictionary] Dictionary loaded, setting up feature');
     });
-    
+
     // Wait for nav zones to be rendered
     const timer = setTimeout(() => {
       console.log('[Dictionary] Setting up dictionary feature');
-      
+
       // Add event listeners to the navigation zones (since they're on top of the iframe)
       // NavZones are in the readerStage, which is the parent of hostRef
       const readerStage = hostRef.current?.parentElement;
@@ -1861,7 +1896,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           handleLongPress(e);
         }, longPressDelay);
       };
-      
+
       const handleContextMenu = (e) => {
         // Always prevent context menu on navigation zones
         // We don't want context menus interfering with page navigation or dictionary lookups
@@ -1869,7 +1904,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         e.stopPropagation();
         return false;
       };
-      
+
       const handleLongPressEnd = (e) => {
         // Clear both timers if the press ends before completion
         if (longPressTimerRef.current) {
@@ -1882,7 +1917,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
         longPressStartRef.current = null;
       };
-      
+
       const handleLongPressMove = (e) => {
         // If the user moves too much, cancel the long press
         if (longPressStartRef.current) {
@@ -1890,7 +1925,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const currentY = e.clientY || (e.touches && e.touches[0].clientY);
           const deltaX = Math.abs(currentX - longPressStartRef.current.x);
           const deltaY = Math.abs(currentY - longPressStartRef.current.y);
-          
+
           // If movement is more than 10px, cancel long press
           if (deltaX > 10 || deltaY > 10) {
             if (longPressTimerRef.current) {
@@ -1905,7 +1940,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         }
       };
-      
+
       const handleClick = (e) => {
         console.log('[Dictionary] Click event, longPressTriggered:', longPressTriggeredRef.current);
         // Prevent navigation if long press was triggered
@@ -1917,7 +1952,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           return false;
         }
       };
-      
+
       const handleLongPress = (e) => {
         console.log('[Dictionary] Long press triggered at:', longPressStartRef.current);
         // Mark that long press was triggered
@@ -1963,7 +1998,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
         // Check if coordinates are within iframe bounds
         const withinBounds = relativeX >= 0 && relativeX <= iframeRect.width &&
-                           relativeY >= 0 && relativeY <= iframeRect.height;
+          relativeY >= 0 && relativeY <= iframeRect.height;
         console.log('[Dictionary] Coordinates within iframe bounds:', withinBounds);
 
         // Safari might need page-relative coordinates instead of viewport-relative
@@ -1979,10 +2014,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           console.log('[Dictionary] Safari page-relative coords:', relativeX, relativeY);
 
           const safariWithinBounds = relativeX >= 0 && relativeX <= iframeRect.width &&
-                                   relativeY >= 0 && relativeY <= iframeRect.height;
+            relativeY >= 0 && relativeY <= iframeRect.height;
           console.log('[Dictionary] Safari coordinates within bounds:', safariWithinBounds);
         }
-        
+
         // Get word at position
         let word = null;
         let range = null;
@@ -2045,25 +2080,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               console.log('[Dictionary] Doc-relative result:', range);
 
               // If still no range, try Selection API approach first
-            if (!range) {
-              console.log('[Dictionary] Trying Selection API approach');
-              word = extractWordUsingSelectionAPI(iframeDoc, relativeX, relativeY);
-              console.log('[Dictionary] Selection API result:', word);
-            }
+              if (!range) {
+                console.log('[Dictionary] Trying Selection API approach');
+                word = extractWordUsingSelectionAPI(iframeDoc, relativeX, relativeY);
+                console.log('[Dictionary] Selection API result:', word);
+              }
 
-            // If Selection API also fails, try creating a selection programmatically
-            if (!range && !word) {
-              console.log('[Dictionary] Selection API failed, trying programmatic selection');
-              word = createSelectionAtPoint(iframeDoc, relativeX, relativeY);
-              console.log('[Dictionary] Programmatic selection result:', word);
-            }
+              // If Selection API also fails, try creating a selection programmatically
+              if (!range && !word) {
+                console.log('[Dictionary] Selection API failed, trying programmatic selection');
+                word = createSelectionAtPoint(iframeDoc, relativeX, relativeY);
+                console.log('[Dictionary] Programmatic selection result:', word);
+              }
 
-            // Final fallback: manual text extraction
-            if (!word) {
-              console.log('[Dictionary] All methods failed, using manual text extraction from element');
-              word = extractWordFromElementAtPosition(elementAtPoint, relativeX, relativeY);
-              console.log('[Dictionary] Manual extraction result:', word);
-            }
+              // Final fallback: manual text extraction
+              if (!word) {
+                console.log('[Dictionary] All methods failed, using manual text extraction from element');
+                word = extractWordFromElementAtPosition(elementAtPoint, relativeX, relativeY);
+                console.log('[Dictionary] Manual extraction result:', word);
+              }
             }
           }
         } else if (iframeDoc.caretPositionFromPoint) {
@@ -2123,7 +2158,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             word = text.substring(start, end).trim();
           }
         }
-        
+
         // iOS/Safari fallback: if caretRangeFromPoint didn't work, try multiple methods
         if (isIOS() && !word) {
           try {
@@ -2181,27 +2216,27 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             console.warn('iOS/Safari text selection fallback failed:', iosError);
           }
         }
-      
-      if (word) {
-        // Look up the word
-        const definition = lookupWord(word);
-          
-        if (definition) {
-          const x = longPressStartRef.current.x;
-          const y = longPressStartRef.current.y + 20; // Offset below cursor
-          
-          setDictionaryPopup({
-            word: word,
-            definition: definition,
-            position: { x, y }
-          });
-        } else {
-          // Word not found in dictionary
-          onToast?.(`"${word}" not found`);
+
+        if (word) {
+          // Look up the word
+          const definition = lookupWord(word);
+
+          if (definition) {
+            const x = longPressStartRef.current.x;
+            const y = longPressStartRef.current.y + 20; // Offset below cursor
+
+            setDictionaryPopup({
+              word: word,
+              definition: definition,
+              position: { x, y }
+            });
+          } else {
+            // Word not found in dictionary
+            onToast?.(`"${word}" not found`);
+          }
         }
-      }
-    };
-      
+      };
+
       // Attach listeners to nav zones
       if (navZones && navZones.length > 0) {
         navZones.forEach(zone => {
@@ -2215,7 +2250,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           zone.addEventListener('touchmove', handleLongPressMove, { passive: true });
         });
       }
-      
+
       // Store cleanup function in a ref so we can call it later
       const cleanup = () => {
         if (navZones) {
@@ -2231,11 +2266,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           });
         }
       };
-      
+
       // Return cleanup to be called on unmount
       dictionaryCleanupRef.current = cleanup;
     }, 500); // Wait 500ms for render to complete
-    
+
     // Cleanup function
     return () => {
       clearTimeout(timer);
@@ -2252,7 +2287,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const data = await apiGetBookmarks();
       const currentBookId = currentBookIdRef.current;
       if (!currentBookId) return;
-      
+
       const bookmark = data.bookmarks?.find(
         b => b.bookId === currentBookId && b.cfi === cfi
       );
@@ -2301,7 +2336,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             const locationIndex = epubBookRef.current.locations.locationFromCfi(cfi);
             currentPage = locationIndex > 0 ? locationIndex : 1;
           }
-        } catch {}
+        } catch { }
 
         const bookmark = {
           bookId: currentBookId,
@@ -2324,22 +2359,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   // PDF zoom functions
   async function zoomInPDF() {
     if (book.type !== "pdf" || !pdfDocRef.current || !hostRef.current) return;
-    
+
     const currentZoom = pdfZoomRef.current;
     const newZoom = Math.min(currentZoom + 0.25, 3.0); // Max 3x zoom
     pdfZoomRef.current = newZoom;
-    
+
     setIsLoading(true);
     await renderPDFPage(pdfPageNumRef.current, hostRef.current, newZoom);
   }
 
   async function zoomOutPDF() {
     if (book.type !== "pdf" || !pdfDocRef.current || !hostRef.current) return;
-    
+
     const currentZoom = pdfZoomRef.current;
     const newZoom = Math.max(currentZoom - 0.25, 0.5); // Min 0.5x zoom
     pdfZoomRef.current = newZoom;
-    
+
     setIsLoading(true);
     await renderPDFPage(pdfPageNumRef.current, hostRef.current, newZoom);
   }
@@ -2358,7 +2393,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             for (let i = 0; i < pdfPageNumRef.current - 1; i++) {
               const pageWrapper = pagesWrapper.children[i];
               if (pageWrapper) {
-                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+                scrollToY += pageWrapper.offsetHeight || 0;
               }
             }
             scrollContainer.scrollTo({
@@ -2381,7 +2416,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       return;
     }
     // EPUB navigation
-    try { await renditionRef.current?.prev(); } catch {}
+    try { await renditionRef.current?.prev(); } catch { }
   }
   async function goNext() {
     if (book.type === "pdf") {
@@ -2397,7 +2432,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             for (let i = 0; i < pdfPageNumRef.current - 1; i++) {
               const pageWrapper = pagesWrapper.children[i];
               if (pageWrapper) {
-                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+                scrollToY += pageWrapper.offsetHeight || 0;
               }
             }
             scrollContainer.scrollTo({
@@ -2420,7 +2455,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       return;
     }
     // EPUB navigation
-    try { await renditionRef.current?.next(); } catch {}
+    try { await renditionRef.current?.next(); } catch { }
   }
   function toggleUI() {
     setUiVisible(v => !v);
@@ -2430,17 +2465,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     if (book.type === "pdf") {
       // PDF navigation by percentage
       if (!pdfDocRef.current || !hostRef.current) return;
-      
+
       try {
         if (!isDragging) {
           setNavigatingToPercent(percent);
         }
-        
+
         const totalPages = pdfTotalPagesRef.current;
         const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
-        
+
         pdfPageNumRef.current = targetPage;
-        
+
         if (pdfScrollMode === 'vertical') {
           // Vertical mode: scroll to position
           const scrollContainer = hostRef.current?.querySelector('.pdf-vertical-scroll-container');
@@ -2449,21 +2484,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             const clientHeight = scrollContainer.clientHeight;
             const maxScroll = Math.max(0, scrollHeight - clientHeight);
             const scrollTo = (percent / 100) * maxScroll;
-            
+
             // Update page number based on target percentage
             const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
             pdfPageNumRef.current = targetPage;
-            
+
             // Update progress state (convert percent 0-100 to 0-1)
             const percentDecimal = percent / 100;
             setPercent(percentDecimal);
             setLocationText(`Page ${targetPage} of ${totalPages}`);
-            
+
             scrollContainer.scrollTo({
               top: scrollTo,
               behavior: isDragging ? 'auto' : 'smooth'
             });
-            
+
             // After scrolling, update page number based on actual scroll position
             setTimeout(() => {
               const actualScrollTop = scrollContainer.scrollTop;
@@ -2471,26 +2506,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               if (pagesWrapper) {
                 let currentPage = 1;
                 let accumulatedHeight = 0;
-                
+
                 for (let i = 0; i < pagesWrapper.children.length; i++) {
                   const pageWrapper = pagesWrapper.children[i];
-                  const pageHeight = pageWrapper.children[0]?.offsetHeight || 0;
+                  const pageHeight = pageWrapper.offsetHeight || 0;
                   const pageBottom = accumulatedHeight + pageHeight;
                   const viewportCenter = actualScrollTop + (clientHeight / 2);
-                  
+
                   if (viewportCenter >= accumulatedHeight && viewportCenter < pageBottom) {
                     currentPage = i + 1;
                     break;
                   }
                   accumulatedHeight = pageBottom;
                 }
-                
+
                 pdfPageNumRef.current = Math.max(1, Math.min(currentPage, totalPages));
                 setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
               }
             }, isDragging ? 50 : 400); // Shorter delay when dragging
           }
-          
+
           if (!isDragging) {
             setNavigatingToPercent(null);
           }
@@ -2499,7 +2534,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           pdfZoomRef.current = 1.0; // Reset zoom when navigating by slider
           setIsLoading(true);
           await renderPDFPage(targetPage, hostRef.current, 1.0);
-          
+
           if (!isDragging) {
             setNavigatingToPercent(null);
           }
@@ -2513,7 +2548,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
       return;
     }
-    
+
     // EPUB navigation
     if (!renditionRef.current || !epubBookRef.current) return;
 
@@ -2539,50 +2574,50 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   async function goToTocItem(href) {
     if (!renditionRef.current || !epubBookRef.current) return;
-    
+
     try {
       setTocOpen(false);
-      
+
       // Remove fragment identifier if present (e.g., "chapter1.xhtml#section1" -> "chapter1.xhtml")
       const hrefWithoutFragment = href.split('#')[0];
       const fragment = href.includes('#') ? href.split('#')[1] : null;
-      
+
       // Wait for book to be ready
       await epubBookRef.current.ready;
-      
+
       // Method 1: Find the spine item that matches the href
       const spine = epubBookRef.current.spine;
       if (spine) {
         // Try to find spine item by href
         let spineItem = null;
         let spineIndex = -1;
-        
+
         // Normalize href for comparison (handle relative paths)
         const normalizeHref = (h) => {
           // Remove leading slash and normalize
           return h.replace(/^\/+/, '').split('#')[0];
         };
-        
+
         const normalizedTarget = normalizeHref(hrefWithoutFragment);
-        
+
         // Search through spine items
         for (let i = 0; i < spine.length; i++) {
           const item = spine.get(i);
           if (item) {
             const itemHref = item.href || item.url || '';
             const normalizedItemHref = normalizeHref(itemHref);
-            
+
             // Check if hrefs match (exact or ends with)
-            if (normalizedItemHref === normalizedTarget || 
-                normalizedItemHref.endsWith(normalizedTarget) ||
-                normalizedTarget.endsWith(normalizedItemHref)) {
+            if (normalizedItemHref === normalizedTarget ||
+              normalizedItemHref.endsWith(normalizedTarget) ||
+              normalizedTarget.endsWith(normalizedItemHref)) {
               spineItem = item;
               spineIndex = i;
               break;
             }
           }
         }
-        
+
         // If found in spine, navigate using the spine item
         if (spineItem && spineIndex >= 0) {
           try {
@@ -2605,7 +2640,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }
         }
       }
-      
+
       // Method 2: Try the href directly (epub.js can handle many href formats)
       try {
         if (fragment) {
@@ -2617,7 +2652,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       } catch (directErr) {
         console.log('Direct href failed, trying original href:', directErr);
       }
-      
+
       // Method 3: Try the original href with fragment
       try {
         await renditionRef.current.display(href);
@@ -2625,10 +2660,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       } catch (originalErr) {
         console.log('Original href also failed:', originalErr);
       }
-      
+
       // If all methods fail, show error
       throw new Error('All navigation methods failed');
-      
+
     } catch (err) {
       console.warn("Failed to navigate to TOC item:", err);
       onToast?.("Failed to navigate to chapter");
@@ -2641,14 +2676,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     try {
       // Show navigation indicator
       setNavigatingToPercent(originalPosition.percent);
-      
+
       await renditionRef.current.display(originalPosition.cfi);
-      
+
       // Clear navigation indicator after a short delay
       setTimeout(() => {
         setNavigatingToPercent(null);
       }, 100);
-      
+
       clearLastPositionTimer();
       setHasDragged(false); // Hide the button after using it
       setOriginalPosition(null); // Clear the original position
@@ -2750,12 +2785,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const iframeRect = iframe.getBoundingClientRect();
       const centerX = iframeRect.left + iframeRect.width / 2;
       const centerY = iframeRect.top + iframeRect.height / 2;
-      
+
       // Sample multiple points across the viewport
       const samplePoints = [];
       const viewportWidth = iframeRect.width;
       const viewportHeight = iframeRect.height;
-      
+
       // Sample grid of points across visible area
       for (let y = 0; y < viewportHeight; y += Math.max(50, viewportHeight / 10)) {
         for (let x = 0; x < viewportWidth; x += Math.max(50, viewportWidth / 10)) {
@@ -2795,13 +2830,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           try {
             const rect = el.getBoundingClientRect();
             const iframeRect = iframe.getBoundingClientRect();
-            
+
             // Check if element is visible and overlaps with iframe viewport
             if (rect.width > 0 && rect.height > 0 &&
-                rect.bottom > iframeRect.top &&
-                rect.top < iframeRect.bottom &&
-                rect.right > iframeRect.left &&
-                rect.left < iframeRect.right) {
+              rect.bottom > iframeRect.top &&
+              rect.top < iframeRect.bottom &&
+              rect.right > iframeRect.left &&
+              rect.left < iframeRect.right) {
               visibleElements.add(el);
             }
           } catch (e) {
@@ -2814,7 +2849,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Only get elements that are actually in the current viewport (not the whole chapter)
       const visibleTextParts = [];
       const processedElements = new Set();
-      
+
       // Get current scroll position to determine what's actually visible
       const scrollTop = win.scrollY || doc.documentElement.scrollTop || 0;
       const scrollLeft = win.scrollX || doc.documentElement.scrollLeft || 0;
@@ -2822,7 +2857,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const viewportBottom = scrollTop + viewportHeight;
       const viewportLeft = scrollLeft;
       const viewportRight = scrollLeft + viewportWidth;
-      
+
       // Walk through document to maintain reading order, but only include visible ones
       const walker = doc.createTreeWalker(
         body,
@@ -2832,18 +2867,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             if (!visibleElements.has(node) || processedElements.has(node)) {
               return NodeFilter.FILTER_SKIP;
             }
-            
+
             // Double-check visibility using getBoundingClientRect to ensure only current page
             try {
               const rect = node.getBoundingClientRect();
               const iframeRect = iframe.getBoundingClientRect();
-              
+
               // Calculate position relative to document (not viewport)
               const elementTop = rect.top - iframeRect.top + scrollTop;
               const elementBottom = rect.bottom - iframeRect.top + scrollTop;
               const elementLeft = rect.left - iframeRect.left + scrollLeft;
               const elementRight = rect.right - iframeRect.left + scrollLeft;
-              
+
               // Only include if element overlaps with current viewport (current page)
               const inViewport = (
                 elementBottom > viewportTop &&
@@ -2851,7 +2886,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 elementRight > viewportLeft &&
                 elementLeft < viewportRight
               );
-              
+
               if (inViewport) {
                 processedElements.add(node);
                 return NodeFilter.FILTER_ACCEPT;
@@ -2859,7 +2894,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             } catch (e) {
               // If we can't determine position, skip it
             }
-            
+
             return NodeFilter.FILTER_SKIP;
           }
         }
@@ -2871,7 +2906,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         const clone = element.cloneNode(true);
         const scripts = clone.querySelectorAll('script, style');
         scripts.forEach(s => s.remove());
-        
+
         const text = clone.textContent?.trim();
         if (text && text.length > 0) {
           visibleTextParts.push(text);
@@ -2880,7 +2915,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
       // Combine text parts
       let text = visibleTextParts.join(' ').trim();
-      
+
       // Clean up whitespace
       text = text
         .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
@@ -2907,11 +2942,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     // Filter voices by gender preference
     // Note: Voice gender property is not standard, so we'll look for common patterns
     const preferredGender = gender === 'male' ? 'male' : 'female';
-    
+
     // Browser-specific voice patterns
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     const isChrome = /chrome/i.test(navigator.userAgent) && !/edge/i.test(navigator.userAgent);
-    
+
     const femaleVoicePatterns = [
       'female', 'woman', 'karen', 'samantha', 'victoria', 'zira', 'susan', 'hazel',
       'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer',
@@ -2919,7 +2954,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Safari voices
       'samantha', 'karen', 'moira', 'tessa', 'veena', 'fiona', 'kate', 'norah'
     ];
-    
+
     const maleVoicePatterns = [
       'male', 'man', 'david', 'mark', 'alex', 'tom', 'daniel', 'john',
       'google us english', 'microsoft david', 'microsoft mark',
@@ -2927,22 +2962,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       // Safari male voices
       'alex', 'daniel', 'fred', 'lee', 'oliver', 'reed', 'robin', 'rishi', 'tom', 'will'
     ];
-    
+
     // Try to find voices that match the preference
     let matchingVoices = voices.filter(voice => {
       const name = voice.name.toLowerCase();
       const lang = voice.lang.toLowerCase();
       const voiceIndex = voices.indexOf(voice);
-      
+
       if (preferredGender === 'female') {
         return femaleVoicePatterns.some(pattern => name.includes(pattern));
       } else {
         // For male, check multiple patterns
         const hasMalePattern = maleVoicePatterns.some(pattern => name.includes(pattern));
-        
+
         // Also check if it's NOT a known female voice (fallback)
         const isNotFemale = !femaleVoicePatterns.some(pattern => name.includes(pattern));
-        
+
         // Safari-specific: Male voices often come after female voices in the list
         if (isSafari) {
           // In Safari, count how many voices there are and pick from the latter half
@@ -2950,7 +2985,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const isLikelyMale = isNotFemale && voiceIndex >= Math.floor(totalVoices * 0.4);
           return hasMalePattern || isLikelyMale;
         }
-        
+
         // Chrome-specific: Male voices often appear later in the list
         if (isChrome) {
           const isEnUs = lang.startsWith('en-us') || lang.startsWith('en-gb');
@@ -2958,7 +2993,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const isLikelyMale = isEnUs && isNotFemale && voiceIndex > Math.floor(voices.length * 0.3);
           return hasMalePattern || isLikelyMale;
         }
-        
+
         // Fallback for other browsers
         const isEnUs = lang.startsWith('en-us') || lang.startsWith('en-gb');
         return hasMalePattern || (isEnUs && isNotFemale && voiceIndex > voices.length / 2);
@@ -2969,7 +3004,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     if (matchingVoices.length === 0) {
       // Filter English voices first
       const englishVoices = voices.filter(v => v.lang.toLowerCase().startsWith('en'));
-      
+
       if (englishVoices.length > 0) {
         if (preferredGender === 'female') {
           // Female voices often come first
@@ -3059,13 +3094,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         try {
           // Try to get location from rendition object
           let currentHref = null;
-          
+
           // Method 1: Use rendition.location (most reliable)
           if (renditionRef.current.location) {
-            currentHref = renditionRef.current.location.start?.href || 
-                         renditionRef.current.location.href;
+            currentHref = renditionRef.current.location.start?.href ||
+              renditionRef.current.location.href;
           }
-          
+
           // Method 2: Try currentLocation() if available
           if (!currentHref) {
             try {
@@ -3077,7 +3112,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               // currentLocation() not available
             }
           }
-          
+
           if (currentHref) {
             const normalizeHref = (href) => {
               if (!href) return '';
@@ -3085,9 +3120,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               const parts = normalized.split('/');
               return parts[parts.length - 1] || normalized;
             };
-            
+
             const currentHrefNormalized = normalizeHref(currentHref);
-            
+
             // Find matching chapter - try multiple matching strategies
             let matchingChapter = toc.find(item => {
               const itemHrefNormalized = normalizeHref(item.href);
@@ -3097,21 +3132,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
               // Partial match
               if (itemHrefNormalized.includes(currentHrefNormalized) ||
-                  currentHrefNormalized.includes(itemHrefNormalized)) return true;
+                currentHrefNormalized.includes(itemHrefNormalized)) return true;
               return false;
             });
-            
+
             // Also try matching full href paths
             if (!matchingChapter) {
               const currentFullHref = currentHref.split('#')[0].split('?')[0];
               matchingChapter = toc.find(item => {
                 const itemFullHref = item.href.split('#')[0].split('?')[0];
                 return currentFullHref === itemFullHref ||
-                       currentFullHref.endsWith(itemFullHref) ||
-                       itemFullHref.endsWith(currentFullHref);
+                  currentFullHref.endsWith(itemFullHref) ||
+                  itemFullHref.endsWith(currentFullHref);
               });
             }
-            
+
             if (matchingChapter) {
               detectedChapterName = matchingChapter.label;
               setCurrentChapterName(matchingChapter.label);
@@ -3132,36 +3167,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const textHash = text.length.toString(); // Simple hash based on length
           const savedTextHash = savedProgress.textHash || '0';
           const currentTextHash = textHash;
-          
+
           // Check if it's the same chapter/text
           const textHashMatches = savedTextHash === currentTextHash;
-          
+
           // Chapter name matching - be lenient with comparison
           const savedChapter = savedProgress.chapterName || '';
           const currentChapter = detectedChapterName || '';
-          const chapterMatches = savedChapter && currentChapter && 
-                                 savedChapter === currentChapter;
-          
+          const chapterMatches = savedChapter && currentChapter &&
+            savedChapter === currentChapter;
+
           // Text hash similarity check - allow small differences (within 10%)
           const savedHashNum = parseInt(savedTextHash) || 0;
           const currentHashNum = parseInt(currentTextHash) || 0;
           const hashDiff = Math.abs(savedHashNum - currentHashNum);
           const hashSimilar = hashDiff <= Math.max(savedHashNum * 0.1, 50); // 10% or 50 chars tolerance
-          
+
           // Resume if:
           // 1. Chapter names match (most reliable)
           // 2. Text hashes match exactly
           // 3. Text hashes are similar AND we don't have conflicting chapter names
-          const shouldResume = chapterMatches || 
-                              textHashMatches || 
-                              (hashSimilar && (!savedChapter || !currentChapter || savedChapter === currentChapter));
-          
+          const shouldResume = chapterMatches ||
+            textHashMatches ||
+            (hashSimilar && (!savedChapter || !currentChapter || savedChapter === currentChapter));
+
           if (shouldResume) {
             resumeFromTime = savedProgress.currentTime;
             savedAudioPositionRef.current = resumeFromTime;
             console.log('[TTS] Resuming from saved position:', resumeFromTime, 'seconds');
-            console.log('[TTS] Match - Chapter:', chapterMatches ? '✓' : '✗', 
-                       'TextHash:', textHashMatches ? '✓' : (hashSimilar ? '≈' : '✗'));
+            console.log('[TTS] Match - Chapter:', chapterMatches ? '✓' : '✗',
+              'TextHash:', textHashMatches ? '✓' : (hashSimilar ? '≈' : '✗'));
             if (!chapterMatches && !textHashMatches) {
               console.log('[TTS] Using similar text hash (difference:', hashDiff, 'chars)');
             }
@@ -3242,7 +3277,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             }
           }
         };
-        
+
         startTTSProgressInterval = setInterval(saveProgress, 2000);
 
         audio.onplay = () => {
@@ -3315,7 +3350,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           chapterName: currentChapterName
         }).catch(err => console.warn('Failed to save TTS progress on stop:', err));
       }
-      
+
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
@@ -3392,13 +3427,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   async function handleVoiceChange(newVoice) {
     const newPrefs = { ...prefs, voiceName: newVoice || null };
     onPrefsChange(newPrefs);
-    
+
     // If TTS is currently playing or loaded, regenerate with new voice
     if ((audioRef.current || audioDuration > 0) && ttsTextRef.current) {
       const wasPlaying = audioRef.current && !audioRef.current.paused && !audioRef.current.ended;
       const currentTime = audioRef.current ? audioRef.current.currentTime : audioCurrentTime;
       savedAudioPositionRef.current = currentTime;
-      
+
       // Save current position
       if (currentTime > 0) {
         try {
@@ -3411,7 +3446,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           console.warn('Failed to save TTS progress on voice change:', err);
         }
       }
-      
+
       // Clean up old audio but keep modal open (preserve duration)
       const currentDuration = audioDuration; // Preserve duration to keep modal visible
       if (audioRef.current) {
@@ -3424,7 +3459,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
       // Keep duration set so modal stays visible
       setAudioDuration(currentDuration);
-      
+
       // Regenerate audio with new voice
       setTtsLoading(true);
       setShowAudioPlayer(true); // Keep modal visible
@@ -3440,7 +3475,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         audioSourceRef.current = audioUrl;
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
-        
+
         // Set up event handlers
         const updateTime = () => {
           setAudioCurrentTime(audio.currentTime);
@@ -3496,7 +3531,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           if (voiceChangeProgressInterval) {
             clearInterval(voiceChangeProgressInterval);
           }
-          apiDeleteTTSProgress(book.id).catch(() => {});
+          apiDeleteTTSProgress(book.id).catch(() => { });
           if (audioSourceRef.current) {
             URL.revokeObjectURL(audioSourceRef.current);
             audioSourceRef.current = null;
@@ -3529,13 +3564,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   async function handleSpeedChange(newSpeed) {
     const newPrefs = { ...prefs, readingSpeed: newSpeed };
     onPrefsChange(newPrefs);
-    
+
     // If TTS is currently playing or loaded, regenerate with new speed
     if ((audioRef.current || audioDuration > 0) && ttsTextRef.current) {
       const wasPlaying = audioRef.current && !audioRef.current.paused && !audioRef.current.ended;
       const currentTime = audioRef.current ? audioRef.current.currentTime : audioCurrentTime;
       savedAudioPositionRef.current = currentTime;
-      
+
       // Save current position
       if (currentTime > 0) {
         try {
@@ -3548,7 +3583,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           console.warn('Failed to save TTS progress on speed change:', err);
         }
       }
-      
+
       // Clean up old audio but keep modal open (preserve duration)
       const currentDuration = audioDuration; // Preserve duration to keep modal visible
       if (audioRef.current) {
@@ -3561,7 +3596,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
       // Keep duration set so modal stays visible
       setAudioDuration(currentDuration);
-      
+
       // Regenerate audio with new speed
       setTtsLoading(true);
       setShowAudioPlayer(true); // Keep modal visible
@@ -3577,7 +3612,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         audioSourceRef.current = audioUrl;
         const audio = new Audio(audioUrl);
         audioRef.current = audio;
-        
+
         // Set up event handlers (same as voice change)
         const updateTime = () => {
           setAudioCurrentTime(audio.currentTime);
@@ -3633,7 +3668,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           if (speedChangeProgressInterval) {
             clearInterval(speedChangeProgressInterval);
           }
-          apiDeleteTTSProgress(book.id).catch(() => {});
+          apiDeleteTTSProgress(book.id).catch(() => { });
           if (audioSourceRef.current) {
             URL.revokeObjectURL(audioSourceRef.current);
             audioSourceRef.current = null;
@@ -3685,21 +3720,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   return (
     <div className="readerShell">
       <div className={`readerTop ${!uiVisible ? 'hidden' : ''}`}>
-        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button className="pill" onClick={onBack}>← Library</button>
           <button
             className="pill"
             onClick={addBookmark}
             title="Add bookmark"
-            style={{opacity: hasBookmark ? 0.8 : 1, padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+            style={{ opacity: hasBookmark ? 0.8 : 1, padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5"/>
+              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5" />
             </svg>
           </button>
         </div>
         <div className="readerTitle" title={book.title}>{book.title}</div>
-        <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {book.type === "pdf" ? (
             // PDF-specific controls: Scroll mode toggle
             <>
@@ -3717,7 +3752,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                       await new Promise(resolve => requestAnimationFrame(() => {
                         setTimeout(resolve, 50);
                       }));
-                      
+
                       if (newMode === 'vertical') {
                         await renderPDFVertical(pdfDocRef.current, hostRef.current, pdfPageNumRef.current);
                       } else {
@@ -3730,7 +3765,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   }
                 }}
                 title={pdfScrollMode === 'vertical' ? 'Switch to Horizontal Scroll (Tap Left/Right)' : 'Switch to Vertical Scroll (Continuous)'}
-                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', opacity: pdfScrollMode === 'vertical' ? 1 : 0.7}}
+                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', opacity: pdfScrollMode === 'vertical' ? 1 : 0.7 }}
               >
                 {pdfScrollMode === 'vertical' ? '↕' : '↔'}
               </button>
@@ -3739,7 +3774,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   className="pill"
                   onClick={toggleFullscreen}
                   title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                  style={isFullscreen ? {opacity: 0.8} : {}}
+                  style={isFullscreen ? { opacity: 0.8 } : {}}
                 >
                   ⛶
                 </button>
@@ -3762,15 +3797,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               >
                 {isSpeaking ? (
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor"/>
-                    <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor"/>
+                    <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor" />
+                    <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor" />
                   </svg>
                 ) : (
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor"/>
-                    <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor"/>
-                    <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor"/>
-                    <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor"/>
+                    <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor" />
+                    <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor" />
+                    <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor" />
+                    <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor" />
                   </svg>
                 )}
               </button>
@@ -3778,12 +3813,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 className="pill"
                 onClick={() => setTocOpen(true)}
                 title="Table of Contents"
-                style={{padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M2 3C2 2.44772 2.44772 2 3 2H13C13.5523 2 14 2.44772 14 3C14 3.55228 13.5523 4 13 4H3C2.44772 4 2 3.55228 2 3Z" fill="currentColor"/>
-                  <path d="M2 7C2 6.44772 2.44772 6 3 6H13C13.5523 6 14 6.44772 14 7C14 7.55228 13.5523 8 13 8H3C2.44772 8 2 7.55228 2 7Z" fill="currentColor"/>
-                  <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor"/>
+                  <path d="M2 3C2 2.44772 2.44772 2 3 2H13C13.5523 2 14 2.44772 14 3C14 3.55228 13.5523 4 13 4H3C2.44772 4 2 3.55228 2 3Z" fill="currentColor" />
+                  <path d="M2 7C2 6.44772 2.44772 6 3 6H13C13.5523 6 14 6.44772 14 7C14 7.55228 13.5523 8 13 8H3C2.44772 8 2 7.55228 2 7Z" fill="currentColor" />
+                  <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor" />
                 </svg>
               </button>
               {!isIOS() && (
@@ -3791,7 +3826,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   className="pill"
                   onClick={toggleFullscreen}
                   title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                  style={isFullscreen ? {opacity: 0.8} : {}}
+                  style={isFullscreen ? { opacity: 0.8 } : {}}
                 >
                   ⛶
                 </button>
@@ -3817,36 +3852,36 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             title="Bookmarked"
           >
             <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="#dc2626" stroke="#dc2626" strokeWidth="0.5"/>
+              <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="#dc2626" stroke="#dc2626" strokeWidth="0.5" />
             </svg>
           </div>
         )}
         {/* tap zones - disabled for PDF vertical scroll mode */}
-        <div 
-          className="navZone navLeft" 
-          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goPrev} 
+        <div
+          className="navZone navLeft"
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goPrev}
           aria-label="Previous page"
-          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? {
             pointerEvents: 'none',
             touchAction: 'none',
             zIndex: -1
           } : {}}
         />
-        <div 
-          className="navZone navRight" 
-          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goNext} 
+        <div
+          className="navZone navRight"
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goNext}
           aria-label="Next page"
-          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? {
             pointerEvents: 'none',
             touchAction: 'none',
             zIndex: -1
           } : {}}
         />
-        <div 
-          className="navZone navMid" 
-          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : toggleUI} 
+        <div
+          className="navZone navMid"
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : toggleUI}
           aria-label="Toggle UI"
-          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? {
             pointerEvents: 'none',
             touchAction: 'pan-y',
             zIndex: -1
@@ -3882,12 +3917,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       </div>
 
       <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>
-        <div style={{display: 'flex', alignItems: 'center', gap: '8px', minWidth: '120px', width: '120px'}}>
-          <span style={{fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{locationText || " "}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '120px', width: '120px' }}>
+          <span style={{ fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{locationText || " "}</span>
         </div>
 
-        <div style={{display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', padding: '0 20px'}}>
-          <div style={{position: 'relative', width: '100%', display: 'flex', alignItems: 'center'}}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'center', padding: '0 20px' }}>
+          <div style={{ position: 'relative', width: '100%', display: 'flex', alignItems: 'center' }}>
             <input
               type="range"
               min="0"
@@ -3907,7 +3942,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           </div>
         </div>
 
-        <div style={{fontSize: '11px', minWidth: '40px', width: '40px', textAlign: 'right'}}>
+        <div style={{ fontSize: '11px', minWidth: '40px', width: '40px', textAlign: 'right' }}>
           {navigatingToPercent !== null ? navigatingToPercent : pct}%
         </div>
       </div>
@@ -3954,23 +3989,23 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       {tocOpen && book.type !== "pdf" && (
         <div className="drawerBackdrop" onClick={() => setTocOpen(false)}>
           <div className="drawer" onClick={(e) => e.stopPropagation()}>
-            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <h3>Table of Contents</h3>
               <button
                 className="pill"
                 onClick={() => setTocOpen(false)}
-                style={{padding: '6px 10px', fontSize: '14px'}}
+                style={{ padding: '6px 10px', fontSize: '14px' }}
               >
                 ✕
               </button>
             </div>
-            <div style={{flex: 1, overflowY: 'auto', paddingRight: '8px'}}>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
               {toc.length === 0 ? (
-                <div style={{color: 'var(--muted)', fontSize: '12px', padding: '20px 0', textAlign: 'center'}}>
+                <div style={{ color: 'var(--muted)', fontSize: '12px', padding: '20px 0', textAlign: 'center' }}>
                   No table of contents available
                 </div>
               ) : (
-                <div style={{display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {toc.map((item, index) => (
                     <button
                       key={index}

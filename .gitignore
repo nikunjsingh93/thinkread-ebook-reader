@@ -64,3 +64,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# PDF.js Generated Assets (web/public)
+web/public/pdf.worker.min.mjs
+web/public/pdf.image_decoders.*
+web/public/openjpeg.wasm
+web/public/qcms_bg.wasm
+web/public/cmaps/
+web/public/standard_fonts/
+web/public/wasm/
+web/public/image_decoders/
+
