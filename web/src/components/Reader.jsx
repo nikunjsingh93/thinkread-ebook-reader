@@ -736,39 +736,78 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         
         await page.render(renderContext).promise;
         totalHeight += displayHeight;
-        
-        // Update progress as we render
-        const currentPercent = pageNum / totalPages;
-        setPercent(currentPercent);
-        setLocationText(`Page ${pageNum} of ${totalPages}`);
       }
       
       scrollContainer.appendChild(pagesWrapper);
       container.appendChild(scrollContainer);
       
-      // Scroll to saved position if available
+      // Scroll to saved position if available and update initial progress
       const savedProgress = savedProgressRef.current;
-      if (savedProgress) {
-        // Use saved scrollTop if available (more accurate), otherwise calculate from page number
-        let scrollToY = savedProgress.scrollTop || 0;
+      
+      if (savedProgress && savedProgress.page) {
+        // Update initial progress and page number from saved progress
+        pdfPageNumRef.current = Math.max(1, Math.min(savedProgress.page, totalPages));
         
-        if (scrollToY === 0 && savedProgress.page && savedProgress.page > 1) {
+        // Set initial percentage (ensure it's in 0-1 range)
+        if (savedProgress.percent !== undefined && savedProgress.percent !== null) {
+          // Handle both 0-1 and 0-100 ranges
+          let savedPercent = savedProgress.percent;
+          if (savedPercent > 1) {
+            savedPercent = savedPercent / 100; // Convert from 0-100 to 0-1
+          }
+          setPercent(Math.max(0, Math.min(1, savedPercent)));
+        } else {
+          // Calculate percent from page number if percent not available
+          const calculatedPercent = (savedProgress.page - 1) / totalPages;
+          setPercent(calculatedPercent);
+        }
+        setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+        
+        // Scroll to saved position
+        const scrollToY = savedProgress.scrollTop || 0;
+        
+        if (scrollToY === 0 && savedProgress.page > 1) {
           // Calculate scroll position for the target page if scrollTop not available
           setTimeout(() => {
-            for (let i = 1; i < savedProgress.page; i++) {
-              const pageWrapper = pagesWrapper.children[i - 1];
-              if (pageWrapper) {
-                scrollToY += pageWrapper.children[0]?.offsetHeight || 0;
+            let calculatedScroll = 0;
+            for (let i = 0; i < savedProgress.page - 1 && i < pagesWrapper.children.length; i++) {
+              const pageWrapper = pagesWrapper.children[i];
+              if (pageWrapper && pageWrapper.children[0]) {
+                calculatedScroll += pageWrapper.children[0].offsetHeight || 0;
               }
             }
-            scrollContainer.scrollTop = scrollToY;
-          }, 100);
+            scrollContainer.scrollTop = calculatedScroll;
+            
+            // Update progress after scrolling
+            const scrollHeight = scrollContainer.scrollHeight;
+            const clientHeight = scrollContainer.clientHeight;
+            const maxScroll = Math.max(0, scrollHeight - clientHeight);
+            if (maxScroll > 0) {
+              const percent = Math.min(1, Math.max(0, calculatedScroll / maxScroll));
+              setPercent(percent);
+            }
+          }, 300);
         } else if (scrollToY > 0) {
           // Use saved scrollTop - scroll after rendering is complete
           setTimeout(() => {
-            scrollContainer.scrollTop = Math.min(scrollToY, scrollContainer.scrollHeight - scrollContainer.clientHeight);
-          }, 200);
+            const scrollHeight = scrollContainer.scrollHeight;
+            const clientHeight = scrollContainer.clientHeight;
+            const maxScroll = Math.max(0, scrollHeight - clientHeight);
+            const finalScrollTo = Math.min(scrollToY, maxScroll);
+            scrollContainer.scrollTop = finalScrollTo;
+            
+            // Update progress after scrolling
+            if (maxScroll > 0) {
+              const percent = Math.min(1, Math.max(0, finalScrollTo / maxScroll));
+              setPercent(percent);
+            }
+          }, 300);
         }
+      } else {
+        // No saved progress, start at beginning
+        pdfPageNumRef.current = startPage || 1;
+        setPercent(0);
+        setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
       }
       
       // Track scroll position for progress saving and handle UI toggle on tap
@@ -843,7 +882,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       });
       
       scrollContainer.addEventListener('scroll', () => {
-        isScrolling = true;
         // Clear previous timeout
         if (scrollTimeout) clearTimeout(scrollTimeout);
         
@@ -853,41 +891,54 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const scrollHeight = scrollContainer.scrollHeight;
           const clientHeight = scrollContainer.clientHeight;
           
-          // Calculate which page is currently visible
+          // Calculate which page is currently visible based on scroll position
           let currentPage = 1;
           let accumulatedHeight = 0;
           
+          // Find which page the user is currently viewing
           for (let i = 0; i < pagesWrapper.children.length; i++) {
             const pageWrapper = pagesWrapper.children[i];
             const pageHeight = pageWrapper.children[0]?.offsetHeight || 0;
+            const pageBottom = accumulatedHeight + pageHeight;
             
-            if (scrollTop >= accumulatedHeight && scrollTop < accumulatedHeight + pageHeight) {
+            // Check if scroll position is within this page's bounds
+            // Consider the page visible if we're in the top portion of the viewport
+            const viewportTop = scrollTop;
+            const viewportCenter = scrollTop + (clientHeight / 2);
+            
+            // If viewport center is within this page, this is the current page
+            if (viewportCenter >= accumulatedHeight && viewportCenter < pageBottom) {
               currentPage = i + 1;
               break;
             }
             
-            accumulatedHeight += pageHeight;
+            // If we haven't reached this page yet, update accumulated height
+            accumulatedHeight = pageBottom;
             
-            // If we're past this page, update current page
+            // If we're past all pages, set to last page
             if (scrollTop >= accumulatedHeight) {
-              currentPage = i + 2;
+              currentPage = i + 1;
             }
           }
           
-          pdfPageNumRef.current = Math.min(currentPage, totalPages);
+          // Ensure current page is within valid range
+          currentPage = Math.max(1, Math.min(currentPage, totalPages));
+          pdfPageNumRef.current = currentPage;
           
-          // Calculate progress percentage
-          const progress = scrollHeight > 0 ? (scrollTop / (scrollHeight - clientHeight)) : 0;
-          const percent = Math.min(1, Math.max(0, progress));
+          // Calculate progress percentage (0-1 range, then convert to 0-100 for display)
+          const maxScroll = scrollHeight - clientHeight;
+          const percent = maxScroll > 0 ? Math.min(1, Math.max(0, scrollTop / maxScroll)) : 0;
+          
+          // Update state - percent should be 0-1, but UI displays as 0-100
           setPercent(percent);
-          setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+          setLocationText(`Page ${currentPage} of ${totalPages}`);
           
           // Save progress (debounced)
           if (!isRestoringRef.current && currentBookIdRef.current) {
             const progressToSave = {
-              page: pdfPageNumRef.current,
+              page: currentPage,
               totalPages: totalPages,
-              percent: percent,
+              percent: percent, // Store as 0-1
               scrollTop: scrollTop,
               updatedAt: Date.now()
             };
@@ -896,7 +947,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               console.error(`Failed to save PDF progress:`, err);
             });
           }
-        }, 300); // Debounce for 300ms
+        }, 100); // Reduced debounce for more responsive updates
       });
       
       setIsLoading(false);
@@ -2396,13 +2447,48 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           if (scrollContainer) {
             const scrollHeight = scrollContainer.scrollHeight;
             const clientHeight = scrollContainer.clientHeight;
-            const maxScroll = scrollHeight - clientHeight;
+            const maxScroll = Math.max(0, scrollHeight - clientHeight);
             const scrollTo = (percent / 100) * maxScroll;
+            
+            // Update page number based on target percentage
+            const targetPage = Math.max(1, Math.min(totalPages, Math.ceil((percent / 100) * totalPages)));
+            pdfPageNumRef.current = targetPage;
+            
+            // Update progress state (convert percent 0-100 to 0-1)
+            const percentDecimal = percent / 100;
+            setPercent(percentDecimal);
+            setLocationText(`Page ${targetPage} of ${totalPages}`);
             
             scrollContainer.scrollTo({
               top: scrollTo,
               behavior: isDragging ? 'auto' : 'smooth'
             });
+            
+            // After scrolling, update page number based on actual scroll position
+            setTimeout(() => {
+              const actualScrollTop = scrollContainer.scrollTop;
+              const pagesWrapper = scrollContainer.firstElementChild;
+              if (pagesWrapper) {
+                let currentPage = 1;
+                let accumulatedHeight = 0;
+                
+                for (let i = 0; i < pagesWrapper.children.length; i++) {
+                  const pageWrapper = pagesWrapper.children[i];
+                  const pageHeight = pageWrapper.children[0]?.offsetHeight || 0;
+                  const pageBottom = accumulatedHeight + pageHeight;
+                  const viewportCenter = actualScrollTop + (clientHeight / 2);
+                  
+                  if (viewportCenter >= accumulatedHeight && viewportCenter < pageBottom) {
+                    currentPage = i + 1;
+                    break;
+                  }
+                  accumulatedHeight = pageBottom;
+                }
+                
+                pdfPageNumRef.current = Math.max(1, Math.min(currentPage, totalPages));
+                setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+              }
+            }, isDragging ? 50 : 400); // Shorter delay when dragging
           }
           
           if (!isDragging) {
