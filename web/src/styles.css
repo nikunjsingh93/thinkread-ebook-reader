@@ -205,7 +205,7 @@ button, input, select {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 20;
   display:flex;
   align-items:center;
   justify-content: space-between;
@@ -263,6 +263,13 @@ button, input, select {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  touch-action: pan-y; /* Allow vertical scrolling */
 }
 .renditionHost .pdf-page-wrapper-vertical {
   width: 100%;
@@ -301,7 +308,7 @@ button, input, select {
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 10;
+  z-index: 20;
   height: 38px;
   display:flex;
   align-items:center;

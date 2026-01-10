@@ -633,6 +633,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const renderPDFVertical = async (pdf, container, startPage = 1) => {
     if (!pdf || !container) return;
     
+    // Store toggleUI reference for use in event handlers
+    const toggleUIHandler = () => {
+      setUiVisible(v => !v);
+    };
+    
     try {
       const totalPages = pdf.numPages;
       if (totalPages === 0) {
@@ -766,9 +771,79 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
       }
       
-      // Track scroll position for progress saving
+      // Track scroll position for progress saving and handle UI toggle on tap
       let scrollTimeout = null;
+      let tapStartY = 0;
+      let tapStartTime = 0;
+      let hasScrolled = false;
+      
+      // Simple tap detection for UI toggle
+      const handleTapStart = (clientY) => {
+        tapStartY = scrollContainer.scrollTop;
+        tapStartTime = Date.now();
+        hasScrolled = false;
+      };
+      
+      const handleTapEnd = (clientX, clientY) => {
+        const scrollDelta = Math.abs(scrollContainer.scrollTop - tapStartY);
+        const timeDelta = Date.now() - tapStartTime;
+        
+        // If minimal scrolling (< 10px) and quick tap (< 300ms), toggle UI
+        if (scrollDelta < 10 && timeDelta < 300 && !hasScrolled) {
+          // Only toggle if tap is in middle area (30% to 70% of width)
+          const viewportWidth = window.innerWidth;
+          const relativePercent = clientX / viewportWidth;
+          
+          if (relativePercent >= 0.3 && relativePercent <= 0.7) {
+            toggleUIHandler();
+            return true; // Indicate tap was handled
+          }
+        }
+        return false;
+      };
+      
+      // Touch events
+      scrollContainer.addEventListener('touchstart', (e) => {
+        handleTapStart(e.touches[0]?.clientY || 0);
+      }, { passive: true });
+      
+      scrollContainer.addEventListener('touchmove', () => {
+        const currentScroll = scrollContainer.scrollTop;
+        if (Math.abs(currentScroll - tapStartY) > 5) {
+          hasScrolled = true;
+        }
+      }, { passive: true });
+      
+      scrollContainer.addEventListener('touchend', (e) => {
+        const touch = e.changedTouches[0];
+        if (touch) {
+          handleTapEnd(touch.clientX, touch.clientY);
+        }
+        hasScrolled = false;
+      }, { passive: true });
+      
+      // Mouse events for desktop
+      scrollContainer.addEventListener('mousedown', (e) => {
+        handleTapStart(e.clientY);
+      });
+      
+      scrollContainer.addEventListener('mousemove', () => {
+        const currentScroll = scrollContainer.scrollTop;
+        if (Math.abs(currentScroll - tapStartY) > 5) {
+          hasScrolled = true;
+        }
+      });
+      
+      scrollContainer.addEventListener('click', (e) => {
+        if (handleTapEnd(e.clientX, e.clientY)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        hasScrolled = false;
+      });
+      
       scrollContainer.addEventListener('scroll', () => {
+        isScrolling = true;
         // Clear previous timeout
         if (scrollTimeout) clearTimeout(scrollTimeout);
         
@@ -3665,15 +3740,32 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           className="navZone navLeft" 
           onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goPrev} 
           aria-label="Previous page"
-          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { pointerEvents: 'none' } : {}}
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+            pointerEvents: 'none',
+            touchAction: 'none',
+            zIndex: -1
+          } : {}}
         />
         <div 
           className="navZone navRight" 
           onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : goNext} 
           aria-label="Next page"
-          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { pointerEvents: 'none' } : {}}
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+            pointerEvents: 'none',
+            touchAction: 'none',
+            zIndex: -1
+          } : {}}
         />
-        <div className="navZone navMid" onClick={toggleUI} aria-label="Toggle UI" />
+        <div 
+          className="navZone navMid" 
+          onClick={book.type === "pdf" && pdfScrollMode === "vertical" ? undefined : toggleUI} 
+          aria-label="Toggle UI"
+          style={book.type === "pdf" && pdfScrollMode === "vertical" ? { 
+            pointerEvents: 'none',
+            touchAction: 'pan-y',
+            zIndex: -1
+          } : {}}
+        />
 
         {isLoading && (
           <div style={{
