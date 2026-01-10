@@ -13,11 +13,42 @@ import epubParser from "epub";
 import session from "express-session";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
 import os from "node:os";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { createCanvas } from "canvas";
+import { pathToFileURL } from "node:url";
 
 const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Configure PDF.js worker for Node.js - configure after __dirname is available
+// For thumbnail extraction, we can use the main thread without worker
+(function configurePDFWorker() {
+  try {
+    // Try multiple possible paths for the worker file
+    const possiblePaths = [
+      path.join(__dirname, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'),
+      path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs'),
+      '/app/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs', // Docker path
+    ];
+
+    for (const workerPath of possiblePaths) {
+      if (fs.existsSync(workerPath)) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href;
+        console.log(`PDF.js worker configured: ${workerPath}`);
+        return;
+      }
+    }
+
+    // If worker file not found, pdfjs-dist will use main thread automatically
+    // Don't set workerSrc to false or empty string - just leave it unset
+    console.warn('PDF.js worker file not found, will use main thread (may be slower)');
+  } catch (err) {
+    console.warn('Could not configure PDF.js worker:', err.message);
+    // Don't set workerSrc to invalid value - let pdfjs-dist use its default
+  }
+})();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
@@ -81,6 +112,145 @@ async function extractCoverImage(epubPath, bookId) {
 
     epub.parse();
   });
+}
+
+// Canvas factory for pdfjs-dist with node-canvas
+// This factory helps pdfjs-dist work properly with node-canvas by managing canvas lifecycle
+class NodeCanvasFactory {
+  create(width, height) {
+    if (!width || width <= 0 || !height || height <= 0) {
+      throw new Error('Invalid canvas dimensions');
+    }
+    const canvas = createCanvas(Math.round(width), Math.round(height));
+    const context = canvas.getContext('2d');
+    
+    // Ensure the canvas has proper properties that pdfjs-dist expects
+    // Set white background initially
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    return { canvas, context };
+  }
+  
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = Math.round(width);
+    canvasAndContext.canvas.height = Math.round(height);
+    
+    // Reset background
+    canvasAndContext.context.fillStyle = 'white';
+    canvasAndContext.context.fillRect(0, 0, canvasAndContext.canvas.width, canvasAndContext.canvas.height);
+  }
+  
+  destroy(canvasAndContext) {
+    if (canvasAndContext && canvasAndContext.canvas) {
+      canvasAndContext.canvas = null;
+      canvasAndContext.context = null;
+    }
+  }
+}
+
+async function extractPDFThumbnail(pdfPath, bookId) {
+  // Try using pdftoppm from poppler-utils first (simpler and more reliable)
+  // If available, use it as it's specifically designed for PDF to image conversion
+  const tempOutputBase = path.join(os.tmpdir(), `pdf-thumb-${nanoid()}`);
+  const outputFile = `${tempOutputBase}.png`;
+  
+  try {
+    // Use pdftoppm to convert first page to PNG
+    // -f 1: first page, -l 1: last page (only first page)
+    // -png: output format, -scale-to-x 300: width 300px, maintain aspect ratio
+    // Without -singlefile, pdftoppm outputs with -01.png, -02.png, etc. suffix
+    await execAsync(`pdftoppm -f 1 -l 1 -png -scale-to-x 300 "${pdfPath}" "${tempOutputBase}"`);
+    
+    // pdftoppm outputs with numbered suffix - try common formats
+    // Also check if files exist in the temp directory
+    const tempDir = path.dirname(tempOutputBase);
+    const baseName = path.basename(tempOutputBase);
+    const possibleOutputs = [
+      `${tempOutputBase}-01.png`,
+      `${tempOutputBase}-001.png`,
+      `${tempOutputBase}-1.png`,
+      outputFile, // Some versions might output without suffix
+    ];
+    
+    // List directory to see what was actually created
+    let actualOutputFile = null;
+    try {
+      const files = fs.readdirSync(tempDir);
+      const matchingFiles = files.filter(f => f.startsWith(baseName) && f.endsWith('.png'));
+      if (matchingFiles.length > 0) {
+        actualOutputFile = path.join(tempDir, matchingFiles[0]);
+      }
+    } catch (listError) {
+      // If listing fails, try the expected outputs
+    }
+    
+    // If we didn't find it by listing, try the expected paths
+    if (!actualOutputFile) {
+      for (const candidate of possibleOutputs) {
+        if (fs.existsSync(candidate)) {
+          actualOutputFile = candidate;
+          break;
+        }
+      }
+    }
+    
+    if (actualOutputFile && fs.existsSync(actualOutputFile)) {
+      const buffer = fs.readFileSync(actualOutputFile);
+      
+      // Verify the file is not empty
+      if (buffer.length === 0) {
+        throw new Error('pdftoppm created empty output file');
+      }
+      
+      // Save thumbnail
+      const coverFilename = `${bookId}.png`;
+      const coverPath = path.join(coversDir, coverFilename);
+      fs.writeFileSync(coverPath, buffer);
+      
+      // Clean up temp files (try all possible outputs plus any matching files in temp dir)
+      for (const candidate of possibleOutputs) {
+        try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch {}
+      }
+      try {
+        const files = fs.readdirSync(tempDir);
+        files.filter(f => f.startsWith(baseName) && f.endsWith('.png')).forEach(f => {
+          try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
+        });
+      } catch {}
+      
+      console.log(`Extracted PDF thumbnail for book ${bookId} using pdftoppm (${buffer.length} bytes)`);
+      return { cover: coverFilename };
+    } else {
+      throw new Error(`pdftoppm did not create expected output file. Tried: ${possibleOutputs.join(', ')}`);
+    }
+  } catch (pdftoppmError) {
+    // If pdftoppm fails, log the error and return null (no thumbnail)
+    console.log(`pdftoppm failed for book ${bookId}:`, pdftoppmError.message);
+    
+    // Clean up any partial output files
+    const tempDir = path.dirname(tempOutputBase);
+    const baseName = path.basename(tempOutputBase);
+    const possibleOutputs = [
+      outputFile,
+      `${tempOutputBase}-01.png`,
+      `${tempOutputBase}-001.png`,
+      `${tempOutputBase}-1.png`,
+    ];
+    for (const candidate of possibleOutputs) {
+      try { if (fs.existsSync(candidate)) fs.unlinkSync(candidate); } catch {}
+    }
+    // Also try to clean up any matching files in temp directory
+    try {
+      const files = fs.readdirSync(tempDir);
+      files.filter(f => f.startsWith(baseName) && f.endsWith('.png')).forEach(f => {
+        try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
+      });
+    } catch {}
+    
+    // Return null if pdftoppm failed - pdfjs-dist fallback has issues with embedded images
+    return { cover: null };
+  }
 }
 
 const storage = multer.diskStorage({
@@ -552,7 +722,7 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
     const originalName = f.originalname;
     let safeTitle = path.basename(originalName, path.extname(originalName));
 
-    // Extract cover image and metadata for epub files
+    // Extract cover image and metadata for epub files, thumbnail for PDF files
     let coverImage = null;
     let metadata = null;
     if (finalType === "epub") {
@@ -560,6 +730,10 @@ app.post("/api/upload", upload.array("files", 200), async (req, res) => {
       const result = await extractCoverImage(epubPath, id);
       coverImage = result.cover;
       metadata = result.metadata;
+    } else if (finalType === "pdf") {
+      const pdfPath = path.join(booksDir, storedName);
+      const result = await extractPDFThumbnail(pdfPath, id);
+      coverImage = result.cover;
     }
 
     // Extract useful metadata fields

@@ -12,13 +12,18 @@ RUN npm run build
 FROM node:20-slim
 WORKDIR /app
 
-# Install Calibre for MOBI to EPUB conversion, pico2wave for TTS, and sox for audio speed adjustment
+# Install Calibre for MOBI to EPUB conversion, pico2wave for TTS, sox for audio speed adjustment,
+# and canvas dependencies for PDF thumbnail extraction
 # Enable non-free repository for libttspico-utils (pico2wave)
 RUN echo "deb http://deb.debian.org/debian bookworm main non-free" >> /etc/apt/sources.list && \
     echo "deb http://deb.debian.org/debian bookworm-updates main non-free" >> /etc/apt/sources.list && \
     echo "deb http://security.debian.org/debian-security bookworm-security main non-free" >> /etc/apt/sources.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends calibre libttspico-utils sox && \
+    apt-get install -y --no-install-recommends \
+    calibre libttspico-utils sox poppler-utils \
+    build-essential \
+    libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+    python3 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
