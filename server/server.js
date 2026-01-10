@@ -868,8 +868,26 @@ app.delete("/api/books/:id", async (req, res) => {
 
     // best-effort remove file
     try {
-      fs.unlinkSync(path.join(booksDir, book.storedName));
-    } catch { }
+      const filePath = path.join(booksDir, book.storedName);
+      console.log(`[Delete] Attempting to delete file: ${filePath}`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Delete] Successfully deleted book file: ${book.storedName}`);
+      } else {
+        console.warn(`[Delete] Book file not found on disk: ${filePath}`);
+      }
+
+      // Also delete cover image
+      if (book.coverImage) {
+        const coverPath = path.join(coversDir, book.coverImage);
+        if (fs.existsSync(coverPath)) {
+          fs.unlinkSync(coverPath);
+          console.log(`[Delete] Successfully deleted cover image: ${book.coverImage}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Delete] Error during cleanup: ${err.message}`);
+    }
 
     res.json({ ok: true });
   } catch (err) {
