@@ -83,6 +83,17 @@ export function defaultPrefs() {
 
 export async function loadProgress(bookId) {
   try {
+    // Get local progress first for comparison
+    let localProgress = null;
+    try {
+      const localData = localStorage.getItem(`ser:progress:${bookId}`);
+      if (localData) {
+        localProgress = JSON.parse(localData);
+      }
+    } catch (e) {
+      console.warn('Failed to parse local progress:', e);
+    }
+
     // Use cache: 'no-store' to ensure we always get fresh data from server
     // This is critical for iOS/iPadOS PWA where cached progress can cause sync issues
     const response = await fetch(`/api/progress/${bookId}`, {
@@ -92,51 +103,55 @@ export async function loadProgress(bookId) {
         'Pragma': 'no-cache'
       }
     });
+
     if (!response.ok) {
       if (response.status === 404) {
-        // Check localStorage as fallback
-        try {
-          const localData = localStorage.getItem(`ser:progress:${bookId}`);
-          if (localData) {
-            const localProgress = JSON.parse(localData);
-            // Sync localStorage data back to server
-            try {
-              await saveProgress(bookId, localProgress);
-            } catch (syncErr) {
-              // If sync fails, that's okay - at least we have the local data
-              console.warn('Failed to sync localStorage progress to server:', syncErr);
-            }
-            return localProgress;
+        if (localProgress) {
+          // Sync localStorage data back to server
+          try {
+            await saveProgress(bookId, localProgress);
+          } catch (syncErr) {
+            console.warn('Failed to sync localStorage progress to server:', syncErr);
           }
-        } catch (localErr) {
-          // Ignore localStorage errors
+          return localProgress;
         }
         return null;
       }
-      throw new Error('Failed to load progress');
+      throw new Error('Failed to load progress from server');
     }
-    const progress = await response.json();
-    
+
+    const serverProgress = await response.json();
+
+    // Sync logic: compare timestamps (updatedAt)
+    if (localProgress && localProgress.updatedAt > (serverProgress.updatedAt || 0)) {
+      console.log(`Local progress for ${bookId} is newer than server. Syncing to server...`);
+      try {
+        await saveProgress(bookId, localProgress);
+        return localProgress;
+      } catch (syncErr) {
+        console.warn('Failed to sync newer local progress to server:', syncErr);
+        return localProgress;
+      }
+    }
+
+    // Server is newer or equal, or no local progress
     // Sync server data to localStorage to keep them in sync
-    try {
-      localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
-    } catch (localErr) {
-      // Ignore localStorage errors - server data is the source of truth
+    if (serverProgress) {
+      try {
+        localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(serverProgress));
+      } catch (localErr) {
+        console.warn('Failed to sync progress to localStorage:', localErr);
+      }
     }
-    
-    return progress;
+
+    return serverProgress;
   } catch (err) {
-    console.warn('Error loading progress from server:', err);
+    console.warn('Error loading progress from server, falling back to local:', err);
     // Try localStorage as fallback
     try {
       const localData = localStorage.getItem(`ser:progress:${bookId}`);
       if (localData) {
-        const localProgress = JSON.parse(localData);
-        // Try to sync back to server when connection is restored
-        saveProgress(bookId, localProgress).catch(() => {
-          // Ignore sync errors - will retry on next load
-        });
-        return localProgress;
+        return JSON.parse(localData);
       }
     } catch (localErr) {
       // Ignore localStorage errors
@@ -151,7 +166,7 @@ export async function saveProgress(bookId, progress) {
       console.error('saveProgress called without bookId');
       return;
     }
-    
+
     // Use cache: 'no-store' and ensure request bypasses cache
     // This is critical for iOS/iPadOS PWA to ensure progress syncs properly
     const response = await fetch(`/api/progress/${bookId}`, {
@@ -164,14 +179,14 @@ export async function saveProgress(bookId, progress) {
       },
       body: JSON.stringify(progress),
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Failed to save progress: ${response.status} ${errorText}`);
     }
-    
+
     const result = await response.json();
-    
+
     // Always sync to localStorage when server save succeeds to keep them in sync
     try {
       localStorage.setItem(`ser:progress:${bookId}`, JSON.stringify(progress));
@@ -179,7 +194,7 @@ export async function saveProgress(bookId, progress) {
       // Ignore localStorage errors - server is the source of truth
       console.warn('Failed to sync progress to localStorage:', localErr);
     }
-    
+
     return result;
   } catch (err) {
     console.error(`Error saving progress for book ${bookId}:`, err);

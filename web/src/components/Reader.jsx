@@ -777,18 +777,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         pageWrapper.style.alignItems = 'flex-start';
         pageWrapper.style.padding = '0';
         pageWrapper.style.margin = '0';
-        pageWrapper.style.backgroundColor = '#f0f0f0'; // Light gray placeholder
+        pageWrapper.style.backgroundColor = 'transparent';
 
         // Add a simple loading indicator in the placeholder
         const loader = document.createElement('div');
         loader.textContent = `Page ${pageNum}`;
         loader.style.padding = '20px';
-        loader.style.color = '#999';
+        loader.style.color = 'var(--muted)';
+        loader.style.opacity = '0.3';
         pageWrapper.appendChild(loader);
 
         pagesWrapper.appendChild(pageWrapper);
         observer.observe(pageWrapper);
       }
+
+      // Explicitly set total height to avoid layout shifts during initial scroll
+      pagesWrapper.style.minHeight = `${estimatedPageHeight * totalPages}px`;
 
       scrollContainer.appendChild(pagesWrapper);
       container.appendChild(scrollContainer);
@@ -806,7 +810,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           if (savedPercent > 1) savedPercent = savedPercent / 100;
           setPercent(Math.max(0, Math.min(1, savedPercent)));
         } else {
-          const calculatedPercent = (savedProgress.page - 1) / totalPages;
+          const calculatedPercent = totalPages > 0 ? (savedProgress.page - 0.5) / totalPages : 0;
           setPercent(calculatedPercent);
         }
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
@@ -814,22 +818,35 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         // Scroll to saved position
         const scrollToY = savedProgress.scrollTop || 0;
 
-        if (scrollToY === 0 && savedProgress.page > 1) {
-          setTimeout(() => {
+        // More robust scroll restoration
+        const attemptScroll = (retryCount = 0) => {
+          if (!scrollContainer) return;
+
+          const scrollHeight = scrollContainer.scrollHeight;
+          const clientHeight = scrollContainer.clientHeight;
+          const maxScroll = Math.max(0, scrollHeight - clientHeight);
+
+          let targetScroll = 0;
+          if (scrollToY > 0) {
+            targetScroll = Math.min(scrollToY, maxScroll);
+          } else if (savedProgress.page > 1) {
             let calculatedScroll = 0;
-            for (let i = 0; i < savedProgress.page - 1 && i < pagesWrapper.children.length; i++) {
-              calculatedScroll += pagesWrapper.children[i].offsetHeight || 0;
+            const children = pagesWrapper.children;
+            for (let i = 0; i < savedProgress.page - 1 && i < children.length; i++) {
+              calculatedScroll += children[i].offsetHeight || estimatedPageHeight;
             }
-            scrollContainer.scrollTop = calculatedScroll;
-          }, 300);
-        } else if (scrollToY > 0) {
-          setTimeout(() => {
-            const scrollHeight = scrollContainer.scrollHeight;
-            const clientHeight = scrollContainer.clientHeight;
-            const maxScroll = Math.max(0, scrollHeight - clientHeight);
-            scrollContainer.scrollTop = Math.min(scrollToY, maxScroll);
-          }, 300);
-        }
+            targetScroll = Math.min(calculatedScroll, maxScroll);
+          }
+
+          scrollContainer.scrollTop = targetScroll;
+
+          // If we scrolled to 0 but expected more, or if layout seems incomplete, retry once
+          if (retryCount < 2 && targetScroll === 0 && (scrollToY > 0 || savedProgress.page > 1)) {
+            setTimeout(() => attemptScroll(retryCount + 1), 200);
+          }
+        };
+
+        setTimeout(() => attemptScroll(0), 100);
       } else {
         // No saved progress, start at beginning
         pdfPageNumRef.current = startPage || 1;
@@ -943,11 +960,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           currentPage = Math.max(1, Math.min(currentPage, totalPages));
           pdfPageNumRef.current = currentPage;
 
-          // Calculate progress percentage (0-1 range, then convert to 0-100 for display)
-          const maxScroll = scrollHeight - clientHeight;
-          const percent = maxScroll > 0 ? Math.min(1, Math.max(0, scrollTop / maxScroll)) : 0;
+          // Calculate progress percentage more robustly
+          // We use actual current page + progress within that page for the percentage
+          // This avoids jumps when estimated scroll height is wrong
+          let pageTop = 0;
+          for (let i = 0; i < currentPage - 1 && i < pagesWrapper.children.length; i++) {
+            pageTop += pagesWrapper.children[i].offsetHeight || 0;
+          }
+          const currentPageHeight = pagesWrapper.children[currentPage - 1]?.offsetHeight || estimatedPageHeight;
+          const progressInPage = currentPageHeight > 0 ? Math.min(1, Math.max(0, (scrollTop - pageTop) / currentPageHeight)) : 0;
 
-          // Update state - percent should be 0-1, but UI displays as 0-100
+          // Formula: (Already read pages + progress in current page) / total pages
+          const percent = totalPages > 0 ? (currentPage - 1 + progressInPage) / totalPages : 0;
+
           setPercent(percent);
           setLocationText(`Page ${currentPage} of ${totalPages}`);
 

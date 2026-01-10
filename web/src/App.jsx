@@ -256,6 +256,14 @@ export default function App() {
   // PWA and offline state
   const [isOffline, setIsOffline] = useState(!isOnline());
   const [canInstall, setCanInstall] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState(localStorage.getItem('ser:lastSynced') || null);
+
+  // Platform detection
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isPWA = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const showSyncButton = isIOS && isPWA;
 
   // Check authentication on app start
   useEffect(() => {
@@ -285,9 +293,49 @@ export default function App() {
   }, [toast]);
 
   async function reload() {
-    const data = await apiGetBooks();
-    setBooks(data.books || []);
+    try {
+      const data = await apiGetBooks();
+      const booksList = data.books || [];
+      setBooks(booksList);
+      return booksList;
+    } catch (err) {
+      setToast("API not reachable (is the server running?)");
+      throw err;
+    }
   }
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setToast("Syncing data...");
+
+    try {
+      // 1. Reload books (gets latest library state and sorting)
+      const freshBooks = await reload();
+
+      // 2. Reload preferences
+      const loadedPrefs = await loadPrefs();
+      setPrefs(loadedPrefs);
+
+      // 3. For all books, trigger loadProgress which now handles two-way sync
+      // We do this in smaller batches for iOS performance
+      const batchSize = 5;
+      for (let i = 0; i < freshBooks.length; i += batchSize) {
+        const batch = freshBooks.slice(i, i + batchSize);
+        await Promise.all(batch.map(book => loadProgress(book.id)));
+      }
+
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSynced(now);
+      localStorage.setItem('ser:lastSynced', now);
+      setToast("Sync complete");
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+      setToast("Sync failed");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   useEffect(() => {
     reload().catch(() => setToast("API not reachable (is the server running?)"));
@@ -371,6 +419,21 @@ export default function App() {
     return cleanup;
   }, [isOffline]);
 
+  // Handle app foregrounding (especially important for iOS PWA)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('App became visible - refreshing data');
+        reload().catch(() => {
+          // Ignore errors during auto-refresh
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
 
   // Authentication functions
   const checkAuthStatus = async () => {
@@ -450,7 +513,7 @@ export default function App() {
       {!selected && (
         <div className="topbar">
           <div className="brand">
-            <img src="/logo.svg" alt="ThinkRead" style={{height: '24px', width: '24px', objectFit: 'contain'}} onError={(e) => {
+            <img src="/logo.svg" alt="ThinkRead" style={{ height: '24px', width: '24px', objectFit: 'contain' }} onError={(e) => {
               // Fallback to PNG if SVG doesn't exist
               if (e.target.src.endsWith('.svg')) {
                 e.target.src = '/logo.png';
@@ -461,7 +524,7 @@ export default function App() {
             }} />
             <span>ThinkRead</span>
           </div>
-          <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             {isFullscreen && (
               <button
                 className="pill"
@@ -470,7 +533,7 @@ export default function App() {
                     console.warn('Failed to exit fullscreen:', err);
                   });
                 }}
-                style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+                style={{ padding: "6px 8px", minWidth: "auto", fontSize: "14px" }}
                 title="Exit Fullscreen"
               >
                 ⛶
@@ -480,26 +543,60 @@ export default function App() {
               <button
                 className="pill"
                 onClick={() => setShowAdminPanel(true)}
-                style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+                style={{ padding: "6px 8px", minWidth: "auto", fontSize: "14px" }}
                 title="Admin Panel"
               >
                 👑
               </button>
             )}
+            {showSyncButton && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <button
+                  className={`pill ${isSyncing ? 'syncing' : ''}`}
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  style={{
+                    padding: "6px 12px",
+                    minWidth: "auto",
+                    fontSize: "13px",
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    borderColor: 'var(--accent)',
+                    backgroundColor: isSyncing ? 'rgba(124, 92, 255, 0.1)' : 'transparent'
+                  }}
+                  title="Force Sync"
+                >
+                  <svg
+                    width="14" height="14" viewBox="0 0 16 16" fill="none"
+                    className={isSyncing ? 'spin' : ''}
+                    style={{ transition: 'transform 0.5s ease' }}
+                  >
+                    <path d="M13.65 2.35C12.19 0.9 10.21 0 8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C11.73 16 14.84 13.45 15.74 10H13.65C12.83 12.33 10.61 14 8 14C4.69 14 2 11.31 2 8C2 4.69 4.69 2 8 2C9.66 2 11.14 2.69 12.22 3.78L9 7H16V0L13.65 2.35Z" fill="currentColor" />
+                  </svg>
+                  {isSyncing ? 'Syncing...' : 'Sync'}
+                </button>
+                {lastSynced && (
+                  <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px' }}>
+                    Last: {lastSynced}
+                  </span>
+                )}
+              </div>
+            )}
             <button
               className="pill"
               onClick={() => setShowBookmarks(true)}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px", display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+              style={{ padding: "6px 8px", minWidth: "auto", fontSize: "14px", display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               title="All Bookmarks"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5"/>
+                <path d="M3 2C3 1.44772 3.44772 1 4 1H12C12.5523 1 13 1.44772 13 2V13C13 13.2652 12.8946 13.5196 12.7071 13.7071C12.5196 13.8946 12.2652 14 12 14C11.7348 14 11.4804 13.8946 11.2929 13.7071L8 10.4142L4.70711 13.7071C4.51957 13.8946 4.26522 14 4 14C3.73478 14 3.48043 13.8946 3.29289 13.7071C3.10536 13.5196 3 13.2652 3 13V2Z" fill="currentColor" stroke="currentColor" strokeWidth="0.5" />
               </svg>
             </button>
             <button
               className="pill"
               onClick={() => setSettingsOpen(true)}
-              style={{padding: "6px 8px", minWidth: "auto", fontSize: "14px"}}
+              style={{ padding: "6px 8px", minWidth: "auto", fontSize: "14px" }}
               title="Settings"
             >
               ☰
