@@ -307,7 +307,7 @@ export default function App() {
   const handleManualSync = async () => {
     if (isSyncing) return;
     setIsSyncing(true);
-    setToast("Syncing data...");
+    setToast("Refreshing data...");
 
     try {
       // 1. Reload books (gets latest library state and sorting)
@@ -328,10 +328,10 @@ export default function App() {
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setLastSynced(now);
       localStorage.setItem('ser:lastSynced', now);
-      setToast("Sync complete");
+      setToast("Refresh complete");
     } catch (err) {
-      console.error('Manual sync failed:', err);
-      setToast("Sync failed");
+      console.error('Manual refresh failed:', err);
+      setToast("Refresh failed");
     } finally {
       setIsSyncing(false);
     }
@@ -565,7 +565,7 @@ export default function App() {
                     borderColor: 'var(--accent)',
                     backgroundColor: isSyncing ? 'rgba(124, 92, 255, 0.1)' : 'transparent'
                   }}
-                  title="Force Sync"
+                  title="Force Refresh"
                 >
                   <svg
                     width="14" height="14" viewBox="0 0 16 16" fill="none"
@@ -574,7 +574,7 @@ export default function App() {
                   >
                     <path d="M13.65 2.35C12.19 0.9 10.21 0 8 0C3.58 0 0 3.58 0 8C0 12.42 3.58 16 8 16C11.73 16 14.84 13.45 15.74 10H13.65C12.83 12.33 10.61 14 8 14C4.69 14 2 11.31 2 8C2 4.69 4.69 2 8 2C9.66 2 11.14 2.69 12.22 3.78L9 7H16V0L13.65 2.35Z" fill="currentColor" />
                   </svg>
-                  {isSyncing ? 'Syncing...' : 'Sync'}
+                  {isSyncing ? 'Refreshing...' : 'Refresh'}
                 </button>
                 {lastSynced && (
                   <span style={{ fontSize: '9px', opacity: 0.6, marginTop: '2px' }}>
