@@ -951,6 +951,71 @@ app.get("/api/books/:id/file", (req, res) => {
   }
 });
 
+// Route to serve individual files from an EPUB archive (unzipped access)
+// This enables epub.js to load books partially without downloading the whole zip
+app.get("/api/books/:id/contents/*", (req, res) => {
+  try {
+    const { id } = req.params;
+    // req.params[0] contains the path after /contents/
+    const innerPath = decodeURIComponent(req.params[0]);
+    
+    if (!innerPath) {
+      return res.status(400).send("Path required");
+    }
+
+    const state = loadState(statePath);
+    const book = state.books.find((b) => b.id === id);
+    if (!book || book.type !== "epub") {
+      return res.status(404).send("Book not found or not an EPUB");
+    }
+
+    const filePath = path.join(booksDir, book.storedName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send("Book file missing");
+    }
+
+    // Set correct content type based on the extension of the inner file
+    const contentType = mime.lookup(innerPath) || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    // Add caching - book contents within the zip shouldn't change
+    res.setHeader("Cache-Control", "public, max-age=86400"); // 24 hours
+
+    // Use unzip -p to stream the specific file from the archive
+    // -p: extract files to pipe (stdout)
+    const unzip = spawn("unzip", ["-p", filePath, innerPath]);
+
+    unzip.stdout.pipe(res);
+
+    unzip.stderr.on("data", (data) => {
+      const errorMsg = data.toString();
+      // Only log significant errors, ignore common warnings
+      if (errorMsg.includes("caution: filename not matched")) {
+        console.warn(`[Contents] File not found in archive: ${innerPath}`);
+      } else {
+        console.error(`[Contents] Unzip error for ${id}/${innerPath}:`, errorMsg);
+      }
+    });
+
+    unzip.on("close", (code) => {
+      if (code !== 0 && !res.headersSent) {
+        res.status(404).send("File not found in archive");
+      }
+    });
+
+    // Handle client disconnect - kill the unzip process
+    req.on("close", () => {
+      if (unzip.exitCode === null) {
+        unzip.kill();
+      }
+    });
+  } catch (err) {
+    console.error(`[Contents] Major error:`, err);
+    if (!res.headersSent) {
+      res.status(500).send("Server error");
+    }
+  }
+});
+
 app.get("/api/books/:id/cover", (req, res) => {
   const { id } = req.params;
   const state = loadState(statePath);

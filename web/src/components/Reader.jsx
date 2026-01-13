@@ -312,6 +312,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [hasBookmark, setHasBookmark] = useState(false); // Track if current page has a bookmark
   const [tocOpen, setTocOpen] = useState(false);
   const [toc, setToc] = useState([]); // Table of contents
+  const tocRef = useRef([]); // Ref for TOC to avoid stale closures in event handlers
+  useEffect(() => { tocRef.current = toc; }, [toc]);
   const longPressTimerRef = useRef(null);
   const pdfDocRef = useRef(null); // PDF document reference
   const pdfPageNumRef = useRef(1); // Current PDF page number
@@ -324,6 +326,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const dictionaryCleanupRef = useRef(null);
   const longPressTriggeredRef = useRef(false); // Track if long press was triggered to prevent click
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
+  useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
   const audioRef = useRef(null); // Audio element for playback
   const audioSourceRef = useRef(null); // Current audio source URL
   const ttsTextRef = useRef(null); // Store extracted text
@@ -338,13 +342,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
 
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
+  const contentsUrl = useMemo(() => `/api/books/${book.id}/contents/`, [book.id]);
 
-  // Cache book for offline reading when opened
+  // Cache book for offline reading when opened - but ONLY if it's reasonably sized
   useEffect(() => {
-    if (book.id && fileUrl) {
+    // Only auto-cache books smaller than 50MB to avoid freezing on large books
+    // If book.sizeBytes is missing, we assume it's small enough or let the user manually cache it
+    if (book.id && fileUrl && (!book.sizeBytes || book.sizeBytes < 50 * 1024 * 1024)) {
       cacheBook(book.id, fileUrl);
     }
-  }, [book.id, fileUrl]);
+  }, [book.id, fileUrl, book.sizeBytes]);
 
   // Apply theme settings to epub.js rendition
   function applyPrefs(rendition, p) {
@@ -1098,7 +1105,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
     let destroyed = false;
 
-    const epub = ePub(fileUrl, { openAs: "epub" });
+    // Use unzipped/partial loading for all EPUBs for better performance
+    // This points to the new /contents/ directory proxy on the server
+    const epub = ePub(contentsUrl);
     epubBookRef.current = epub;
 
     const host = hostRef.current;
@@ -1109,6 +1118,218 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       flow: "paginated",
     });
     renditionRef.current = rendition;
+
+    const onRelocated = (loc) => {
+      if (destroyed) return;
+      const cfi = loc?.start?.cfi;
+      let p = 0;
+      let currentPage = 0;
+      let totalPages = 0;
+
+      // Stop TTS when page changes
+      if (isSpeakingRef.current && audioRef.current) {
+        stopTTS();
+      }
+
+      // Update current chapter name
+      if (tocRef.current.length > 0) {
+        try {
+          const currentToc = tocRef.current;
+          // Try to get href from location object first
+          let currentHref = null;
+
+          if (loc) {
+            currentHref = loc?.start?.href ||
+              loc?.start?.displayed?.href ||
+              loc?.start?.loc?.href ||
+              loc?.displayed?.href ||
+              loc?.href;
+          }
+
+          // Fallback: try to get from rendition's current location
+          if (!currentHref && renditionRef.current) {
+            try {
+              currentHref = renditionRef.current.location?.start?.href;
+            } catch { }
+          }
+
+          let matchingChapter = null;
+          if (currentHref) {
+            // Normalize current href (strip leading / if any)
+            const currentHrefNormalized = currentHref.startsWith('/') ? currentHref.substring(1) : currentHref;
+
+            // Try direct match
+            matchingChapter = currentToc.find(item => {
+              const itemHrefNormalized = item.href.startsWith('/') ? item.href.substring(1) : item.href;
+              // Check for exact match or match after # hash
+              if (itemHrefNormalized === currentHrefNormalized) return true;
+              // Check if filenames match (case-insensitive)
+              if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
+              // Partial match - check if one contains the other
+              return itemHrefNormalized.includes(currentHrefNormalized) ||
+                currentHrefNormalized.includes(itemHrefNormalized);
+            });
+
+            // If no direct match, try matching by full href path
+            if (!matchingChapter) {
+              const currentFullHref = currentHref.split('#')[0].split('?')[0];
+              matchingChapter = currentToc.find(item => {
+                const itemFullHref = item.href.split('#')[0].split('?')[0];
+                return currentFullHref === itemFullHref ||
+                  currentFullHref.endsWith(itemFullHref) ||
+                  itemFullHref.endsWith(currentFullHref);
+              });
+            }
+
+            // If still no match, try finding by position in TOC (closest previous chapter)
+            if (!matchingChapter && epubBookRef.current && cfi) {
+              try {
+                // Find the chapter that's closest to current position
+                let bestMatch = null;
+                let bestIndex = -1;
+
+                for (let i = 0; i < currentToc.length; i++) {
+                  const item = currentToc[i];
+                  try {
+                    const itemCfi = epubBookRef.current.locations?.cfiFromHref?.(item.href);
+                    if (itemCfi && cfi >= itemCfi) {
+                      // Current position is at or after this chapter
+                      if (i > bestIndex) {
+                        bestIndex = i;
+                        bestMatch = item;
+                      }
+                    }
+                  } catch (e) {
+                    // Skip items that can't be converted
+                  }
+                }
+
+                if (bestMatch) {
+                  matchingChapter = bestMatch;
+                }
+              } catch (e) {
+                // CFI comparison failed
+              }
+            }
+
+            if (matchingChapter) {
+              setCurrentChapterName(matchingChapter.label);
+            } else {
+              // Default if no match found
+              setCurrentChapterName('Reading');
+            }
+          } else {
+            // No href available yet
+            setCurrentChapterName('Reading');
+          }
+        } catch (err) {
+          console.warn('Failed to get chapter name:', err);
+          setCurrentChapterName('Reading');
+        }
+      } else if (!currentChapterName) {
+        // No TOC available yet
+        setCurrentChapterName('Reading');
+      }
+
+      try {
+        if (epub.locations?.length()) {
+          p = epub.locations.percentageFromCfi(cfi) || 0;
+          // Calculate continuous page number from locations array
+          const locationIndex = epub.locations.locationFromCfi(cfi);
+          currentPage = locationIndex > 0 ? locationIndex : 1;
+          totalPages = epub.locations.length();
+        } else if (epub.spine?.length) {
+          // Fallback to spine-based progress for large books that skipped pagination
+          // Try multiple ways to get the current spine index
+          const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epub.spine.get(cfi)?.index || 0);
+
+          // Use a rough estimate from spine index
+          p = (spineIndex / epub.spine.length);
+          currentPage = spineIndex + 1;
+          totalPages = epub.spine.length;
+
+          console.log(`[Large Book] Fallback progress: section ${currentPage}/${totalPages}, percent ${Math.round(p * 100)}%`);
+        }
+      } catch (err) {
+        console.warn('Error calculating progress fallback:', err);
+      }
+
+      setPercent(p);
+
+      // Select appropriate location text
+      let pageText = "Loading...";
+      if (totalPages > 0) {
+        if (epub.locations?.length() > 0) {
+          pageText = `Page ${currentPage} of ${totalPages}`;
+        } else {
+          // Fallback style for very large books without precise location markers
+          pageText = `Section ${currentPage} of ${totalPages}`;
+        }
+      }
+      setLocationText(pageText);
+
+      // Update last page info for the button
+      if (currentPage > 0) {
+        setLastPageInfo({ page: currentPage, percent: Math.round(p * 100) });
+      }
+
+      // Check if current page has a bookmark (we'll load bookmarks and check)
+      checkBookmarkForCurrentPage(cfi);
+
+      // Don't save progress if we're still restoring the position
+      if (isRestoringRef.current) {
+        return;
+      }
+
+      // Get current saved progress and preserve locations
+      const saved = savedProgressRef.current || {};
+
+      // Get current locations from epub if available, otherwise use saved ones
+      let locationsToSave = saved.locations;
+      try {
+        if (epub.locations?.length()) {
+          const currentLocations = epub.locations.save();
+          if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
+            locationsToSave = currentLocations;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to get current locations:', err);
+      }
+
+      // Save progress while preserving locations
+      const progressToSave = {
+        cfi,
+        percent: p,
+        locations: locationsToSave,
+        updatedAt: Date.now()
+      };
+
+      // Preserve any other fields from saved progress
+      if (saved && typeof saved === 'object') {
+        Object.keys(saved).forEach(key => {
+          if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
+            progressToSave[key] = saved[key];
+          }
+        });
+      }
+
+      // Update the ref so future saves have the latest data
+      savedProgressRef.current = progressToSave;
+
+      // Get the current book ID from ref
+      const currentBookId = currentBookIdRef.current;
+      if (!currentBookId) {
+        return;
+      }
+
+      // Save progress (fire and forget, but log errors)
+      saveProgress(currentBookId, progressToSave).catch((err) => {
+        console.error(`Failed to save progress for book ${currentBookId}:`, err);
+      });
+    };
+
+    rendition.on("relocated", onRelocated);
 
     // Declare variables in proper scope
     // Use bookmark CFI if provided, otherwise will be set from saved progress
@@ -1136,6 +1357,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       }
 
       savedProgressRef.current = parsedProgress;
+      // Set initial percent state if available to show progress immediately
+      if (parsedProgress?.percent !== undefined) {
+        setPercent(parsedProgress.percent);
+      }
       // Use bookmark CFI if provided, otherwise use saved progress CFI
       if (!startAt) {
         startAt = parsedProgress?.cfi || undefined;
@@ -1172,6 +1397,16 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               return epub.locations.generate(1600);
             }
           } else {
+            // For very large books, location generation can still take a long time
+            // even with unzipped access. We only do it if the book is < 100MB
+            // or we could skip it and let user trigger it.
+            // For now, let's keep it but use a larger threshold/chunk size if possible.
+            if (book.sizeBytes && book.sizeBytes > 100 * 1024 * 1024) {
+              console.log('Very large book detected, skipping automatic location generation to save bandwidth');
+              locationsReadyRef.current = false;
+              return Promise.resolve();
+            }
+
             console.log('No cached locations found, generating...');
             // No cached locations, generate them
             return epub.locations.generate(1600);
@@ -1394,210 +1629,6 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       });
     });
 
-    const onRelocated = (loc) => {
-      if (destroyed) return;
-      const cfi = loc?.start?.cfi;
-      let p = 0;
-      let currentPage = 0;
-      let totalPages = 0;
-
-      // Stop TTS when page changes
-      if (isSpeaking && audioRef.current) {
-        stopTTS();
-      }
-
-      // Update current chapter name
-      if (toc.length > 0) {
-        try {
-          // Try to get href from location object first
-          let currentHref = null;
-
-          if (loc) {
-            currentHref = loc?.start?.href ||
-              loc?.start?.displayed?.href ||
-              loc?.start?.loc?.href ||
-              loc?.displayed?.href ||
-              loc?.href;
-          }
-
-          // Fallback: try to get from rendition's current location
-          if (!currentHref && renditionRef.current) {
-            try {
-              const currentLocation = renditionRef.current.currentLocation();
-              if (currentLocation) {
-                currentHref = currentLocation.start?.href ||
-                  currentLocation.start?.displayed?.href ||
-                  currentLocation.href;
-              }
-            } catch (e) {
-              // Current location not available yet
-            }
-          }
-
-          if (currentHref) {
-            // Normalize href for comparison - extract just the filename/base name
-            const normalizeHref = (href) => {
-              if (!href) return '';
-              // Remove fragment and query params
-              let normalized = href.split('#')[0].split('?')[0];
-              // Extract filename from path
-              const parts = normalized.split('/');
-              const filename = parts[parts.length - 1];
-              return filename || normalized;
-            };
-
-            const currentHrefNormalized = normalizeHref(currentHref);
-
-            // Find matching TOC item
-            let matchingChapter = toc.find(item => {
-              const itemHrefNormalized = normalizeHref(item.href);
-              // Exact filename match
-              if (itemHrefNormalized === currentHrefNormalized) return true;
-              // Check if filenames match (case-insensitive)
-              if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
-              // Partial match - check if one contains the other
-              return itemHrefNormalized.includes(currentHrefNormalized) ||
-                currentHrefNormalized.includes(itemHrefNormalized);
-            });
-
-            // If no direct match, try matching by full href path
-            if (!matchingChapter) {
-              const currentFullHref = currentHref.split('#')[0].split('?')[0];
-              matchingChapter = toc.find(item => {
-                const itemFullHref = item.href.split('#')[0].split('?')[0];
-                return currentFullHref === itemFullHref ||
-                  currentFullHref.endsWith(itemFullHref) ||
-                  itemFullHref.endsWith(currentFullHref);
-              });
-            }
-
-            // If still no match, try finding by position in TOC (closest previous chapter)
-            if (!matchingChapter && epubBookRef.current && cfi) {
-              try {
-                // Find the chapter that's closest to current position
-                let bestMatch = null;
-                let bestIndex = -1;
-
-                for (let i = 0; i < toc.length; i++) {
-                  const item = toc[i];
-                  try {
-                    const itemCfi = epubBookRef.current.locations?.cfiFromHref?.(item.href);
-                    if (itemCfi && cfi >= itemCfi) {
-                      // Current position is at or after this chapter
-                      if (i > bestIndex) {
-                        bestIndex = i;
-                        bestMatch = item;
-                      }
-                    }
-                  } catch (e) {
-                    // Skip items that can't be converted
-                  }
-                }
-
-                if (bestMatch) {
-                  matchingChapter = bestMatch;
-                }
-              } catch (e) {
-                // CFI comparison failed
-              }
-            }
-
-            if (matchingChapter) {
-              setCurrentChapterName(matchingChapter.label);
-            } else {
-              // Default if no match found
-              setCurrentChapterName('Reading');
-            }
-          } else {
-            // No href available yet
-            setCurrentChapterName('Reading');
-          }
-        } catch (err) {
-          console.warn('Failed to get chapter name:', err);
-          setCurrentChapterName('Reading');
-        }
-      } else if (!currentChapterName) {
-        // No TOC available yet
-        setCurrentChapterName('Reading');
-      }
-
-      try {
-        if (epub.locations?.length()) {
-          p = epub.locations.percentageFromCfi(cfi) || 0;
-          // Calculate continuous page number from locations array
-          const locationIndex = epub.locations.locationFromCfi(cfi);
-          currentPage = locationIndex > 0 ? locationIndex : 1;
-          totalPages = epub.locations.length();
-        }
-      } catch { }
-
-      setPercent(p);
-      // Show "Loading..." until locations are ready, then show page numbers
-      const pageText = locationsReadyRef.current && totalPages > 0 ? `Page ${currentPage} of ${totalPages}` : "Loading...";
-      setLocationText(pageText);
-
-      // Update last page info for the button
-      if (locationsReadyRef.current && currentPage > 0) {
-        setLastPageInfo({ page: currentPage, percent: Math.round(p) });
-      }
-
-      // Check if current page has a bookmark (we'll load bookmarks and check)
-      checkBookmarkForCurrentPage(cfi);
-
-      // Don't save progress if we're still restoring the position
-      if (isRestoringRef.current) {
-        return;
-      }
-
-      // Get current saved progress and preserve locations
-      const saved = savedProgressRef.current || {};
-
-      // Get current locations from epub if available, otherwise use saved ones
-      let locationsToSave = saved.locations;
-      try {
-        if (epub.locations?.length()) {
-          const currentLocations = epub.locations.save();
-          if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
-            locationsToSave = currentLocations;
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to get current locations:', err);
-      }
-
-      // Save progress while preserving locations
-      const progressToSave = {
-        cfi,
-        percent: p,
-        locations: locationsToSave,
-        updatedAt: Date.now()
-      };
-
-      // Preserve any other fields from saved progress
-      if (saved && typeof saved === 'object') {
-        Object.keys(saved).forEach(key => {
-          if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
-            progressToSave[key] = saved[key];
-          }
-        });
-      }
-
-      // Update the ref so future saves have the latest data
-      savedProgressRef.current = progressToSave;
-
-      // Get the current book ID from ref to ensure we're saving to the right book
-      const currentBookId = currentBookIdRef.current;
-      if (!currentBookId) {
-        return;
-      }
-
-      // Save progress (fire and forget, but log errors)
-      saveProgress(currentBookId, progressToSave).catch((err) => {
-        console.error(`Failed to save progress for book ${currentBookId}:`, err);
-      });
-    };
-
-    rendition.on("relocated", onRelocated);
 
     // Save progress periodically and on page visibility change
     const saveCurrentProgress = () => {
@@ -1610,6 +1641,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           try {
             if (epub.locations?.length()) {
               p = epub.locations.percentageFromCfi(cfi) || 0;
+            } else if (epub.spine?.length) {
+              // Fallback for large books without generated locations
+              const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epub.spine.get(cfi)?.index || 0);
+              p = (spineIndex / epub.spine.length);
             }
           } catch { }
 
@@ -2573,12 +2608,24 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setNavigatingToPercent(percent);
       }
 
-      const cfi = epubBookRef.current.locations.cfiFromPercentage(percent / 100);
-      if (cfi) {
-        await renditionRef.current.display(cfi);
-        if (!isDragging) {
-          setNavigatingToPercent(null);
+      const locations = epubBookRef.current.locations;
+      if (locations?.length() > 0) {
+        const cfi = locations.cfiFromPercentage(percent / 100);
+        if (cfi) {
+          await renditionRef.current.display(cfi);
         }
+      } else if (epubBookRef.current.spine?.length > 0) {
+        // Fallback: navigate to spine item for large books without locations
+        const spine = epubBookRef.current.spine;
+        const targetIndex = Math.floor((percent / 100) * spine.length);
+        const item = spine.get(targetIndex);
+        if (item) {
+          await renditionRef.current.display(item.href);
+        }
+      }
+
+      if (!isDragging) {
+        setNavigatingToPercent(null);
       }
     } catch (err) {
       console.warn("Failed to navigate to percentage:", err);

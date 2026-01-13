@@ -71,6 +71,9 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/books/') && url.pathname.endsWith('/file')) {
     // Book files - cache them when accessed
     event.respondWith(handleBookRequest(request));
+  } else if (url.pathname.startsWith('/api/books/') && url.pathname.includes('/contents/')) {
+    // Individual book files (unzipped) - cache them as they are accessed for faster subsequent reads
+    event.respondWith(handleStaticRequest(request));
   } else if (url.pathname.startsWith('/api/')) {
     // API requests - network first, with offline fallback
     event.respondWith(handleApiRequest(request));

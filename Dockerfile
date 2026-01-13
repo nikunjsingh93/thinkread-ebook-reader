@@ -20,7 +20,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm main non-free" >> /etc/apt/s
     echo "deb http://security.debian.org/debian-security bookworm-security main non-free" >> /etc/apt/sources.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    calibre libttspico-utils sox poppler-utils \
+    calibre libttspico-utils sox poppler-utils unzip \
     build-essential \
     libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
     python3 && \
