@@ -60,6 +60,27 @@ services:
     restart: unless-stopped
 ```
 
+#### Separate Volumes Configuration
+
+Use this configuration if you want to store your library (book files) on a different drive or directory from the application data (covers, settings, users).
+
+```yaml
+services:
+  thinkread:
+    image: nikunjsingh/thinkread-ebook-reader:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      # Application data (covers, fonts, database)
+      - ./thinkread/data:/data
+      # Your book library (external HDD or specific folder)
+      - /path/to/your/books:/books
+    environment:
+      - DATA_DIR=/data
+      - BOOKS_DIR=/books
+    restart: unless-stopped
+```
+
 ### Docker Run
 
 ```bash
@@ -99,6 +120,6 @@ Uploaded books + app data are stored in `./thinkread/data` (mapped to `/data` in
 
 ## Notes / Limitations
 
-- **EPUB only** (no MOBI/KFX). EPUB is the most browser-friendly format.
-- **EPUB covers are automatically extracted** and displayed in the shelf view.
+- **Supported Formats**: EPUB, MOBI (automatically converted to EPUB), and PDF.
+- **Automatic Extraction**: EPUB covers and PDF thumbnails are automatically extracted.
 - **Custom fonts**: Upload TTF, OTF, WOFF, or WOFF2 files in the reader settings for personalized typography.
