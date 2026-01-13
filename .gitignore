@@ -38,6 +38,7 @@ data/covers/
 data/fonts/
 data/state.json
 data/dictionary.json
+data/sessions/
 
 # Docker volumes and data
 docker-volumes/

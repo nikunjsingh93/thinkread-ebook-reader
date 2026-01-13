@@ -11,6 +11,7 @@ import { nanoid } from "nanoid";
 import { fileURLToPath } from "node:url";
 import epubParser from "epub";
 import session from "express-session";
+import sessionFileStore from "session-file-store";
 import { getDataPaths, loadState, saveStateAtomic } from "./storage.js";
 import os from "node:os";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -54,6 +55,13 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const BOOKS_DIR = process.env.BOOKS_DIR; // Optional separate books directory
 const { booksDir, coversDir, fontsDir, statePath, dictionaryPath } = getDataPaths(DATA_DIR, BOOKS_DIR);
+const sessionsDir = path.join(DATA_DIR, "sessions");
+
+if (!fs.existsSync(sessionsDir)) {
+  fs.mkdirSync(sessionsDir, { recursive: true });
+}
+
+const FileStore = sessionFileStore(session);
 
 console.log(`[Startup] RAW env.BOOKS_DIR: "${process.env.BOOKS_DIR}"`);
 console.log(`[Startup] Data Directory: ${DATA_DIR}`);
@@ -361,13 +369,20 @@ app.use(morgan("dev"));
 app.use(express.json({ limit: "50mb" })); // Increased for dictionary
 
 // Session middleware
+const sessionSecret = process.env.SESSION_SECRET || 'thinkread-default-secret-change-me';
 app.use(session({
-  secret: 'thinkread-session-secret-' + nanoid(16), // Generate a unique secret
+  store: new FileStore({
+    path: sessionsDir,
+    ttl: 30 * 24 * 60 * 60, // 30 days
+    retries: 5,
+    reapInterval: 24 * 60 * 60 // Clean up expired sessions once a day
+  }),
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: {
     secure: false, // Set to true in production with HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   }
 }));
 

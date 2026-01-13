@@ -2,6 +2,7 @@ export async function loadPrefs() {
   try {
     const response = await fetch('/api/prefs');
     if (!response.ok) {
+      if (response.status === 401) throw new Error("Unauthorized");
       console.warn('Failed to load prefs from server, using defaults');
       return defaultPrefs();
     }
@@ -11,6 +12,7 @@ export async function loadPrefs() {
     const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
     return { ...defaults, ...p, colors: mergedColors };
   } catch (err) {
+    if (err.message === "Unauthorized") throw err;
     console.warn('Error loading prefs from server:', err);
     return defaultPrefs();
   }
@@ -105,12 +107,14 @@ export async function loadProgress(bookId) {
     });
 
     if (!response.ok) {
+      if (response.status === 401) throw new Error("Unauthorized");
       if (response.status === 404) {
         if (localProgress) {
           // Sync localStorage data back to server
           try {
             await saveProgress(bookId, localProgress);
           } catch (syncErr) {
+            if (syncErr.message === "Unauthorized") throw syncErr;
             console.warn('Failed to sync localStorage progress to server:', syncErr);
           }
           return localProgress;
@@ -146,6 +150,7 @@ export async function loadProgress(bookId) {
 
     return serverProgress;
   } catch (err) {
+    if (err.message === "Unauthorized") throw err;
     console.warn('Error loading progress from server, falling back to local:', err);
     // Try localStorage as fallback
     try {
@@ -181,6 +186,7 @@ export async function saveProgress(bookId, progress) {
     });
 
     if (!response.ok) {
+      if (response.status === 401) throw new Error("Unauthorized");
       const errorText = await response.text();
       throw new Error(`Failed to save progress: ${response.status} ${errorText}`);
     }
@@ -197,6 +203,7 @@ export async function saveProgress(bookId, progress) {
 
     return result;
   } catch (err) {
+    if (err.message === "Unauthorized") throw err;
     console.error(`Error saving progress for book ${bookId}:`, err);
     // Fallback to localStorage for offline support
     try {

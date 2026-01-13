@@ -9,7 +9,7 @@ import Login from "./components/Login.jsx";
 import AdminPanel from "./components/AdminPanel.jsx";
 import PWAInstallPrompt from "./components/PWAInstallPrompt.jsx";
 import { apiGetBooks } from "./lib/api.js";
-import { loadPrefs, savePrefs } from "./lib/storage.js";
+import { loadPrefs, savePrefs, loadProgress } from "./lib/storage.js";
 import {
   registerServiceWorker,
   onOnlineStatusChange,
@@ -299,6 +299,10 @@ export default function App() {
       setBooks(booksList);
       return booksList;
     } catch (err) {
+      if (err.message === "Unauthorized") {
+        setCurrentUser(null);
+        return [];
+      }
       setToast("API not reachable (is the server running?)");
       throw err;
     }
@@ -331,6 +335,10 @@ export default function App() {
       setToast("Refresh complete");
     } catch (err) {
       console.error('Manual refresh failed:', err);
+      if (err.message === "Unauthorized") {
+        setCurrentUser(null);
+        return;
+      }
       setToast("Refresh failed");
     } finally {
       setIsSyncing(false);
@@ -423,9 +431,22 @@ export default function App() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('App became visible - refreshing data');
-        reload().catch(() => {
-          // Ignore errors during auto-refresh
+        console.log('App became visible - refreshing health and auth');
+
+        // Check health first
+        fetch('/api/health').then(r => {
+          if (r.ok) {
+            // Then check auth and reload
+            checkAuthStatus().then(() => {
+              reload().catch(() => {
+                // Ignore errors during auto-refresh
+              });
+            });
+          } else {
+            setToast("Server currently unavailable");
+          }
+        }).catch(() => {
+          setToast("Server unreachable");
         });
       }
     };

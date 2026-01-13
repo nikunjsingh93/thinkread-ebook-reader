@@ -1,7 +1,10 @@
 export async function apiGetBooks() {
   try {
     const r = await fetch("/api/books");
-    if (!r.ok) throw new Error("Failed to fetch books");
+    if (!r.ok) {
+      if (r.status === 401) throw new Error("Unauthorized");
+      throw new Error("Failed to fetch books");
+    }
     const data = await r.json();
 
     // Cache book metadata for offline use
@@ -262,18 +265,18 @@ export async function apiGetTTSVoices() {
 
 export async function apiGenerateTTS(text, options = {}) {
   const { voice, rate = 1.0, pitch = 1.0, lang = 'en-US' } = options;
-  
+
   const r = await fetch("/api/tts/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice, rate, pitch, lang }),
   });
-  
+
   if (!r.ok) {
     const error = await r.json().catch(() => ({}));
     throw new Error(error?.error || "TTS generation failed");
   }
-  
+
   // Return the audio blob
   return await r.blob();
 }
