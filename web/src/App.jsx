@@ -236,9 +236,33 @@ function applyTheme(prefs) {
 }
 
 export default function App() {
-  const [books, setBooks] = useState([]);
+  const [books, setBooks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ser:books_cache');
+      if (saved) {
+        const data = JSON.parse(saved);
+        return data.books || [];
+      }
+    } catch (e) {
+      console.warn('[App] Failed to load books from localStorage', e);
+    }
+    return [];
+  });
   const [selected, setSelected] = useState(null);
-  const [prefs, setPrefs] = useState(defaultPrefs());
+  const [prefs, setPrefs] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ser:prefs:v1");
+      if (saved) {
+        const p = JSON.parse(saved);
+        const defaults = defaultPrefs();
+        const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
+        return { ...defaults, ...p, colors: mergedColors };
+      }
+    } catch (e) {
+      console.warn('[App] Failed to load initial prefs from localStorage', e);
+    }
+    return defaultPrefs();
+  });
   const [toast, setToast] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
@@ -307,10 +331,24 @@ export default function App() {
       return booksList;
     } catch (err) {
       if (err.message === "Unauthorized") {
-        setCurrentUser(null);
-        return [];
+        try {
+          const healthRes = await fetch('/api/health');
+          if (healthRes.ok) {
+            const healthData = await healthRes.json().catch(() => ({}));
+            if (healthData.status === "ok") {
+              console.log('[App] Auth verified as stale, clearing');
+              setCurrentUser(null);
+              localStorage.removeItem('ser:user');
+              return [];
+            }
+          }
+        } catch (e) { }
       }
-      setToast("API not reachable (is the server running?)");
+      console.warn('[App] Reload failed:', err);
+      // Silence toast if we're clearly offline or it's a network error
+      if (navigator.onLine && err.message !== "Failed to fetch") {
+        setToast("Connection issue");
+      }
       throw err;
     }
   }
@@ -343,8 +381,18 @@ export default function App() {
     } catch (err) {
       console.error('Manual refresh failed:', err);
       if (err.message === "Unauthorized") {
-        setCurrentUser(null);
-        return;
+        try {
+          const healthRes = await fetch('/api/health');
+          if (healthRes.ok) {
+            const healthData = await healthRes.json().catch(() => ({}));
+            if (healthData.status === "ok") {
+              console.log('[App] Auth verified as stale during sync, clearing');
+              setCurrentUser(null);
+              localStorage.removeItem('ser:user');
+              return;
+            }
+          }
+        } catch (e) { }
       }
       setToast("Refresh failed");
     } finally {
@@ -353,7 +401,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    reload().catch(() => setToast("API not reachable (is the server running?)"));
+    reload().catch(() => {
+      // Silent catch for initial load
+    });
   }, []);
 
   // Load preferences on mount
@@ -465,25 +515,47 @@ export default function App() {
 
   // Authentication functions
   const checkAuthStatus = async () => {
+    const offline = !navigator.onLine;
+    console.log('[Auth] Checking status, navigator.onLine:', navigator.onLine);
+
+    // If we have a local user and we're definitely offline, just skip the network check
+    // but mark auth as loaded so we show the library.
+    if (currentUser && offline) {
+      console.log('[Auth] Using persistent local user while offline');
+      setIsAuthLoading(false);
+      return;
+    }
+
     try {
+      // Add a small delay for PWA initialization to ensure network state is stable
+      // On Android, network state can be flaky for the first few hundred ms
+      if (isPWA) await new Promise(r => setTimeout(r, 2000));
+
       const response = await fetch('/api/current-user');
       if (response.ok) {
         const data = await response.json();
-        setCurrentUser(data.user);
-        localStorage.setItem('ser:user', JSON.stringify(data.user));
+        if (data && data.user) {
+          console.log('[Auth] Verified online');
+          setCurrentUser(data.user);
+          localStorage.setItem('ser:user', JSON.stringify(data.user));
+        }
       } else if (response.status === 401) {
-        // Explicit unauthorized - clear local session
-        console.log('Session expired or invalid, clearing local user');
-        setCurrentUser(null);
-        localStorage.removeItem('ser:user');
-      } else {
-        // Other server error (500, etc) - if we have a local user, keep it
-        console.warn('Server error during auth check, status:', response.status);
+        try {
+          const healthRes = await fetch('/api/health');
+          if (healthRes.ok) {
+            const healthData = await healthRes.json().catch(() => ({}));
+            if (healthData.status === "ok") {
+              console.log('[Auth] Server confirmed logout');
+              setCurrentUser(null);
+              localStorage.removeItem('ser:user');
+            }
+          }
+        } catch (e) {
+          console.warn('[Auth] Health unreachable, keeping session');
+        }
       }
     } catch (error) {
-      console.error('Auth check failed (network error):', error);
-      // If we're offline or have an error, we keep the user from localStorage
-      // which was already initialized in the useState default value.
+      console.log('[Auth] Network unreachable, using local session');
     } finally {
       setIsAuthLoading(false);
     }
@@ -527,8 +599,10 @@ export default function App() {
     }
   }
 
-  // Show loading screen while checking authentication
-  if (isAuthLoading) {
+  // Show loading screen while checking authentication 
+  // ONLY if we don't already have a local user to show.
+  // This makes the app feel "instant" on restart if already logged in.
+  if (isAuthLoading && !currentUser) {
     return (
       <div className="appShell" style={{
         display: 'flex',
@@ -537,13 +611,57 @@ export default function App() {
         minHeight: '100vh',
         background: 'var(--bg)'
       }}>
-        <div style={{ color: 'var(--text)' }}>Loading...</div>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '16px',
+          color: 'var(--text)'
+        }}>
+          <div className="spin" style={{
+            width: '32px',
+            height: '32px',
+            border: '3px solid var(--accent)',
+            borderTopColor: 'transparent',
+            borderRadius: '50%'
+          }}></div>
+          <div style={{ fontSize: '14px', fontWeight: '500', opacity: 0.8 }}>Initializing Library...</div>
+        </div>
       </div>
     );
   }
 
   // Show login page if not authenticated
   if (!currentUser) {
+    if (isOffline) {
+      return (
+        <div className="appShell" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '100vh',
+          background: 'var(--bg)',
+          padding: '20px',
+          textAlign: 'center'
+        }}>
+          <div style={{ color: 'var(--text)', maxWidth: '400px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '20px' }}>📶</div>
+            <h1 style={{ fontSize: '24px', marginBottom: '12px' }}>Offline</h1>
+            <p style={{ color: 'var(--muted)', marginBottom: '24px' }}>
+              You are currently offline and no active session was found.
+              Please connect to the internet to sign in to your library.
+            </p>
+            <button
+              className="pill"
+              onClick={() => window.location.reload()}
+              style={{ padding: '10px 24px' }}
+            >
+              Retry Connection
+            </button>
+          </div>
+        </div>
+      );
+    }
     return <Login onLogin={handleLogin} onToast={(t) => setToast(t)} />;
   }
 

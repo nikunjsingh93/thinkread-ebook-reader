@@ -7,7 +7,14 @@ export async function apiGetBooks() {
     }
     const data = await r.json();
 
-    // Cache book metadata for offline use
+    // Deep cache book metadata in both Service Worker and LocalStorage
+    try {
+      localStorage.setItem('ser:books_cache', JSON.stringify(data));
+      console.log('[API] Books list cached to localStorage');
+    } catch (e) {
+      console.warn('[API] Failed to cache books to localStorage', e);
+    }
+
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
       data.books.forEach(book => {
         navigator.serviceWorker.controller.postMessage({
@@ -33,13 +40,28 @@ export async function apiGetBooks() {
 
     return data;
   } catch (error) {
-    // If offline, try to get cached books from service worker
-    if (!navigator.onLine) {
-      console.log('Offline - attempting to get cached books');
-      // The service worker will handle this and return cached books
-      const r = await fetch("/api/books");
-      if (r.ok) return r.json();
+    console.log('[API] Books fetch failed, checking offline fallbacks');
+
+    // Fallback 1: Try Service Worker cache (even if navigator.onLine is true but fetch failed)
+    try {
+      const swResponse = await fetch("/api/books");
+      if (swResponse.ok) {
+        console.log('[API] Using Service Worker cache fallback for books');
+        return await swResponse.json();
+      }
+    } catch (e) { }
+
+    // Fallback 2: Try localStorage cache
+    const local = localStorage.getItem('ser:books_cache');
+    if (local) {
+      console.log('[API] Using localStorage fallback for books');
+      try {
+        return JSON.parse(local);
+      } catch (e) {
+        console.error('[API] Corrupt localStorage cache');
+      }
     }
+
     throw error;
   }
 }

@@ -1,24 +1,51 @@
 export async function loadPrefs() {
+  // Always try to load from localStorage first for "instant" feel
+  let localPrefs = null;
+  try {
+    const saved = localStorage.getItem("ser:prefs:v1");
+    if (saved) {
+      localPrefs = JSON.parse(saved);
+      console.log('[Storage] Loaded local prefs from localStorage');
+    }
+  } catch (e) {
+    console.warn('[Storage] Failed to parse local prefs', e);
+  }
+
   try {
     const response = await fetch('/api/prefs');
     if (!response.ok) {
       if (response.status === 401) throw new Error("Unauthorized");
-      console.warn('Failed to load prefs from server, using defaults');
-      return defaultPrefs();
+      console.warn('Failed to load prefs from server, using local fallback');
+      return localPrefs || defaultPrefs();
     }
     const p = await response.json();
     const defaults = defaultPrefs();
-    // Merge colors object to ensure all theme colors are available (especially eink)
+
+    // Merge colors object to ensure all theme colors are available
     const mergedColors = { ...defaults.colors, ...(p.colors || {}) };
-    return { ...defaults, ...p, colors: mergedColors };
+    const mergedPrefs = { ...defaults, ...p, colors: mergedColors };
+
+    // Always sync server prefs to localStorage on success
+    try {
+      localStorage.setItem("ser:prefs:v1", JSON.stringify(mergedPrefs));
+    } catch (e) { }
+
+    return mergedPrefs;
   } catch (err) {
     if (err.message === "Unauthorized") throw err;
-    console.warn('Error loading prefs from server:', err);
-    return defaultPrefs();
+    console.warn('Error loading prefs from server (offline?), using local fallback:', err);
+    return localPrefs || defaultPrefs();
   }
 }
 
 export async function savePrefs(prefs) {
+  // Always save to localStorage immediately for offline support
+  try {
+    localStorage.setItem("ser:prefs:v1", JSON.stringify(prefs));
+  } catch (localErr) {
+    console.error('Failed to save to localStorage:', localErr);
+  }
+
   try {
     const response = await fetch('/api/prefs', {
       method: 'POST',
@@ -28,16 +55,12 @@ export async function savePrefs(prefs) {
       body: JSON.stringify(prefs),
     });
     if (!response.ok) {
-      throw new Error('Failed to save prefs');
+      if (response.status === 401) throw new Error("Unauthorized");
+      throw new Error('Failed to save prefs to server');
     }
   } catch (err) {
-    console.error('Error saving prefs to server:', err);
-    // Fallback to localStorage for offline support
-    try {
-      localStorage.setItem("ser:prefs:v1", JSON.stringify(prefs));
-    } catch (localErr) {
-      console.error('Failed to save to localStorage as fallback:', localErr);
-    }
+    if (err.message === "Unauthorized") throw err;
+    console.error('Error saving prefs to server (deferred):', err);
   }
 }
 

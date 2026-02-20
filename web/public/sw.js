@@ -58,8 +58,11 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
-  // Skip progress API requests 
+  // Skip sensitive or real-time API requests
+  // Allowing health and current-user to fail naturally lets the client detect offline state accurately
   if (url.pathname.startsWith('/api/progress/')) return;
+  if (url.pathname === '/api/health') return;
+  if (url.pathname === '/api/current-user') return;
 
   // Handle requests based on type
   if (url.pathname.startsWith('/api/books/') && url.pathname.endsWith('/file')) {
