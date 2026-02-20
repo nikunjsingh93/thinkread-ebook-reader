@@ -414,10 +414,10 @@ export default function App() {
       if (online && wasOffline) {
         // Came back online - refresh books and sync data
         console.log('Back online - refreshing data');
-        reload().catch(() => {
-          // Ignore reload errors when coming back online
+        handleManualSync().catch(() => {
+          // Ignore errors
         });
-        setToast("Back online - data synced");
+        setToast("Back online - syncing data...");
       } else if (!online) {
         console.log('Went offline');
         setToast("You're offline - showing cached content");
@@ -658,6 +658,7 @@ export default function App() {
           onToast={(t) => setToast(t)}
           bookmarkUpdateTrigger={bookmarkUpdateTrigger}
           bookmarkCfi={bookmarkCfi}
+          isOffline={isOffline}
         />
       ) : (
         <Shelf

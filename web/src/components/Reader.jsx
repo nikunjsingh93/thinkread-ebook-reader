@@ -289,7 +289,7 @@ async function getFontUrl(filename) {
   return `/api/fonts/${filename}`;
 }
 
-export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger }) {
+export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bookmarkCfi, bookmarkUpdateTrigger, isOffline }) {
   const hostRef = useRef(null);
   const renditionRef = useRef(null);
   const epubBookRef = useRef(null);
@@ -302,6 +302,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const [percent, setPercent] = useState(0);
   const [locationText, setLocationText] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [navigatingToPercent, setNavigatingToPercent] = useState(null);
   const [hasDragged, setHasDragged] = useState(false);
   const [lastPageInfo, setLastPageInfo] = useState(null);
@@ -344,14 +345,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const fileUrl = useMemo(() => `/api/books/${book.id}/file`, [book.id]);
   const contentsUrl = useMemo(() => `/api/books/${book.id}/contents/`, [book.id]);
 
-  // Cache book for offline reading when opened - but ONLY if it's reasonably sized
+  // Cache book for offline reading when opened
   useEffect(() => {
-    // Only auto-cache books smaller than 50MB to avoid freezing on large books
-    // If book.sizeBytes is missing, we assume it's small enough or let the user manually cache it
-    if (book.id && fileUrl && (!book.sizeBytes || book.sizeBytes < 50 * 1024 * 1024)) {
+    // Cache books when opened so they can be read offline
+    if (book.id && fileUrl) {
       cacheBook(book.id, fileUrl);
     }
-  }, [book.id, fileUrl, book.sizeBytes]);
+  }, [book.id, fileUrl]);
 
   // Apply theme settings to epub.js rendition
   function applyPrefs(rendition, p) {
@@ -1104,650 +1104,335 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
 
     let destroyed = false;
+    let rendition;
+    let epub;
+    let progressInterval;
 
-    // Use unzipped/partial loading for all EPUBs for better performance
-    // This points to the new /contents/ directory proxy on the server
-    const epub = ePub(contentsUrl);
-    epubBookRef.current = epub;
+    const saveCurrentProgress = () => {
+      if (destroyed || !renditionRef.current || isRestoringRef.current) return;
+      try {
+        const loc = renditionRef.current.location;
+        if (!loc?.start?.cfi) return;
+        const cfi = loc.start.cfi;
+        let p = 0;
+        try {
+          if (epubBookRef.current?.locations?.length()) {
+            p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
+          } else if (epubBookRef.current?.spine?.length) {
+            const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epubBookRef.current.spine.get(cfi)?.index || 0);
+            p = (spineIndex / epubBookRef.current.spine.length);
+          }
+        } catch { }
 
-    const host = hostRef.current;
-    const rendition = epub.renderTo(host, {
-      width: "100%",
-      height: "100%",
-      spread: prefs.twoPageLayout ? "auto" : "none",
-      flow: "paginated",
-    });
-    renditionRef.current = rendition;
+        const saved = savedProgressRef.current || {};
+        let locationsToSave = saved.locations;
+        if (epubBookRef.current?.locations?.length()) {
+          try {
+            const currentLocations = epubBookRef.current.locations.save();
+            if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
+              locationsToSave = currentLocations;
+            }
+          } catch { }
+        }
 
-    const onRelocated = (loc) => {
+        const progressToSave = {
+          cfi,
+          percent: p,
+          locations: locationsToSave,
+          updatedAt: Date.now()
+        };
+
+        if (saved && typeof saved === 'object') {
+          Object.keys(saved).forEach(key => {
+            if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
+              progressToSave[key] = saved[key];
+            }
+          });
+        }
+
+        savedProgressRef.current = progressToSave;
+        if (currentBookIdRef.current) {
+          saveProgress(currentBookIdRef.current, progressToSave).catch(() => { });
+        }
+      } catch (err) { }
+    };
+
+    const handleRelocated = (loc) => {
       if (destroyed) return;
       const cfi = loc?.start?.cfi;
       let p = 0;
       let currentPage = 0;
       let totalPages = 0;
 
-      // Stop TTS when page changes
-      if (isSpeakingRef.current && audioRef.current) {
-        stopTTS();
-      }
+      if (isSpeakingRef.current && audioRef.current) stopTTS();
 
       // Update current chapter name
       if (tocRef.current.length > 0) {
         try {
           const currentToc = tocRef.current;
-          // Try to get href from location object first
-          let currentHref = null;
+          let currentHref = loc?.start?.href || loc?.href;
 
-          if (loc) {
-            currentHref = loc?.start?.href ||
-              loc?.start?.displayed?.href ||
-              loc?.start?.loc?.href ||
-              loc?.displayed?.href ||
-              loc?.href;
-          }
-
-          // Fallback: try to get from rendition's current location
           if (!currentHref && renditionRef.current) {
-            try {
-              currentHref = renditionRef.current.location?.start?.href;
-            } catch { }
+            try { currentHref = renditionRef.current.location?.start?.href; } catch { }
           }
 
-          let matchingChapter = null;
           if (currentHref) {
-            // Normalize current href (strip leading / if any)
             const currentHrefNormalized = currentHref.startsWith('/') ? currentHref.substring(1) : currentHref;
-
-            // Try direct match
-            matchingChapter = currentToc.find(item => {
+            let match = currentToc.find(item => {
               const itemHrefNormalized = item.href.startsWith('/') ? item.href.substring(1) : item.href;
-              // Check for exact match or match after # hash
-              if (itemHrefNormalized === currentHrefNormalized) return true;
-              // Check if filenames match (case-insensitive)
-              if (itemHrefNormalized.toLowerCase() === currentHrefNormalized.toLowerCase()) return true;
-              // Partial match - check if one contains the other
-              return itemHrefNormalized.includes(currentHrefNormalized) ||
+              return itemHrefNormalized === currentHrefNormalized ||
+                itemHrefNormalized.includes(currentHrefNormalized) ||
                 currentHrefNormalized.includes(itemHrefNormalized);
             });
 
-            // If no direct match, try matching by full href path
-            if (!matchingChapter) {
+            if (!match) {
               const currentFullHref = currentHref.split('#')[0].split('?')[0];
-              matchingChapter = currentToc.find(item => {
+              match = currentToc.find(item => {
                 const itemFullHref = item.href.split('#')[0].split('?')[0];
-                return currentFullHref === itemFullHref ||
-                  currentFullHref.endsWith(itemFullHref) ||
-                  itemFullHref.endsWith(currentFullHref);
+                return currentFullHref === itemFullHref || currentFullHref.endsWith(itemFullHref);
               });
             }
 
-            // If still no match, try finding by position in TOC (closest previous chapter)
-            if (!matchingChapter && epubBookRef.current && cfi) {
+            if (!match && epubBookRef.current?.locations?.length() && cfi) {
               try {
                 // Find the chapter that's closest to current position
                 let bestMatch = null;
                 let bestIndex = -1;
-
                 for (let i = 0; i < currentToc.length; i++) {
                   const item = currentToc[i];
                   try {
-                    const itemCfi = epubBookRef.current.locations?.cfiFromHref?.(item.href);
+                    const itemCfi = epubBookRef.current.locations.cfiFromHref(item.href);
                     if (itemCfi && cfi >= itemCfi) {
-                      // Current position is at or after this chapter
                       if (i > bestIndex) {
                         bestIndex = i;
                         bestMatch = item;
                       }
                     }
-                  } catch (e) {
-                    // Skip items that can't be converted
-                  }
+                  } catch { }
                 }
-
-                if (bestMatch) {
-                  matchingChapter = bestMatch;
-                }
-              } catch (e) {
-                // CFI comparison failed
-              }
+                if (bestMatch) match = bestMatch;
+              } catch { }
             }
 
-            if (matchingChapter) {
-              setCurrentChapterName(matchingChapter.label);
-            } else {
-              // Default if no match found
-              setCurrentChapterName('Reading');
-            }
-          } else {
-            // No href available yet
-            setCurrentChapterName('Reading');
+            if (match) setCurrentChapterName(match.label);
+            else setCurrentChapterName('Reading');
           }
         } catch (err) {
           console.warn('Failed to get chapter name:', err);
           setCurrentChapterName('Reading');
         }
-      } else if (!currentChapterName) {
-        // No TOC available yet
-        setCurrentChapterName('Reading');
       }
 
+      // Progress
       try {
-        if (epub.locations?.length()) {
-          p = epub.locations.percentageFromCfi(cfi) || 0;
-          // Calculate continuous page number from locations array
-          const locationIndex = epub.locations.locationFromCfi(cfi);
-          currentPage = locationIndex > 0 ? locationIndex : 1;
-          totalPages = epub.locations.length();
-        } else if (epub.spine?.length) {
-          // Fallback to spine-based progress for large books that skipped pagination
-          // Try multiple ways to get the current spine index
-          const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epub.spine.get(cfi)?.index || 0);
-
-          // Use a rough estimate from spine index
-          p = (spineIndex / epub.spine.length);
+        if (epubBookRef.current?.locations?.length()) {
+          p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
+          const idx = epubBookRef.current.locations.locationFromCfi(cfi);
+          currentPage = idx > 0 ? idx : 1;
+          totalPages = epubBookRef.current.locations.length();
+        } else if (epubBookRef.current?.spine?.length) {
+          const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epubBookRef.current.spine.get(cfi)?.index || 0);
+          p = (spineIndex / epubBookRef.current.spine.length);
           currentPage = spineIndex + 1;
-          totalPages = epub.spine.length;
-
-          console.log(`[Large Book] Fallback progress: section ${currentPage}/${totalPages}, percent ${Math.round(p * 100)}%`);
+          totalPages = epubBookRef.current.spine.length;
         }
-      } catch (err) {
-        console.warn('Error calculating progress fallback:', err);
-      }
+      } catch { }
 
       setPercent(p);
-
-      // Select appropriate location text
-      let pageText = "Loading...";
       if (totalPages > 0) {
-        if (epub.locations?.length() > 0) {
-          pageText = `Page ${currentPage} of ${totalPages}`;
-        } else {
-          // Fallback style for very large books without precise location markers
-          pageText = `Section ${currentPage} of ${totalPages}`;
-        }
-      }
-      setLocationText(pageText);
-
-      // Update last page info for the button
-      if (currentPage > 0) {
+        setLocationText(epubBookRef.current?.locations?.length() > 0 ? `Page ${currentPage} of ${totalPages}` : `Section ${currentPage} of ${totalPages}`);
         setLastPageInfo({ page: currentPage, percent: Math.round(p * 100) });
       }
 
-      // Check if current page has a bookmark (we'll load bookmarks and check)
-      checkBookmarkForCurrentPage(cfi);
+      if (!isRestoringRef.current) saveCurrentProgress();
 
-      // Don't save progress if we're still restoring the position
-      if (isRestoringRef.current) {
-        return;
-      }
-
-      // Get current saved progress and preserve locations
-      const saved = savedProgressRef.current || {};
-
-      // Get current locations from epub if available, otherwise use saved ones
-      let locationsToSave = saved.locations;
+      // Bookmark check
       try {
-        if (epub.locations?.length()) {
-          const currentLocations = epub.locations.save();
-          if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
-            locationsToSave = currentLocations;
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to get current locations:', err);
-      }
-
-      // Save progress while preserving locations
-      const progressToSave = {
-        cfi,
-        percent: p,
-        locations: locationsToSave,
-        updatedAt: Date.now()
-      };
-
-      // Preserve any other fields from saved progress
-      if (saved && typeof saved === 'object') {
-        Object.keys(saved).forEach(key => {
-          if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
-            progressToSave[key] = saved[key];
-          }
-        });
-      }
-
-      // Update the ref so future saves have the latest data
-      savedProgressRef.current = progressToSave;
-
-      // Get the current book ID from ref
-      const currentBookId = currentBookIdRef.current;
-      if (!currentBookId) {
-        return;
-      }
-
-      // Save progress (fire and forget, but log errors)
-      saveProgress(currentBookId, progressToSave).catch((err) => {
-        console.error(`Failed to save progress for book ${currentBookId}:`, err);
-      });
+        checkBookmarkForCurrentPage(cfi);
+      } catch { }
     };
 
-    rendition.on("relocated", onRelocated);
-
-    // Declare variables in proper scope
-    // Use bookmark CFI if provided, otherwise will be set from saved progress
-    let startAt = bookmarkCfi || undefined;
-
-    // Track current book ID
-    currentBookIdRef.current = book.id;
-
-    // Load progress asynchronously first
-    loadProgress(book.id).then((progressData) => {
-      if (destroyed) return;
-
-      // Parse locations if they're stored as a string (legacy format)
-      let parsedProgress = progressData;
-      if (progressData?.locations && typeof progressData.locations === 'string') {
-        try {
-          parsedProgress = {
-            ...progressData,
-            locations: JSON.parse(progressData.locations)
-          };
-        } catch (err) {
-          console.warn('Failed to parse locations string:', err);
-          parsedProgress = { ...progressData, locations: null };
-        }
-      }
-
-      savedProgressRef.current = parsedProgress;
-      // Set initial percent state if available to show progress immediately
-      if (parsedProgress?.percent !== undefined) {
-        setPercent(parsedProgress.percent);
-      }
-      // Use bookmark CFI if provided, otherwise use saved progress CFI
-      if (!startAt) {
-        startAt = parsedProgress?.cfi || undefined;
-      }
-
-      // Check if we have cached locations and mark as ready immediately
-      if (parsedProgress?.locations && Array.isArray(parsedProgress.locations) && parsedProgress.locations.length > 0) {
-        console.log('Found cached locations:', parsedProgress.locations.length);
-        locationsReadyRef.current = true;
-      }
-
-      // Build/load locations
-      epub.ready
-        .then(() => {
-          // Try to restore cached locations first for instant page numbers
-          const saved = savedProgressRef.current;
-          if (saved?.locations && Array.isArray(saved.locations) && saved.locations.length > 0) {
-            try {
-              epub.locations.load(saved.locations);
-              console.log('Loaded cached locations successfully');
-
-              // Trigger a re-render to update the UI with cached page numbers
-              setTimeout(() => {
-                if (renditionRef.current?.location?.start?.cfi) {
-                  const loc = renditionRef.current.location;
-                  onRelocated(loc);
-                }
-              }, 100);
-
-              return Promise.resolve(); // Skip generation
-            } catch (err) {
-              console.warn('Failed to load cached locations, will regenerate:', err);
-              locationsReadyRef.current = false;
-              return epub.locations.generate(1600);
-            }
-          } else {
-            // For very large books, location generation can still take a long time
-            // even with unzipped access. We only do it if the book is < 100MB
-            // or we could skip it and let user trigger it.
-            // For now, let's keep it but use a larger threshold/chunk size if possible.
-            if (book.sizeBytes && book.sizeBytes > 100 * 1024 * 1024) {
-              console.log('Very large book detected, skipping automatic location generation to save bandwidth');
-              locationsReadyRef.current = false;
-              return Promise.resolve();
-            }
-
-            console.log('No cached locations found, generating...');
-            // No cached locations, generate them
-            return epub.locations.generate(1600);
-          }
-        })
-        .then(() => {
-          // Mark locations as ready
-          locationsReadyRef.current = true;
-
-          // Save the generated locations for next time (only if newly generated)
-          const saved = savedProgressRef.current;
-          if (epub.locations?.length() && (!saved?.locations || !Array.isArray(saved.locations) || saved.locations.length === 0)) {
-            const locationsArray = epub.locations.save();
-            // Update the saved progress ref so future progress saves include locations
-            savedProgressRef.current = {
-              ...saved,
-              locations: locationsArray
-            };
-            console.log('Generated new locations:', locationsArray.length);
-
-            // Save to server immediately with current progress
-            const currentLoc = renditionRef.current?.location;
-            const currentCfi = currentLoc?.start?.cfi;
-            let currentPercent = 0;
-            try {
-              if (epub.locations?.length() && currentCfi) {
-                currentPercent = epub.locations.percentageFromCfi(currentCfi) || 0;
-              }
-            } catch { }
-
-            const progressToSave = {
-              ...savedProgressRef.current,
-              cfi: currentCfi || saved?.cfi,
-              percent: currentPercent || saved?.percent || 0,
-              updatedAt: Date.now()
-            };
-            const currentBookId = currentBookIdRef.current;
-            if (currentBookId) {
-              saveProgress(currentBookId, progressToSave).catch((err) => {
-                console.warn(`Failed to save locations for book ${currentBookId}:`, err);
-              });
-            }
-          }
-
-          // Trigger a re-render to update the UI
-          if (renditionRef.current?.location?.start?.cfi) {
-            const loc = renditionRef.current.location;
-            onRelocated(loc);
-          }
-        })
-        .catch((err) => {
-          console.warn('Error with locations:', err);
-        });
-
-      // Wait for epub to be ready before displaying
-      epub.ready.then(() => {
-        if (destroyed) return;
-
-        // Extract table of contents
-        try {
-          const navigation = epub.navigation;
-          if (navigation && navigation.toc) {
-            // Flatten the TOC tree into a list
-            const flattenToc = (items) => {
-              const result = [];
-              const processItem = (item, level = 0) => {
-                if (item.href) {
-                  result.push({
-                    label: item.label || item.title || 'Untitled',
-                    href: item.href,
-                    level: level
-                  });
-                }
-                if (item.subitems && item.subitems.length > 0) {
-                  item.subitems.forEach(subitem => processItem(subitem, level + 1));
-                }
-              };
-              items.forEach(item => processItem(item));
-              return result;
-            };
-            const tocList = flattenToc(navigation.toc);
-            setToc(tocList);
-          }
-        } catch (err) {
-          console.warn('Failed to extract TOC:', err);
-        }
-
-        // Apply prefs first, then display
-        applyPrefs(rendition, prefs);
-
-        // If using custom font, inject CSS directly into iframe after a short delay
-        const fontFamily = prefs.fontFamily || "serif";
-        if (fontFamily.startsWith('custom:')) {
-          setTimeout(() => {
-            try {
-              const iframe = hostRef.current?.querySelector('iframe');
-              if (iframe && iframe.contentDocument) {
-                const doc = iframe.contentDocument;
-                const filename = fontFamily.substring(7).split(':')[0];
-                const actualFontFamily = fontFamily.substring(7).split(':')[1];
-
-                // Remove any existing custom font styles first
-                const existingStyles = doc.querySelectorAll('style[data-custom-font]');
-                existingStyles.forEach(style => style.remove());
-
-                const css = `
-                  @font-face {
-                    font-family: '${actualFontFamily}';
-                    src: url('/api/fonts/${filename}') format('${getFontFormat(filename)}');
-                    font-display: swap;
-                  }
-                `;
-
-                const style = doc.createElement('style');
-                style.setAttribute('data-custom-font', 'true');
-                style.textContent = css;
-                doc.head.appendChild(style);
-
-                console.log('Injected custom font CSS for new book:', actualFontFamily);
-              }
-            } catch (err) {
-              console.warn('Failed to inject font CSS for new book:', err);
-            }
-          }, 200); // Delay to ensure iframe is fully loaded
-        }
-
-        // Display after a small delay to ensure theme is registered
-        setTimeout(() => {
-          const saved = savedProgressRef.current;
-
-          // Set flag to prevent saving progress while restoring
-          isRestoringRef.current = true;
-
-          if (startAt) {
-            rendition.display(startAt).then(() => {
-              setIsLoading(false);
-              // Allow saving progress after a short delay to ensure position is stable
-              setTimeout(() => {
-                isRestoringRef.current = false;
-              }, 1000);
-            }).catch((err) => {
-              console.warn("Failed to restore position, trying fallback methods", err);
-
-              // Try to restore by percentage if we have it
-              if (saved?.percent && saved.percent > 0 && epub.locations?.length()) {
-                setTimeout(() => {
-                  try {
-                    const cfiFromPercent = epub.locations.cfiFromPercentage(saved.percent);
-                    if (cfiFromPercent) {
-                      rendition.display(cfiFromPercent).then(() => {
-                        setIsLoading(false);
-                        setTimeout(() => {
-                          isRestoringRef.current = false;
-                        }, 1000);
-                      }).catch(() => {
-                        rendition.display().then(() => {
-                          setIsLoading(false);
-                          isRestoringRef.current = false;
-                        }).catch(() => {
-                          setIsLoading(false);
-                          isRestoringRef.current = false;
-                        });
-                      });
-                    } else {
-                      rendition.display().then(() => {
-                        setIsLoading(false);
-                        isRestoringRef.current = false;
-                      }).catch(() => {
-                        setIsLoading(false);
-                        isRestoringRef.current = false;
-                      });
-                    }
-                  } catch {
-                    rendition.display().then(() => {
-                      setIsLoading(false);
-                      isRestoringRef.current = false;
-                    }).catch(() => {
-                      setIsLoading(false);
-                      isRestoringRef.current = false;
-                    });
-                  }
-                }, 500);
-              } else {
-                rendition.display().then(() => {
-                  setIsLoading(false);
-                  isRestoringRef.current = false;
-                }).catch(() => {
-                  setIsLoading(false);
-                  isRestoringRef.current = false;
-                });
-              }
-            });
-          } else {
-            rendition.display().then(() => {
-              setIsLoading(false);
-              isRestoringRef.current = false;
-            }).catch(() => {
-              setIsLoading(false);
-              isRestoringRef.current = false;
-            });
-          }
-        }, 100);
-      }).catch((err) => {
-        console.warn("EPUB failed to load:", err);
-      });
-    }).catch((err) => {
-      console.warn("Failed to load progress:", err);
-      // Continue without saved progress
-      // saved and startAt are already null/undefined
-
-      // Still try to display the book
-      epub.ready.then(() => {
-        if (destroyed) return;
-        applyPrefs(rendition, prefs);
-        setTimeout(() => {
-          rendition.display().then(() => setIsLoading(false)).catch(() => setIsLoading(false));
-        }, 100);
-      }).catch((err) => {
-        console.warn("EPUB failed to load:", err);
-      });
-    });
-
-
-    // Save progress periodically and on page visibility change
-    const saveCurrentProgress = () => {
-      if (destroyed) return;
-      try {
-        const loc = rendition.location;
-        if (loc?.start?.cfi) {
-          const cfi = loc.start.cfi;
-          let p = 0;
-          try {
-            if (epub.locations?.length()) {
-              p = epub.locations.percentageFromCfi(cfi) || 0;
-            } else if (epub.spine?.length) {
-              // Fallback for large books without generated locations
-              const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epub.spine.get(cfi)?.index || 0);
-              p = (spineIndex / epub.spine.length);
-            }
-          } catch { }
-
-          // Get current saved progress and preserve locations
-          const saved = savedProgressRef.current || {};
-
-          // Get current locations from epub if available, otherwise use saved ones
-          let locationsToSave = saved.locations;
-          try {
-            if (epub.locations?.length()) {
-              const currentLocations = epub.locations.save();
-              if (currentLocations && Array.isArray(currentLocations) && currentLocations.length > 0) {
-                locationsToSave = currentLocations;
-              }
-            }
-          } catch (err) {
-            console.warn('Failed to get current locations:', err);
-          }
-
-          // Save progress while preserving locations
-          const progressToSave = {
-            cfi,
-            percent: p,
-            locations: locationsToSave,
-            updatedAt: Date.now()
-          };
-
-          // Preserve any other fields from saved progress
-          if (saved && typeof saved === 'object') {
-            Object.keys(saved).forEach(key => {
-              if (key !== 'cfi' && key !== 'percent' && key !== 'updatedAt' && key !== 'locations') {
-                progressToSave[key] = saved[key];
-              }
-            });
-          }
-
-          // Update the ref so future saves have the latest data
-          savedProgressRef.current = progressToSave;
-
-          // Get the current book ID from ref
-          const currentBookId = currentBookIdRef.current;
-          if (currentBookId) {
-            // Save progress (fire and forget, but log errors)
-            saveProgress(currentBookId, progressToSave).catch((err) => {
-              console.error(`Failed to save periodic progress for book ${currentBookId}:`, err);
-            });
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to save progress:", err);
-      }
-    };
-
-    // Save progress every 30 seconds
-    const progressInterval = setInterval(saveCurrentProgress, 30000);
-
-    // Save progress when page becomes hidden (user switches tabs/closes browser)
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        saveCurrentProgress();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
+    const onVisibilityChange = () => { if (document.hidden) saveCurrentProgress(); };
     const onKeyDown = (e) => {
-      if (e.key === "ArrowRight") rendition.next();
-      if (e.key === "ArrowLeft") rendition.prev();
+      if (e.key === "ArrowRight") renditionRef.current?.next();
+      if (e.key === "ArrowLeft") renditionRef.current?.prev();
       if (e.key === "Escape") {
         setDrawerOpen(false);
         setTocOpen(false);
       }
     };
-    window.addEventListener("keydown", onKeyDown);
+
+    const initEpub = async () => {
+      console.log('[Reader] initEpub starting, bookId:', book.id, 'offline:', isOffline);
+      try {
+        setIsLoading(true);
+        currentBookIdRef.current = book.id;
+
+        const epubUrl = isOffline ? fileUrl : contentsUrl;
+        const epubOptions = isOffline ? { openAs: "epub" } : {};
+
+        if (isOffline) {
+          console.log('[Reader] Loading book in offline mode via Blob');
+          try {
+            // Try direct cache match first to bypass potential Service Worker issues
+            if ('caches' in window) {
+              const cache = await caches.open('thinkread-books-v1');
+              // Try exact match first
+              let cachedResponse = await cache.match(fileUrl);
+              // Fallback to URL match without search params
+              if (!cachedResponse) {
+                cachedResponse = await cache.match(fileUrl, { ignoreSearch: true });
+              }
+
+              if (cachedResponse) {
+                console.log('[Reader] Found book in cache directly (bypassing SW)');
+                const blob = await cachedResponse.blob();
+                console.log('[Reader] Successfully extracted blob from cache, size:', blob.size);
+                if (destroyed) return;
+                epub = ePub(blob);
+              }
+            }
+
+            if (!epub) {
+              console.log('[Reader] Not found in direct cache, trying network fetch...');
+              try {
+                const res = await fetch(fileUrl);
+                if (res.ok) {
+                  const blob = await res.blob();
+                  console.log('[Reader] Successfully fetched blob from network, size:', blob.size);
+                  if (destroyed) return;
+                  epub = ePub(blob);
+                } else {
+                  console.warn('[Reader] Offline fetch returned !ok, status:', res.status);
+                  throw new Error(`Offline fetch failed: ${res.status}`);
+                }
+              } catch (err) {
+                // If we are offline and couldn't get the blob, show specific error
+                setLoadError("Book not cached. Go online to read.");
+                throw err;
+              }
+            }
+          } catch (err) {
+            console.warn('[Reader] Offline blob source failed, trying URL fallback:', err);
+            epub = ePub(epubUrl, epubOptions);
+          }
+        } else {
+          console.log('[Reader] Loading book in online mode via URL:', epubUrl);
+          epub = ePub(epubUrl, epubOptions);
+        }
+
+        epubBookRef.current = epub;
+        const host = hostRef.current;
+        if (!host) {
+          console.warn('[Reader] No host ref found, aborting load');
+          setIsLoading(false);
+          return;
+        }
+
+        rendition = epub.renderTo(host, {
+          width: "100%",
+          height: "100%",
+          spread: prefs.twoPageLayout ? "auto" : "none",
+          flow: "paginated",
+        });
+        renditionRef.current = rendition;
+
+        rendition.on("relocated", handleRelocated);
+        window.addEventListener("keydown", onKeyDown);
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        progressInterval = setInterval(saveCurrentProgress, 30000);
+
+        console.log('[Reader] Loading progress data...');
+        const progressData = await loadProgress(book.id);
+        if (destroyed) return;
+        savedProgressRef.current = progressData;
+        const startAt = progressData?.cfi || bookmarkCfi || undefined;
+
+        console.log('[Reader] Waiting for epub.ready...');
+        // Add a timeout to epub.ready to prevent infinite hang
+        const readyPromise = epub.ready;
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Epub ready timeout")), 20000)
+        );
+
+        await Promise.race([readyPromise, timeoutPromise]);
+        console.log('[Reader] Epub ready');
+
+        if (destroyed) return;
+
+        // Extract TOC
+        try {
+          const nav = epub.navigation;
+          if (nav?.toc) {
+            const flatten = (items, level = 0) => {
+              const res = [];
+              items.forEach(i => {
+                if (i.href) res.push({ label: i.label || i.title || 'Untitled', href: i.href, level });
+                if (i.subitems?.length) res.push(...flatten(i.subitems, level + 1));
+              });
+              return res;
+            };
+            setToc(flatten(nav.toc));
+          }
+        } catch { }
+
+        applyPrefs(rendition, prefs);
+
+        if (progressData?.locations) {
+          try {
+            await epub.locations.load(progressData.locations);
+            if (rendition.location?.start?.cfi) handleRelocated(rendition.location);
+          } catch { }
+        } else if (book.sizeBytes < 100 * 1024 * 1024) {
+          epub.locations.generate(1600).catch(() => { });
+        }
+
+        if (destroyed) return;
+
+        if (startAt) {
+          console.log('[Reader] Displaying at saved position:', startAt);
+          isRestoringRef.current = true;
+          try {
+            await rendition.display(startAt);
+          } catch (e) {
+            console.warn('[Reader] Failed to display at startAt, falling back to beginning', e);
+            await rendition.display();
+          }
+          setTimeout(() => { isRestoringRef.current = false; }, 1000);
+        } else {
+          console.log('[Reader] Displaying at beginning');
+          await rendition.display();
+        }
+        console.log('[Reader] Load complete');
+        setIsLoading(false);
+      } catch (err) {
+        console.error("[Reader] Failed to load book:", err);
+        setIsLoading(false);
+        onToast?.(`Failed to load book: ${err.message || 'Unknown error'}`);
+      }
+    };
+
+    initEpub();
 
     return () => {
+      saveCurrentProgress();
       destroyed = true;
       clearInterval(progressInterval);
       clearLastPositionTimer();
-
-      // Clear long press timer
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-
-      if (pdfObserverRef.current) {
-        pdfObserverRef.current.disconnect();
-        pdfObserverRef.current = null;
-      }
-
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (pdfObserverRef.current) pdfObserverRef.current.disconnect();
 
-      // Save progress when component unmounts
-      saveCurrentProgress();
-
-      try { rendition?.off("relocated", onRelocated); } catch { }
+      try { rendition?.off("relocated", handleRelocated); } catch { }
       try { rendition?.destroy(); } catch { }
       try { epub?.destroy(); } catch { }
       renditionRef.current = null;
       epubBookRef.current = null;
+      if (hostRef.current) hostRef.current.innerHTML = '';
     };
-  }, [book.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [book.id, isOffline, prefs.twoPageLayout, bookmarkCfi]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Re-apply prefs when changed
   useEffect(() => {
@@ -2329,7 +2014,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         dictionaryCleanupRef.current();
       }
     };
-  }, [book.id]); // Re-run when book changes
+  }, [book.id, book.type, pdfScrollMode]); // Re-run when book or mode changes
 
 
   // Check if current page has a bookmark
@@ -3959,9 +3644,39 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             transform: 'translate(-50%, -50%)',
             color: 'var(--muted)',
             fontSize: '14px',
-            zIndex: 5
+            zIndex: 10,
+            textAlign: 'center',
+            width: '80%',
+            maxWidth: '300px'
           }}>
-            Loading...
+            {loadError ? (
+              <div style={{ padding: '20px', background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.2)' }}>
+                <div style={{ fontSize: '24px', marginBottom: '12px' }}>📖</div>
+                <div style={{ fontWeight: '500', color: 'var(--text)', marginBottom: '8px' }}>Offline Access</div>
+                <div style={{ opacity: 0.8 }}>{loadError}</div>
+                <button
+                  onClick={onBack}
+                  style={{
+                    marginTop: '20px',
+                    padding: '10px 20px',
+                    background: 'var(--accent)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    width: '100%'
+                  }}
+                >
+                  Return to Library
+                </button>
+              </div>
+            ) : (
+              <div className="spinContainer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div className="spin" style={{ width: '24px', height: '24px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%' }}></div>
+                Loading...
+              </div>
+            )}
           </div>
         )}
 
@@ -4133,8 +3848,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
-            transition: 'top 0.3s ease',
-            position: 'relative'
+            transition: 'top 0.3s ease'
           }}
         >
           {/* Close Button (X) */}

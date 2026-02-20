@@ -12,7 +12,8 @@ function formatBytes(bytes) {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// Detect iOS devices
+import { getCachedBooks } from '../lib/serviceWorker';
+
 function isIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
@@ -80,6 +81,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
   const [progressLoading, setProgressLoading] = useState(false);
+  const [cachedBookIds, setCachedBookIds] = useState(new Set());
+  const [cachingIds, setCachingIds] = useState(new Set());
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [bookDetailsModal, setBookDetailsModal] = useState(null); // { book, position }
 
@@ -149,6 +152,31 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     }
     // Reset image loading counter when books change
     setImagesLoaded(0);
+  }, [books]);
+
+  // Fetch list of cached book IDs to display the offline badge
+  useEffect(() => {
+    async function loadCached() {
+      try {
+        const cachedIds = await getCachedBooks();
+        // ID strings from cache need to match whatever type b.id is. Usually they're strings.
+        setCachedBookIds(new Set(cachedIds.map(String)));
+      } catch (err) {
+        console.error("Failed to load cached book IDs", err);
+      }
+    }
+    const interval = setInterval(loadCached, 1000 * 30);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') loadCached();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    loadCached();
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [books]);
 
   function toggleBookSelection(bookId) {
@@ -233,6 +261,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     link.click();
     document.body.removeChild(link);
     setBookDetailsModal(null);
+  }
+
+  async function handleCacheBook(book) {
+    if (cachingIds.has(String(book.id))) return;
+
+    setCachingIds(prev => new Set(prev).add(String(book.id)));
+    const url = `/api/books/${book.id}/file`;
+    const success = await cacheBook(book.id, url);
+
+    if (success) {
+      setCachedBookIds(prev => new Set(prev).add(String(book.id)));
+      onToast?.("Book cached for offline reading");
+    } else {
+      onToast?.("Failed to cache book");
+    }
+    setCachingIds(prev => {
+      const next = new Set(prev);
+      next.delete(String(book.id));
+      return next;
+    });
   }
 
   function enterMultiSelectMode() {
@@ -440,8 +488,8 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
               </div>
               <div className="muted" style={{ fontSize: 12 }}>
                 {currentUser?.isAdmin ?
-                  `EPUB, MOBI, PDF ${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}` :
-                  `${books.length} Book${books.length !== 1 ? 's' : ''}${isOffline ? ' (cached)' : ''}`
+                  `EPUB, MOBI, PDF ${books.length} Book${books.length !== 1 ? 's' : ''}` :
+                  `${books.length} Book${books.length !== 1 ? 's' : ''}`
                 }
               </div>
             </div>
@@ -719,6 +767,30 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     ) : (
                       coverLetter(b.title)
                     )}
+                    {isOffline && cachedBookIds.has(String(b.id)) && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '8px',
+                        left: '8px',
+                        background: 'var(--backdrop-bg)',
+                        color: '#ffffff',
+                        padding: '4px 8px',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        backdropFilter: 'blur(4px)',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px', /* Changed from 4px to 6px */
+                        zIndex: 5
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M5 13L9 17L19 7" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        Offline
+                      </div>
+                    )}
                   </div>
                   <div className="cardBody">
                     <div className="title" title={b.title}>{b.title}</div>
@@ -881,11 +953,57 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => downloadBook(bookDetailsModal.book)}
+                onClick={() => handleCacheBook(bookDetailsModal.book)}
+                disabled={cachingIds.has(String(bookDetailsModal.book.id)) || cachedBookIds.has(String(bookDetailsModal.book.id))}
                 style={{
-                  backgroundColor: 'var(--accent, #007acc)',
+                  backgroundColor: cachedBookIds.has(String(bookDetailsModal.book.id)) ? 'var(--green, #28a745)' : 'var(--accent, #007acc)',
                   color: 'white',
                   border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '6px',
+                  cursor: (cachingIds.has(String(bookDetailsModal.book.id)) || cachedBookIds.has(String(bookDetailsModal.book.id))) ? 'default' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: cachingIds.has(String(bookDetailsModal.book.id)) ? 0.7 : 1
+                }}
+              >
+                {cachingIds.has(String(bookDetailsModal.book.id)) ? (
+                  <>
+                    <div style={{
+                      width: '14px',
+                      height: '14px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      borderTop: '2px solid white',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }}></div>
+                    Caching...
+                  </>
+                ) : cachedBookIds.has(String(bookDetailsModal.book.id)) ? (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Cached
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M4 16V17C4 18.6569 5.34315 20 7 20H17C18.6569 20 20 18.6569 20 17V16M16 12L12 16M12 16L8 12M12 16V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Cache for Offline
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => downloadBook(bookDetailsModal.book)}
+                style={{
+                  backgroundColor: 'transparent',
+                  color: 'var(--text)',
+                  border: '1px solid var(--border)',
                   padding: '10px 16px',
                   borderRadius: '6px',
                   cursor: 'pointer',
@@ -899,7 +1017,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 10V16M12 16L9 13M12 16L15 13M17 21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3H14L19 8V19C19 20.1046 18.1046 21 17 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Download {bookDetailsModal.book.type === "pdf" ? "PDF" : "EPUB"}
+                Download File
               </button>
               <button
                 onClick={() => setBookDetailsModal(null)}
