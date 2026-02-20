@@ -249,7 +249,14 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState(null); // { open: true, title, message, onConfirm, onCancel }
 
   // Authentication state
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ser:user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
 
@@ -463,12 +470,20 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setCurrentUser(data.user);
-      } else {
+        localStorage.setItem('ser:user', JSON.stringify(data.user));
+      } else if (response.status === 401) {
+        // Explicit unauthorized - clear local session
+        console.log('Session expired or invalid, clearing local user');
         setCurrentUser(null);
+        localStorage.removeItem('ser:user');
+      } else {
+        // Other server error (500, etc) - if we have a local user, keep it
+        console.warn('Server error during auth check, status:', response.status);
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
-      setCurrentUser(null);
+      console.error('Auth check failed (network error):', error);
+      // If we're offline or have an error, we keep the user from localStorage
+      // which was already initialized in the useState default value.
     } finally {
       setIsAuthLoading(false);
     }
@@ -476,12 +491,14 @@ export default function App() {
 
   const handleLogin = (user) => {
     setCurrentUser(user);
+    localStorage.setItem('ser:user', JSON.stringify(user));
   };
 
   const handleLogout = async () => {
     try {
       await fetch('/api/logout', { method: 'POST' });
       setCurrentUser(null);
+      localStorage.removeItem('ser:user');
       // Reset app state
       setSelected(null);
       setSettingsOpen(false);
@@ -492,6 +509,7 @@ export default function App() {
       console.error('Logout failed:', error);
       // Force logout on client side anyway
       setCurrentUser(null);
+      localStorage.removeItem('ser:user');
     }
   };
 
