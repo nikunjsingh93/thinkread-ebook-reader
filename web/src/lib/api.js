@@ -473,12 +473,22 @@ export async function apiGenerateTTS(text, options = {}) {
 
 // --- TTS Progress API ---
 export async function apiGetTTSProgress(bookId) {
+  if (isMobile()) {
+    try {
+      const data = localStorage.getItem(`tts_progress_${bookId}`);
+      return data ? JSON.parse(data) : null;
+    } catch { return null; }
+  }
   const r = await fetch(`/api/tts/progress/${bookId}`);
   if (!r.ok) throw new Error("Failed to fetch TTS progress");
   return r.json();
 }
 
 export async function apiSaveTTSProgress(bookId, progress) {
+  if (isMobile()) {
+    localStorage.setItem(`tts_progress_${bookId}`, JSON.stringify(progress));
+    return { success: true };
+  }
   const r = await fetch(`/api/tts/progress/${bookId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -490,6 +500,10 @@ export async function apiSaveTTSProgress(bookId, progress) {
 }
 
 export async function apiDeleteTTSProgress(bookId) {
+  if (isMobile()) {
+    localStorage.removeItem(`tts_progress_${bookId}`);
+    return { success: true };
+  }
   const r = await fetch(`/api/tts/progress/${bookId}`, { method: "DELETE" });
   if (!r.ok) throw new Error("TTS progress delete failed");
   return r.json();

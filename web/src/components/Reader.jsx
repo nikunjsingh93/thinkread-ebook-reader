@@ -346,15 +346,8 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const savedAudioPositionRef = useRef(0); // Store position to resume from
   const pdfObserverRef = useRef(null); // Observer for lazy loading PDF pages in vertical mode
 
-  // Expose UI state to parent for mobile title bar integration
-  useEffect(() => {
-    onUiVisibleChange?.(uiVisible);
-  }, [uiVisible, onUiVisibleChange]);
-
-  // Expose bookmark state to parent for mobile title bar integration
-  useEffect(() => {
-    onBookmarkChange?.(hasBookmark);
-  }, [hasBookmark, onBookmarkChange]);
+  // We do not expose UI state/bookmarks in the same way via effect anymore
+  // to prevent infinite render loops where the parent has no stable ref.
 
 
   const [fileUrl, setFileUrl] = useState(null);
@@ -1243,6 +1236,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   };
 
   useEffect(() => {
+    const isMobile = Capacitor.isNativePlatform();
+    // Native mobile and offline web rely on the async fileUrl state. Wait for it.
+    if (!fileUrl && (isMobile || isOffline)) {
+      return;
+    }
+
     if (book.type === "pdf") {
       // Handle PDF files using PDF.js
       setIsLoading(true);
@@ -1502,10 +1501,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setIsLoading(true);
         currentBookIdRef.current = book.id;
 
-        const epubUrl = isOffline ? fileUrl : contentsUrl;
-        const epubOptions = isOffline ? { openAs: "epub" } : {};
+        const isMobile = Capacitor.isNativePlatform();
+        const forceLocal = isOffline || isMobile;
+        const epubUrl = forceLocal ? fileUrl : contentsUrl;
+        const epubOptions = forceLocal ? { openAs: "epub" } : {};
 
-        if (isOffline) {
+        if (isMobile) {
+          console.log('[Reader] Loading book in mobile native mode directly via URL');
+          epub = ePub(epubUrl, epubOptions);
+        } else if (isOffline) {
           console.log('[Reader] Loading book in offline mode via Blob');
           try {
             // Try direct cache match first to bypass potential Service Worker issues
@@ -1665,7 +1669,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       epubBookRef.current = null;
       if (hostRef.current) hostRef.current.innerHTML = '';
     };
-  }, [book.id, isOffline, prefs.twoPageLayout, bookmarkCfi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [book.id, isOffline, prefs.twoPageLayout, bookmarkCfi, fileUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Re-apply prefs when changed
@@ -3194,13 +3198,60 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         console.warn('Failed to load TTS progress:', err);
       }
 
-      // Generate TTS audio from server
+      // Generate TTS audio
       try {
         setTtsLoading(true);
         setIsSpeaking(true);
         setShowAudioPlayer(true); // Show modal when starting
         setAudioCurrentTime(resumeFromTime);
         setAudioDuration(0);
+
+        if (Capacitor.isNativePlatform()) {
+          setAudioDuration(text.length / 15); // mock duration approx
+          let speakText = text;
+          if (resumeFromTime > 0) {
+            const startChar = Math.floor(resumeFromTime * 15);
+            if (startChar < text.length) speakText = text.substring(startChar);
+          }
+
+          const utterance = new SpeechSynthesisUtterance(speakText);
+          if (prefs.voiceName) {
+            const voices = window.speechSynthesis.getVoices();
+            utterance.voice = voices.find(v => v.name === prefs.voiceName) || null;
+          }
+          utterance.rate = prefs.readingSpeed || 1.0;
+
+          utterance.onend = () => {
+            setIsSpeaking(false);
+            setAudioCurrentTime(0);
+            setShowAudioPlayer(false);
+            audioRef.current = null;
+          };
+
+          utterance.onerror = (e) => {
+            console.error('[TTS] mobile error:', e);
+            setIsSpeaking(false);
+            setShowAudioPlayer(false);
+            audioRef.current = null;
+          };
+
+          audioRef.current = {
+            play: () => window.speechSynthesis.resume(),
+            pause: () => window.speechSynthesis.pause(),
+            get paused() { return window.speechSynthesis.paused; },
+            get currentTime() { return resumeFromTime; },
+            set currentTime(v) { },
+            get ended() { return false; },
+            addEventListener: () => { }
+          };
+
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utterance);
+          setTtsLoading(false);
+          setIsSpeaking(true);
+          setShowAudioPlayer(true);
+          return;
+        }
 
         const audioBlob = await apiGenerateTTS(text, {
           voice: prefs.voiceName || null,
@@ -3324,6 +3375,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   function stopTTS() {
     try {
+      if (Capacitor.isNativePlatform() && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
       // Save current position before stopping so user can resume later
       if (audioRef.current && audioRef.current.currentTime > 0 && ttsTextRef.current) {
         apiSaveTTSProgress(book.id, {
@@ -3396,6 +3450,20 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   // Load TTS voices
   async function loadTTSVoices() {
     try {
+      if (Capacitor.isNativePlatform()) {
+        const populateVoices = () => {
+          const voices = window.speechSynthesis.getVoices();
+          if (voices.length > 0) {
+            setTtsVoices(voices.map(v => ({ id: v.name, name: v.name, text: `${v.name} (${v.lang})` })));
+          }
+        };
+        populateVoices();
+        if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
+          window.speechSynthesis.onvoiceschanged = populateVoices;
+        }
+        return;
+      }
+
       const data = await apiGetTTSVoices();
       const availableVoices = data.voices || [];
       setTtsVoices(availableVoices);
@@ -3751,7 +3819,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               >
                 {pdfScrollMode === 'vertical' ? '↕' : '↔'}
               </button>
-              {!isIOS() && (
+              {!isIOS() && !Capacitor.isNativePlatform() && (
                 <button
                   className="pill"
                   onClick={toggleFullscreen}
@@ -3765,32 +3833,34 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           ) : (
             // EPUB-specific controls: TTS, TOC, Settings
             <>
-              <button
-                className="pill"
-                onClick={toggleTTS}
-                title={isSpeaking ? "Stop reading" : "Read Chapter"}
-                style={{
-                  padding: '6px 8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: isSpeaking ? 0.8 : 1
-                }}
-              >
-                {isSpeaking ? (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor" />
-                    <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor" />
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor" />
-                    <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor" />
-                    <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor" />
-                    <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor" />
-                  </svg>
-                )}
-              </button>
+              {!Capacitor.isNativePlatform() && (
+                <button
+                  className="pill"
+                  onClick={toggleTTS}
+                  title={isSpeaking ? "Stop reading" : "Read Chapter"}
+                  style={{
+                    padding: '6px 8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: isSpeaking ? 0.8 : 1
+                  }}
+                >
+                  {isSpeaking ? (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="5" y="4" width="2" height="8" rx="1" fill="currentColor" />
+                      <rect x="9" y="4" width="2" height="8" rx="1" fill="currentColor" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 9V15H7L12 20V4L7 9H3Z" fill="currentColor" />
+                      <path d="M14 11C14 10.45 14.45 10 15 10C15.55 10 16 10.45 16 11V13C16 13.55 15.55 14 15 14C14.45 14 14 13.55 14 13V11Z" fill="currentColor" />
+                      <path d="M17.5 9C17.5 8.45 17.95 8 18.5 8C19.05 8 19.5 8.45 19.5 9V15C19.5 15.55 19.05 16 18.5 16C17.95 16 17.5 15.55 17.5 15V9Z" fill="currentColor" />
+                      <path d="M20.5 7C20.5 6.45 20.95 6 21.5 6C22.05 6 22.5 6.45 22.5 7V17C22.5 17.55 22.05 18 21.5 18C20.95 18 20.5 17.55 20.5 17V7Z" fill="currentColor" />
+                    </svg>
+                  )}
+                </button>
+              )}
               <button
                 className="pill"
                 onClick={() => setTocOpen(true)}
@@ -3803,7 +3873,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   <path d="M3 10C2.44772 10 2 10.4477 2 11C2 11.5523 2.44772 12 3 12H13C13.5523 12 14 11.5523 14 11C14 10.4477 13.5523 10 13 10H3Z" fill="currentColor" />
                 </svg>
               </button>
-              {!isIOS() && (
+              {!isIOS() && !Capacitor.isNativePlatform() && (
                 <button
                   className="pill"
                   onClick={toggleFullscreen}
