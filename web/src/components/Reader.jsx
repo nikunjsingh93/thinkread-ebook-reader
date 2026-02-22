@@ -1463,6 +1463,13 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           const idx = epubBookRef.current.locations.locationFromCfi(cfi);
           currentPage = idx > 0 ? idx : 1;
           totalPages = epubBookRef.current.locations.length();
+        } else if (savedProgressRef.current?.percent != null && savedProgressRef.current?.cfi === cfi) {
+          p = savedProgressRef.current.percent;
+          if (epubBookRef.current?.spine?.length) {
+            const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epubBookRef.current.spine.get(cfi)?.index || 0);
+            currentPage = spineIndex + 1;
+            totalPages = epubBookRef.current.spine.length;
+          }
         } else if (epubBookRef.current?.spine?.length) {
           const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epubBookRef.current.spine.get(cfi)?.index || 0);
           p = (spineIndex / epubBookRef.current.spine.length);
@@ -1622,7 +1629,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             if (rendition.location?.start?.cfi) handleRelocated(rendition.location);
           } catch { }
         } else if (book.sizeBytes < 100 * 1024 * 1024) {
-          epub.locations.generate(1600).catch(() => { });
+          epub.locations.generate(1600).then(() => {
+            if (!destroyed && renditionRef.current?.location) {
+              handleRelocated(renditionRef.current.location);
+            }
+          }).catch(() => { });
         }
 
         if (destroyed) return;
