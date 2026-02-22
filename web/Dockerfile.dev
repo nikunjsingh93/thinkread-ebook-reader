@@ -8,6 +8,9 @@ COPY package.json package-lock.json* ./
 # Install dependencies
 RUN npm install
 
+# Copy PDF.js worker to public directory for Docker compatibility
+RUN mkdir -p public && cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs || true
+
 # Copy source (will be overridden by volume mount, but needed for initial setup)
 COPY . .
 

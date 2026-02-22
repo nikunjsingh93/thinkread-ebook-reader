@@ -1,0 +1,29 @@
+# Single volume configuration (original setup)
+# All data (books, covers, fonts, state, dictionary) stored in one location
+services:
+  thinkread:
+    image: nikunjsingh/thinkread-ebook-reader:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./thinkread/data:/data # Contains books, covers, fonts, state.json, dictionary.json
+    environment:
+      - DATA_DIR=/data
+    restart: unless-stopped
+
+# Alternative: Separate volumes configuration
+# Uncomment the lines below and comment out the single volume above to use separate volumes
+# services:
+#   thinkread:
+#     image: nikunjsingh/thinkread-ebook-reader:latest
+#     ports:
+#       - "8020:8080"
+#     volumes:
+#       # Data volume (internal storage) - contains covers, fonts, state.json, dictionary.json
+#       - /home/wvx/Documents/dockerApps/thinkread/data:/data
+#       # Books volume (external HDD) - contains uploaded book files
+#       - /external/hdd/books:/books
+#     environment:
+#       - DATA_DIR=/data
+#       - BOOKS_DIR=/books
+#     restart: unless-stopped

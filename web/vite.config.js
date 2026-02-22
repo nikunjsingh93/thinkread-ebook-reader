@@ -16,5 +16,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
   },
+  // Copy service worker to dist
+  publicDir: 'public',
 });

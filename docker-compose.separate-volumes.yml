@@ -1,0 +1,14 @@
+services:
+  thinkread:
+    image: nikunjsingh/thinkread-ebook-reader:latest
+    ports:
+      - "8020:8080"
+    volumes:
+      # Data volume (internal storage) - contains covers, fonts, state.json, dictionary.json
+      - /home/wvx/Documents/dockerApps/thinkread/data:/data
+      # Books volume (external HDD) - contains uploaded book files
+      - /external/hdd/books:/books
+    environment:
+      - DATA_DIR=/data
+      - BOOKS_DIR=/books
+    restart: unless-stopped
