@@ -16,7 +16,7 @@ function coverLetter(title) {
   return (t[0] || "📘").toUpperCase();
 }
 
-function CoverImage({ book, progressPercent }) {
+function CoverImage({ book }) {
   const [coverUrl, setCoverUrl] = useState(null);
   const isElectron = () => typeof window !== 'undefined' && window.electronAPI;
   const isMobile = () => typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform();
@@ -40,24 +40,6 @@ function CoverImage({ book, progressPercent }) {
     return (
       <div className="cover" style={{ position: 'relative' }}>
         {coverLetter(book.title)}
-        {progressPercent != null && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '8px',
-              right: '8px',
-              background: 'rgba(0, 0, 0, 0.7)',
-              color: 'white',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: '600',
-              backdropFilter: 'blur(4px)'
-            }}
-          >
-            {progressPercent}%
-          </div>
-        )}
       </div>
     );
   }
@@ -83,24 +65,6 @@ function CoverImage({ book, progressPercent }) {
       ) : (
         coverLetter(book.title)
       )}
-      {progressPercent != null && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '8px',
-            right: '8px',
-            background: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: '600',
-            backdropFilter: 'blur(4px)'
-          }}
-        >
-          {progressPercent}%
-        </div>
-      )}
     </div>
   );
 }
@@ -112,7 +76,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [sortDropdownOpen, setSortDropdownOpen] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState(new Set());
   const [progressData, setProgressData] = useState({});
-  
+
   const isEink = prefs?.themeMode === 'eink';
   // Always use scroll mode (pagination option removed)
   const usePagination = false;
@@ -273,7 +237,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
       onCurrentPageChange(1);
     }
   }, [searchQuery, sortBy, usePagination, onCurrentPageChange]);
-  
+
   // Update current page if it exceeds total pages (e.g., after search reduces results)
   useEffect(() => {
     if (usePagination && totalPages > 0 && currentPage > totalPages) {
@@ -295,12 +259,12 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
             { name: 'All Files', extensions: ['*'] }
           ]
         });
-        
+
         if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
           setUploading(false);
           return;
         }
-        
+
         await apiUploadBooks(result.filePaths);
         onToast?.(`Uploaded ${result.filePaths.length} book(s)`);
         await onReload?.();
@@ -362,22 +326,22 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         {deleteMode ? (
           <>
             <div>
-              <div style={{fontWeight: 800, fontSize: 18}}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>
                 Delete Books ({selectedBooks.size} selected)
               </div>
-              <div className="muted" style={{fontSize: 12}}>
+              <div className="muted" style={{ fontSize: 12 }}>
                 Select books to delete
               </div>
             </div>
 
-            <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
-              <button className="pill" onClick={selectAllBooks} style={{fontSize: "12px", padding: "4px 8px"}}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0, justifyContent: "flex-end" }}>
+              <button className="pill" onClick={selectAllBooks} style={{ fontSize: "12px", padding: "4px 8px" }}>
                 Select All
               </button>
-              <button className="pill" onClick={clearSelection} style={{fontSize: "12px", padding: "4px 8px"}}>
+              <button className="pill" onClick={clearSelection} style={{ fontSize: "12px", padding: "4px 8px" }}>
                 Clear
               </button>
-              <button className="pill" onClick={exitMultiSelectMode} style={{fontSize: "12px", padding: "4px 8px"}}>
+              <button className="pill" onClick={exitMultiSelectMode} style={{ fontSize: "12px", padding: "4px 8px" }}>
                 Cancel
               </button>
               <button
@@ -397,231 +361,234 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
         ) : (
           <>
             <div>
-              <div style={{fontWeight: 800, fontSize: 18}}>Your Library</div>
-              <div className="muted" style={{fontSize: 12}}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>Your Library</div>
+              <div className="muted" style={{ fontSize: 12 }}>
                 EPUB • {books.length} book(s)
               </div>
             </div>
 
-            <div style={{display:"flex", gap:10, alignItems:"center", flex: 1, minWidth: 0, justifyContent: "flex-end"}}>
-          <input
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder="Search…"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              maxWidth: 220,
-              border: `1px solid var(--search-border)`,
-              background: "var(--search-bg)",
-              color: "var(--text)",
-              borderRadius: 999,
-              padding: "10px 12px"
-            }}
-          />
-          <button className="pill" onClick={pickFiles} disabled={uploading} style={{whiteSpace: "nowrap", flexShrink: 0}}>
-            {uploading ? "Uploading…" : "Upload"}
-          </button>
-          <div style={{position: "relative"}} className="sort-dropdown">
-            <button
-              className="pill"
-              onClick={() => setSortDropdownOpen(!sortDropdownOpen)}
-              style={{padding: "8px", minWidth: "auto", flexShrink: 0}}
-              title="Sort options"
-            >
-              ⇅
-            </button>
-            {sortDropdownOpen && (
-              <div style={{
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: "4px",
-                background: "var(--drawer-bg)",
-                border: "1px solid var(--border)",
-                borderRadius: "8px",
-                padding: "8px 0",
-                minWidth: "160px",
-                zIndex: 1000,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
-              }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0, justifyContent: "flex-end" }}>
+              <input
+                value={searchQuery}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
+                placeholder="Search…"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  maxWidth: 220,
+                  border: `1px solid var(--search-border)`,
+                  background: "var(--search-bg)",
+                  color: "var(--text)",
+                  borderRadius: 999,
+                  padding: "10px 12px"
+                }}
+              />
+              <button className="pill" onClick={pickFiles} disabled={uploading} style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+                {uploading ? "Uploading…" : "Upload"}
+              </button>
+              <div style={{ position: "relative" }} className="sort-dropdown">
                 <button
-                  onClick={() => {
-                    onSortChange("upload");
-                    setSortDropdownOpen(false);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "8px 16px",
-                    background: sortBy === "upload" ? "var(--row-bg)" : "transparent",
-                    border: "none",
-                    color: sortBy === "upload" ? "var(--text)" : "var(--muted)",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    transition: isEink ? "none" : "all 0.15s ease",
-                    borderRadius: "4px"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (sortBy !== "upload") {
-                      e.target.style.background = "var(--row-bg)";
-                      e.target.style.color = "var(--text)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (sortBy !== "upload") {
-                      e.target.style.background = "transparent";
-                      e.target.style.color = "var(--muted)";
-                    }
-                  }}
+                  className="pill"
+                  onClick={() => setSortDropdownOpen(!sortDropdownOpen)}
+                  style={{ padding: "8px", minWidth: "auto", flexShrink: 0 }}
+                  title="Sort options"
                 >
-                  📅 Sort by Upload Date
+                  ⇅
                 </button>
-                <button
-                  onClick={() => {
-                    onSortChange("alphabetical");
-                    setSortDropdownOpen(false);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "8px 16px",
-                    background: sortBy === "alphabetical" ? "var(--row-bg)" : "transparent",
-                    border: "none",
-                    color: sortBy === "alphabetical" ? "var(--text)" : "var(--muted)",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    transition: isEink ? "none" : "all 0.15s ease",
-                    borderRadius: "4px"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (sortBy !== "alphabetical") {
-                      e.target.style.background = "var(--row-bg)";
-                      e.target.style.color = "var(--text)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (sortBy !== "alphabetical") {
-                      e.target.style.background = "transparent";
-                      e.target.style.color = "var(--muted)";
-                    }
-                  }}
-                >
-                  🔤 Sort Alphabetically
-                </button>
-                <button
-                  onClick={() => {
-                    onSortChange("lastOpened");
-                    setSortDropdownOpen(false);
-                  }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "8px 16px",
-                    background: sortBy === "lastOpened" ? "var(--row-bg)" : "transparent",
-                    border: "none",
-                    color: sortBy === "lastOpened" ? "var(--text)" : "var(--muted)",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    transition: isEink ? "none" : "all 0.15s ease",
-                    borderRadius: "4px"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (sortBy !== "lastOpened") {
-                      e.target.style.background = "var(--row-bg)";
-                      e.target.style.color = "var(--text)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (sortBy !== "lastOpened") {
-                      e.target.style.background = "transparent";
-                      e.target.style.color = "var(--muted)";
-                    }
-                  }}
-                >
-                  📖 Sort by Last Opened
-                </button>
+                {sortDropdownOpen && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: "4px",
+                    background: "var(--drawer-bg)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "8px 0",
+                    minWidth: "160px",
+                    zIndex: 1000,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)"
+                  }}>
+                    <button
+                      onClick={() => {
+                        onSortChange("upload");
+                        setSortDropdownOpen(false);
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "8px 16px",
+                        background: sortBy === "upload" ? "var(--row-bg)" : "transparent",
+                        border: "none",
+                        color: sortBy === "upload" ? "var(--text)" : "var(--muted)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        transition: isEink ? "none" : "all 0.15s ease",
+                        borderRadius: "4px"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (sortBy !== "upload") {
+                          e.target.style.background = "var(--row-bg)";
+                          e.target.style.color = "var(--text)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (sortBy !== "upload") {
+                          e.target.style.background = "transparent";
+                          e.target.style.color = "var(--muted)";
+                        }
+                      }}
+                    >
+                      📅 Sort by Upload Date
+                    </button>
+                    <button
+                      onClick={() => {
+                        onSortChange("alphabetical");
+                        setSortDropdownOpen(false);
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "8px 16px",
+                        background: sortBy === "alphabetical" ? "var(--row-bg)" : "transparent",
+                        border: "none",
+                        color: sortBy === "alphabetical" ? "var(--text)" : "var(--muted)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        transition: isEink ? "none" : "all 0.15s ease",
+                        borderRadius: "4px"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (sortBy !== "alphabetical") {
+                          e.target.style.background = "var(--row-bg)";
+                          e.target.style.color = "var(--text)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (sortBy !== "alphabetical") {
+                          e.target.style.background = "transparent";
+                          e.target.style.color = "var(--muted)";
+                        }
+                      }}
+                    >
+                      🔤 Sort Alphabetically
+                    </button>
+                    <button
+                      onClick={() => {
+                        onSortChange("lastOpened");
+                        setSortDropdownOpen(false);
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "8px 16px",
+                        background: sortBy === "lastOpened" ? "var(--row-bg)" : "transparent",
+                        border: "none",
+                        color: sortBy === "lastOpened" ? "var(--text)" : "var(--muted)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                        transition: isEink ? "none" : "all 0.15s ease",
+                        borderRadius: "4px"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (sortBy !== "lastOpened") {
+                          e.target.style.background = "var(--row-bg)";
+                          e.target.style.color = "var(--text)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (sortBy !== "lastOpened") {
+                          e.target.style.background = "transparent";
+                          e.target.style.color = "var(--muted)";
+                        }
+                      }}
+                    >
+                      📖 Sort by Last Opened
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".epub"
-            multiple
-            onChange={onFileChange}
-            style={{display:"none"}}
-          />
-        </div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".epub"
+                multiple
+                onChange={onFileChange}
+                style={{ display: "none" }}
+              />
+            </div>
           </>
         )}
       </div>
 
-      <div style={{flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden'}}>
-        <div 
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+        <div
           style={{
-            flex: 1, 
-            overflowY: usePagination ? "hidden" : "auto", 
-            overflowX: "hidden", 
+            flex: 1,
+            overflowY: usePagination ? "hidden" : "auto",
+            overflowX: "hidden",
             minHeight: 0,
             scrollBehavior: usePagination ? 'auto' : 'smooth'
           }}
           className={usePagination ? 'eink-scroll-container' : ''}
         >
           {filtered.length === 0 ? (
-            <div className="muted" style={{padding: "18px 0"}}>
+            <div className="muted" style={{ padding: "18px 0" }}>
               No books yet. Click <b>Upload</b> to add EPUB files.
             </div>
           ) : (
             <div className={`grid ${usePagination ? 'pagination-grid' : ''}`} ref={gridRef}>
-            {paginatedBooks.map((b) => {
-            const progress = progressData[b.id];
-            // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
-            const pct = progress?.percent != null 
-              ? Math.round(progress.percent * 100) 
-              : (progress?.percentage != null ? Math.round(progress.percentage) : null);
-            return (
-              <div
-                className={`card ${deleteMode ? 'multi-select' : ''}`}
-                key={b.id}
-                onClick={() => deleteMode ? toggleBookSelection(b.id) : onOpenBook(b)}
-              >
-                {deleteMode && (
+              {paginatedBooks.map((b) => {
+                const progress = progressData[b.id];
+                // Handle both 'percent' (0-1) and 'percentage' (0-100) formats
+                const pct = progress?.percent != null
+                  ? Math.round(progress.percent * 100)
+                  : (progress?.percentage != null ? Math.round(progress.percentage) : null);
+                return (
                   <div
-                    style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      zIndex: 10
-                    }}
+                    className={`card ${deleteMode ? 'multi-select' : ''}`}
+                    key={b.id}
+                    onClick={() => deleteMode ? toggleBookSelection(b.id) : onOpenBook(b)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedBooks.has(b.id)}
-                      onChange={() => toggleBookSelection(b.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        accentColor: 'var(--accent, #007acc)'
-                      }}
-                    />
+                    {deleteMode && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          zIndex: 10
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedBooks.has(b.id)}
+                          onChange={() => toggleBookSelection(b.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            accentColor: 'var(--accent, #007acc)'
+                          }}
+                        />
+                      </div>
+                    )}
+                    <CoverImage book={b} />
+                    <div className="cardBody">
+                      <div className="title" title={b.title}>{b.title}</div>
+                      <div className="small">
+                        {pct != null ? `Progress: ${pct}%` : "New"}
+                      </div>
+                    </div>
                   </div>
-                )}
-                <CoverImage book={b} progressPercent={pct} />
-                <div className="cardBody">
-                  <div className="title" title={b.title}>{b.title}</div>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
             </div>
           )}
         </div>
-        
+
         {/* Pagination controls - positioned outside scroll container */}
         {usePagination && filtered.length > 0 && totalPages > 1 && (
           <div style={{
