@@ -1429,6 +1429,21 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           isRestoringRef.current = true;
           try {
             await rendition.display(startAt);
+
+            // Fix for "progress always behind" issue (opens at chapter start instead of exact paragraph)
+            // Due to asynchronous parsing of injected custom fonts and CSS styles via themes/hooks,
+            // the layout often expands *after* EpubJS calculates the initial scroll position,
+            // leaving the viewer stranded at the beginning of the chapter or too far back.
+            // By pausing slightly and then forcing a resize/re-display, we land exactly on the saved CFI.
+            await new Promise(resolve => setTimeout(resolve, 400));
+
+            if (!destroyed && renditionRef.current) {
+              try {
+                // Resize forces EpubJS to recalculate columns/pagination with the new layout
+                renditionRef.current.resize();
+                await renditionRef.current.display(startAt);
+              } catch (e) { }
+            }
           } catch (e) {
             console.warn('[Reader] Failed to display at startAt, falling back to beginning', e);
             await rendition.display();
