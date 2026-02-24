@@ -2593,6 +2593,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         if (preResizeCfi) isRestoringRef.current = true; // Lock progress saving
       }
 
+      // Hide the background 'jump' frame with the loading spinner
+      setIsLoading(true);
+
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         if (preResizeCfi && renditionRef.current) {
@@ -2602,18 +2605,22 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               setTimeout(() => {
                 isRestoringRef.current = false;
                 preResizeCfi = null;
+                setIsLoading(false);
               }, 100);
             }).catch(() => {
               isRestoringRef.current = false;
               preResizeCfi = null;
+              setIsLoading(false);
             });
           } catch (e) {
             isRestoringRef.current = false;
             preResizeCfi = null;
+            setIsLoading(false);
           }
         } else {
           isRestoringRef.current = false;
           preResizeCfi = null;
+          setIsLoading(false);
         }
       }, 500);
     }
