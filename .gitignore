@@ -75,3 +75,8 @@ web/public/standard_fonts/
 web/public/wasm/
 web/public/image_decoders/
 
+# Mobile Builds
+web/android/
+web/ios/
+*.apk
+*.aab

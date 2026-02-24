@@ -451,9 +451,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         contents.document.addEventListener('contextmenu', preventContextMenu, true);
         contents.document.body.addEventListener('contextmenu', preventContextMenu, true);
 
-        // Prevent long press context menu on touch devices
+        // Prevent long press context menu on touch devices and handle swipes
         let touchTimer = null;
+        let startX = 0;
+        let startY = 0;
+        let startTime = 0;
+
         const handleTouchStart = (e) => {
+          if (e.changedTouches && e.changedTouches.length > 0) {
+            startX = e.changedTouches[0].screenX;
+            startY = e.changedTouches[0].screenY;
+            startTime = new Date().getTime();
+          }
+
           touchTimer = setTimeout(() => {
             // This is a long press - prevent default behavior
             if (e.cancelable) {
@@ -462,10 +472,35 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           }, 500);
         };
 
-        const handleTouchEnd = () => {
+        const handleTouchEnd = (e) => {
           if (touchTimer) {
             clearTimeout(touchTimer);
             touchTimer = null;
+          }
+
+          if (e.changedTouches && e.changedTouches.length > 0) {
+            const endX = e.changedTouches[0].screenX;
+            const endY = e.changedTouches[0].screenY;
+            const endTime = new Date().getTime();
+
+            const distanceX = endX - startX;
+            const distanceY = endY - startY;
+            const timeElapsed = endTime - startTime;
+
+            // Swipe detection thresholds
+            const minDistance = 50;
+            const maxTime = 500;
+            const maxPerpendicularDistance = 60; // Allow a bit more vertical slop
+
+            if (timeElapsed <= maxTime && Math.abs(distanceY) <= maxPerpendicularDistance) {
+              if (distanceX >= minDistance) {
+                // Swipe Right -> Previous Page
+                rendition.prev();
+              } else if (distanceX <= -minDistance) {
+                // Swipe Left -> Next Page
+                rendition.next();
+              }
+            }
           }
         };
 
@@ -1596,9 +1631,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         }
 
         // Store the start position and time
+        let startX = e.clientX;
+        let startY = e.clientY;
+
+        if (e.touches && e.touches.length > 0) {
+          startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
+        }
+
         longPressStartRef.current = {
-          x: e.clientX || (e.touches && e.touches[0].clientX),
-          y: e.clientY || (e.touches && e.touches[0].clientY),
+          x: startX,
+          y: startY,
           time: Date.now(),
           shouldPreventDefault: false // Start as false to allow normal clicks
         };
@@ -1651,28 +1694,68 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           clearTimeout(longPressPreventRef.current);
           longPressPreventRef.current = null;
         }
+
+        // Swipe detection on nav zones
+        if (longPressStartRef.current) {
+          let endX = e.clientX;
+          let endY = e.clientY;
+
+          if (e.changedTouches && e.changedTouches.length > 0) {
+            endX = e.changedTouches[0].clientX;
+            endY = e.changedTouches[0].clientY;
+          }
+
+          if (endX !== undefined && endY !== undefined) {
+            const distanceX = endX - longPressStartRef.current.x;
+            const distanceY = endY - longPressStartRef.current.y;
+            const timeElapsed = Date.now() - longPressStartRef.current.time;
+
+            const minDistance = 50;
+            const maxTime = 500;
+            const maxPerpendicularDistance = 60;
+
+            if (timeElapsed <= maxTime && Math.abs(distanceY) <= maxPerpendicularDistance) {
+              if (distanceX >= minDistance) {
+                longPressTriggeredRef.current = true; // Prevent click
+                renditionRef.current?.prev();
+              } else if (distanceX <= -minDistance) {
+                longPressTriggeredRef.current = true; // Prevent click
+                renditionRef.current?.next();
+              }
+            }
+          }
+        }
+
         longPressStartRef.current = null;
       };
 
       const handleLongPressMove = (e) => {
         // If the user moves too much, cancel the long press
         if (longPressStartRef.current) {
-          const currentX = e.clientX || (e.touches && e.touches[0].clientX);
-          const currentY = e.clientY || (e.touches && e.touches[0].clientY);
-          const deltaX = Math.abs(currentX - longPressStartRef.current.x);
-          const deltaY = Math.abs(currentY - longPressStartRef.current.y);
+          let currentX = e.clientX;
+          let currentY = e.clientY;
 
-          // If movement is more than 10px, cancel long press
-          if (deltaX > 10 || deltaY > 10) {
-            if (longPressTimerRef.current) {
-              clearTimeout(longPressTimerRef.current);
-              longPressTimerRef.current = null;
+          if (e.touches && e.touches.length > 0) {
+            currentX = e.touches[0].clientX;
+            currentY = e.touches[0].clientY;
+          }
+
+          if (currentX !== undefined && currentY !== undefined) {
+            const deltaX = Math.abs(currentX - longPressStartRef.current.x);
+            const deltaY = Math.abs(currentY - longPressStartRef.current.y);
+
+            // If movement is more than 10px, cancel long press
+            if (deltaX > 10 || deltaY > 10) {
+              if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+              if (longPressPreventRef.current) {
+                clearTimeout(longPressPreventRef.current);
+                longPressPreventRef.current = null;
+              }
+              // Do NOT nullify longPressStartRef here! Need it for swipe detection!
             }
-            if (longPressPreventRef.current) {
-              clearTimeout(longPressPreventRef.current);
-              longPressPreventRef.current = null;
-            }
-            longPressStartRef.current = null;
           }
         }
       };
@@ -3613,7 +3696,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             pointerEvents: 'none',
             touchAction: 'none',
             zIndex: -1
-          } : {}}
+          } : { touchAction: 'none' }}
         />
         <div
           className="navZone navRight"
@@ -3623,7 +3706,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             pointerEvents: 'none',
             touchAction: 'none',
             zIndex: -1
-          } : {}}
+          } : { touchAction: 'none' }}
         />
         <div
           className="navZone navMid"
@@ -3633,7 +3716,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             pointerEvents: 'none',
             touchAction: 'pan-y',
             zIndex: -1
-          } : {}}
+          } : { touchAction: 'none' }}
         />
 
         {isLoading && (
