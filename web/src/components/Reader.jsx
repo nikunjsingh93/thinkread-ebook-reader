@@ -2579,15 +2579,58 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     }
   }
 
-  // Listen for fullscreen changes
+  // Listen for fullscreen and resize changes to maintain exact position
   useEffect(() => {
+    let resizeTimer;
+    let preResizeCfi = null;
+
+    function handleResizeStart() {
+      if (book.type !== 'epub') return;
+
+      // Capture exact position before layout shifts
+      if (!preResizeCfi && renditionRef.current && epubBookRef.current) {
+        preResizeCfi = renditionRef.current.location?.start?.cfi || savedProgressRef.current?.cfi;
+        if (preResizeCfi) isRestoringRef.current = true; // Lock progress saving
+      }
+
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (preResizeCfi && renditionRef.current) {
+          try {
+            renditionRef.current.resize();
+            renditionRef.current.display(preResizeCfi).then(() => {
+              setTimeout(() => {
+                isRestoringRef.current = false;
+                preResizeCfi = null;
+              }, 100);
+            }).catch(() => {
+              isRestoringRef.current = false;
+              preResizeCfi = null;
+            });
+          } catch (e) {
+            isRestoringRef.current = false;
+            preResizeCfi = null;
+          }
+        } else {
+          isRestoringRef.current = false;
+          preResizeCfi = null;
+        }
+      }, 500);
+    }
+
     function handleFullscreenChange() {
       setIsFullscreen(!!document.fullscreenElement);
+      handleResizeStart();
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+    window.addEventListener('resize', handleResizeStart);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      window.removeEventListener('resize', handleResizeStart);
+      clearTimeout(resizeTimer);
+    };
+  }, [book.type]);
 
   function startLastPositionTimer() {
     // Clear any existing timer
