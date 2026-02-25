@@ -794,9 +794,27 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                   </div>
                   <div className="cardBody">
                     <div className="title" title={b.title}>{b.title}</div>
-                    <div className="small">
+                    <div className="small" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
                       {b.type === "pdf" && <span style={{ fontWeight: "bold", color: "var(--accent, #007acc)", marginRight: "4px" }}>PDF</span>}
-                      {pct != null ? `Progress: ${pct}%` : "New"}{currentUser?.isAdmin ? ` • ${formatBytes(b.sizeBytes)}` : ""}
+                      {pct != null ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                          Progress: {pct}%
+                          {pct === 100 && (
+                            <span style={{
+                              background: 'var(--accent, rgba(124,92,255,0.8))',
+                              color: '#fff',
+                              padding: '2px 5px',
+                              borderRadius: '4px',
+                              fontSize: '9px',
+                              fontWeight: 'bold',
+                              textTransform: 'uppercase',
+                              marginLeft: '6px',
+                              lineHeight: 1
+                            }}>Read</span>
+                          )}
+                        </span>
+                      ) : "New"}
+                      {currentUser?.isAdmin ? ` • ${formatBytes(b.sizeBytes)}` : ""}
                     </div>
                   </div>
                 </div>
