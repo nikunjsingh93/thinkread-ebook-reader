@@ -1383,6 +1383,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         savedProgressRef.current = progressData;
         const startAt = progressData?.cfi || bookmarkCfi || undefined;
 
+        if (progressData?.percent !== undefined && progressData?.percent !== null) {
+          setPercent(progressData.percent);
+        }
+
         console.log('[Reader] Waiting for epub.ready...');
         // Add a timeout to epub.ready to prevent infinite hang
         const readyPromise = epub.ready;
@@ -1419,7 +1423,11 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             if (rendition.location?.start?.cfi) handleRelocated(rendition.location);
           } catch { }
         } else if (book.sizeBytes < 100 * 1024 * 1024) {
-          epub.locations.generate(1600).catch(() => { });
+          epub.locations.generate(1600).then(() => {
+            if (!destroyed && renditionRef.current?.location?.start?.cfi) {
+              handleRelocated(renditionRef.current.location);
+            }
+          }).catch(() => { });
         }
 
         if (destroyed) return;
