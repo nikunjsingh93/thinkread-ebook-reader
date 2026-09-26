@@ -13,6 +13,14 @@ function precacheAppShell() {
       const assetsDir = path.join(dist, "assets");
       const assetNames = await readdir(assetsDir);
       const assets = [...assetNames.map((name) => `/assets/${name}`), "/pdf.worker.min.mjs"];
+      // PDF.js can need these files on pages that have never been viewed.
+      for (const directory of ["cmaps", "standard_fonts", "wasm", "image_decoders"]) {
+        const names = await readdir(path.join(dist, directory)).catch((error) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        });
+        assets.push(...names.map((name) => `/${directory}/${name}`));
+      }
       if (assetNames.length === 0) throw new Error("No built app assets found for offline cache");
 
       // Changing the cache name only after the new shell is built keeps the old

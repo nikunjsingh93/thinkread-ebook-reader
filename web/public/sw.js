@@ -59,6 +59,10 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (request.method !== 'GET') return;
 
+  // The manual offline download writes and verifies its own cache entry.
+  // Let that request reach the network directly to avoid caching it twice.
+  if (request.headers.get('X-ThinkRead-Cache-Download') === '1') return;
+
   // Skip sensitive or real-time API requests
   // Allowing health and current-user to fail naturally lets the client detect offline state accurately
   if (url.pathname.startsWith('/api/progress/')) return;
@@ -86,8 +90,16 @@ async function handleBookRequest(request) {
   try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
-      console.log('[SW] Fetched book from network, updating cache');
-      await cache.put(request, networkResponse.clone());
+      // PDF.js uses 206 byte-range responses. Only a 200 response without a
+      // Range request can represent the complete offline book file.
+      if (networkResponse.status === 200 && !request.headers.has('Range') &&
+          !networkResponse.headers.has('Content-Range')) {
+        try {
+          await storeCompleteBook(cache, request, networkResponse.clone());
+        } catch (error) {
+          console.warn('[SW] Could not cache complete book:', url.pathname, error);
+        }
+      }
       return networkResponse;
     }
   } catch (error) {
@@ -205,13 +217,24 @@ self.addEventListener('message', (event) => {
 });
 
 // Manually cache a book
+async function storeCompleteBook(cache, key, response) {
+  const blob = await response.blob();
+  const length = Number(response.headers.get('Content-Length'));
+  if (!blob.size || (length > 0 && blob.size !== length)) return false;
+  const headers = new Headers(response.headers);
+  headers.set('X-ThinkRead-Complete-Size', String(blob.size));
+  await cache.put(key, new Response(blob, { status: 200, headers }));
+  return true;
+}
+
 async function cacheBook(bookId, url) {
   const cache = await caches.open(BOOK_CACHE_NAME);
   try {
     const response = await fetch(url);
-    if (response.ok) {
-      await cache.put(url, response);
-      console.log('[SW] Book cached in persistent storage:', bookId);
+    if (response.status === 200 && !response.headers.has('Content-Range')) {
+      if (await storeCompleteBook(cache, url, response)) {
+        console.log('[SW] Book cached in persistent storage:', bookId);
+      }
     }
   } catch (error) {
     console.warn('[SW] Failed to cache book:', bookId, error);

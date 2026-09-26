@@ -1511,10 +1511,13 @@ app.post("/api/tts/speak", async (req, res) => {
             reject(error);
           });
 
-          // Handle client disconnect
-          req.on('close', () => {
-            picoProcess.kill();
-          });
+          // The request closes once its body has arrived, before synthesis
+          // finishes. Only cancel when the client closes the response early.
+          const cancelOnDisconnect = () => {
+            if (!res.writableEnded) picoProcess.kill();
+          };
+          res.once('close', cancelOnDisconnect);
+          picoProcess.once('close', () => res.off('close', cancelOnDisconnect));
         });
 
         // Apply audio enhancement to improve clarity (treble boost + gain)

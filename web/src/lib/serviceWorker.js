@@ -36,98 +36,120 @@ export function isPWA() {
     window.navigator.standalone === true;
 }
 
-// Get cached books from Cache API directly
-export async function getCachedBooks() {
-  if (!('caches' in window)) return [];
+const BOOK_CACHE_NAME = 'thinkread-books-v1';
+
+function notifyBookCacheChanged() {
+  window.dispatchEvent?.(new Event('thinkread-book-cache-changed'));
+}
+
+function expectedByteCount(sizeBytes) {
+  const size = Number(sizeBytes);
+  return Number.isSafeInteger(size) && size > 0 ? size : null;
+}
+
+async function isCompleteBookResponse(response, sizeBytes) {
+  if (!response || response.status !== 200 || response.headers.has('Content-Range')) return false;
+
+  const expected = expectedByteCount(sizeBytes);
+  const markedSize = expectedByteCount(response.headers.get('X-ThinkRead-Complete-Size'));
+  if (markedSize) return !expected || markedSize === expected;
+
+  // Older caches contain the original server response. Validate its full body
+  // once before treating it as an offline book; metadata and range responses
+  // are never enough to earn the badge.
+  const actualSize = (await response.clone().blob()).size;
+  const contentLength = expectedByteCount(response.headers.get('Content-Length'));
+  return actualSize > 0 && (!expected || actualSize === expected) &&
+    (!contentLength || actualSize === contentLength);
+}
+
+export async function getCachedBookResponse(bookId, sizeBytes) {
+  if (!('caches' in window)) return null;
   try {
-    const cacheNames = await caches.keys();
-    console.log('[Offline] Checking caches:', cacheNames);
-    const cachedBooks = new Set();
+    const cache = await caches.open(BOOK_CACHE_NAME);
+    const response = await cache.match(`/api/books/${encodeURIComponent(bookId)}/file`);
+    return await isCompleteBookResponse(response, sizeBytes) ? response : null;
+  } catch (error) {
+    console.warn('[Offline] Failed to verify cached book:', bookId, error);
+    return null;
+  }
+}
 
-    for (const name of cacheNames) {
-      if (name.startsWith('thinkread-')) {
-        const cache = await caches.open(name);
-        const requests = await cache.keys();
-        console.log(`[Offline] Cache "${name}" has ${requests.length} resources`);
+export async function getCachedBooks(books = []) {
+  const cachedIds = [];
+  for (const book of books) {
+    if (await getCachedBookResponse(book.id, book.sizeBytes)) cachedIds.push(String(book.id));
+  }
+  return cachedIds;
+}
 
-        for (const req of requests) {
-          const url = req.url;
-          // Look for book file requests
-          // Matches /api/books/123/file or .../api/books/123/file
-          const fileMatch = url.match(/\/api\/books\/([^/]+)\/file/);
-          if (fileMatch) {
-            console.log(`[Offline] Found cached book file: ${fileMatch[1]}`);
-            cachedBooks.add(String(fileMatch[1]));
-          }
+// Download the archive/document, check its full byte count, then commit it.
+export async function cacheBook(bookId, url, sizeBytes) {
+  if (!('caches' in window)) return false;
+  if (await getCachedBookResponse(bookId, sizeBytes)) return true;
 
-          // Also check for metadata requests as a secondary source
-          const metaMatch = url.match(/\/api\/books\/([^/]+)\/metadata/);
-          if (metaMatch) {
-            console.log(`[Offline] Found cached book metadata: ${metaMatch[1]}`);
-            cachedBooks.add(String(metaMatch[1]));
-          }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 90_000);
+  try {
+    const response = await fetch(url, {
+      headers: { 'X-ThinkRead-Cache-Download': '1' },
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+    if (response.status !== 200 || response.headers.has('Content-Range')) return false;
+    const blob = await response.blob();
+    const expected = expectedByteCount(sizeBytes);
+    const contentLength = expectedByteCount(response.headers.get('Content-Length'));
+    if (!blob.size || (expected && blob.size !== expected) ||
+        (contentLength && blob.size !== contentLength)) return false;
+
+    const cache = await caches.open(BOOK_CACHE_NAME);
+    const headers = new Headers(response.headers);
+    headers.set('X-ThinkRead-Complete-Size', String(blob.size));
+    await cache.put(url, new Response(blob, { status: 200, headers }));
+    const saved = await cache.match(url);
+    const savedSize = (await saved.blob()).size;
+    if (savedSize !== blob.size) {
+      await cache.delete(url);
+      return false;
+    }
+    console.log('[Offline] Complete book cached:', bookId, savedSize);
+    notifyBookCacheChanged();
+    return true;
+  } catch (error) {
+    console.warn('[Offline] Failed to cache complete book:', bookId, error);
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function removeCachedBook(bookId) {
+  if (!('caches' in window)) return false;
+  const bookPath = `/api/books/${encodeURIComponent(bookId)}/`;
+  try {
+    // Remove the file and any separately cached cover, EPUB chapters, or
+    // metadata for this book. Keep the library list and other books intact.
+    for (const cacheName of await caches.keys()) {
+      if (!cacheName.startsWith('thinkread-')) continue;
+      const cache = await caches.open(cacheName);
+      for (const request of await cache.keys()) {
+        if (new URL(request.url).pathname.startsWith(bookPath)) {
+          await cache.delete(request);
         }
       }
     }
-    const result = Array.from(cachedBooks);
-    console.log('[Offline] Total cached books found:', result);
-    return result;
+    if (await getCachedBookResponse(bookId)) return false;
+    notifyBookCacheChanged();
+    return true;
   } catch (error) {
-    console.warn('[Offline] Failed to read cached books:', error);
-    return [];
+    console.warn('[Offline] Failed to remove cached book:', bookId, error);
+    return false;
   }
 }
 
-
-// Manually cache a book
-export async function cacheBook(bookId, url) {
-  const BOOK_CACHE_NAME = 'thinkread-books-v1';
-
-  // Option 1: Send message to Service Worker
-  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
-      type: 'CACHE_BOOK',
-      bookId, // Correctly match what sw.js expects
-      url
-    });
-  }
-
-  // Option 2: Also try to cache directly from the client as a fallback
-  if ('caches' in window) {
-    try {
-      const cache = await caches.open(BOOK_CACHE_NAME);
-      // Construct full URL for matching consistency if needed, but relative usually works
-      const response = await fetch(url);
-      if (response.ok) {
-        // Important: Use the same URL format that SW uses
-        await cache.put(url, response);
-        console.log('[Client] Book cached directly in persistent storage:', bookId);
-        return true;
-      }
-    } catch (error) {
-      console.warn('[Client] Failed to cache book directly:', error);
-    }
-  }
-  return false;
-}
-
-// Check if a specific book is cached
-export async function isBookCached(bookId) {
-  if (!('caches' in window)) return false;
-  try {
-    const cacheNames = await caches.keys();
-    for (const name of cacheNames) {
-      if (name.startsWith('thinkread-')) {
-        const cache = await caches.open(name);
-        const url = `/api/books/${bookId}/file`;
-        const match = await cache.match(url);
-        if (match) return true;
-      }
-    }
-  } catch (err) {
-    console.warn('Error checking cache for book:', bookId, err);
-  }
-  return false;
+export async function isBookCached(bookId, sizeBytes) {
+  return !!(await getCachedBookResponse(bookId, sizeBytes));
 }
 
 

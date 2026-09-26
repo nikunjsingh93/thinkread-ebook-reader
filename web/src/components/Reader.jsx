@@ -6,7 +6,7 @@ import DictionaryPopup from "./DictionaryPopup.jsx";
 import { loadProgress, saveProgress } from "../lib/storage.js";
 import { lookupWord, loadDictionary } from "../lib/dictionary.js";
 import { apiSaveBookmark, apiDeleteBookmark, apiGetBookmarks, apiGetFontFileUrl, apiGenerateTTS, apiGetTTSVoices, apiSaveTTSProgress, apiGetTTSProgress, apiDeleteTTSProgress } from "../lib/api.js";
-import { cacheBook } from "../lib/serviceWorker.js";
+import { cacheBook, getCachedBookResponse } from "../lib/serviceWorker.js";
 
 // Configure PDF.js worker
 // Use local worker file for Docker compatibility
@@ -299,8 +299,14 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   const isRestoringRef = useRef(false); // Flag to prevent saving progress while restoring position
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [uiVisible, setUiVisible] = useState(true);
+  const [screenLocked, setScreenLocked] = useState(false);
+  const screenLockedRef = useRef(false);
+  const uiVisibleBeforeLockRef = useRef(true);
   const [percent, setPercent] = useState(0);
   const [locationText, setLocationText] = useState("");
+  const [pageInfoReady, setPageInfoReady] = useState(false);
+  const [pageInfoUnavailable, setPageInfoUnavailable] = useState(false);
+  const initialDisplayReadyRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [navigatingToPercent, setNavigatingToPercent] = useState(null);
@@ -349,9 +355,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
   useEffect(() => {
     // Cache books when opened so they can be read offline
     if (book.id && fileUrl) {
-      cacheBook(book.id, fileUrl);
+      cacheBook(book.id, fileUrl, book.sizeBytes);
     }
-  }, [book.id, fileUrl]);
+  }, [book.id, book.sizeBytes, fileUrl]);
 
   // Apply theme settings to epub.js rendition
   function applyPrefs(rendition, p) {
@@ -656,6 +662,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       const currentPercent = totalPages > 0 ? (pageNum / totalPages) : 0;
       setPercent(currentPercent);
       setLocationText(`Page ${pageNum} of ${totalPages}`);
+      setPageInfoReady(true);
       setLastPageInfo({ page: pageNum, percent: Math.round(currentPercent * 100) });
 
       // Save progress (but don't save if we're restoring position)
@@ -856,6 +863,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           setPercent(calculatedPercent);
         }
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+        setPageInfoReady(true);
 
         // Scroll to saved position
         const scrollToY = savedProgress.scrollTop || 0;
@@ -894,6 +902,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         pdfPageNumRef.current = startPage || 1;
         setPercent(0);
         setLocationText(`Page ${pdfPageNumRef.current} of ${totalPages}`);
+        setPageInfoReady(true);
       }
 
       // Track tap position for UI toggle
@@ -1017,6 +1026,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
           setPercent(percent);
           setLocationText(`Page ${currentPage} of ${totalPages}`);
+          setPageInfoReady(true);
 
           // Save progress (debounced)
           if (!isRestoringRef.current && currentBookIdRef.current) {
@@ -1047,13 +1057,25 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     if (book.type === "pdf") {
       // Handle PDF files using PDF.js
       setIsLoading(true);
+      setPageInfoReady(false);
+      setPageInfoUnavailable(false);
+      setLocationText("");
       currentBookIdRef.current = book.id;
 
-      // Load PDF document
-      pdfjsLib.getDocument({
-        url: fileUrl,
-        ...PDF_ASSETS_CONFIG
-      }).promise
+      // PDF.js may request individual byte ranges. Offline, give it the
+      // verified complete file so every page is available without the server.
+      const loadPdf = async () => {
+        if (isOffline) {
+          const cached = await getCachedBookResponse(book.id, book.sizeBytes);
+          if (!cached) throw new Error('Book not cached. Go online to read.');
+          return pdfjsLib.getDocument({
+            data: new Uint8Array(await cached.arrayBuffer()),
+            ...PDF_ASSETS_CONFIG
+          }).promise;
+        }
+        return pdfjsLib.getDocument({ url: fileUrl, ...PDF_ASSETS_CONFIG }).promise;
+      };
+      loadPdf()
         .then((pdf) => {
           pdfDocRef.current = pdf;
           pdfTotalPagesRef.current = pdf.numPages;
@@ -1118,7 +1140,9 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         .catch((err) => {
           console.error('Error loading PDF:', err);
           setIsLoading(false);
-          onToast?.("Failed to load PDF. Please try again.");
+          setPageInfoUnavailable(true);
+          onToast?.(isOffline && err.message === 'Book not cached. Go online to read.'
+            ? err.message : "Failed to load PDF. Please try again.");
         });
 
       return () => {
@@ -1142,9 +1166,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     let rendition;
     let epub;
     let progressInterval;
+    locationsReadyRef.current = false;
+    initialDisplayReadyRef.current = false;
+    setPageInfoReady(false);
+    setPageInfoUnavailable(false);
+    setLocationText("");
 
     const saveCurrentProgress = () => {
-      if (destroyed || !renditionRef.current || isRestoringRef.current) return;
+      if (destroyed || !renditionRef.current || isRestoringRef.current ||
+          !locationsReadyRef.current || !initialDisplayReadyRef.current) return;
       try {
         const loc = renditionRef.current.location;
         if (!loc?.start?.cfi) return;
@@ -1174,6 +1204,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           cfi,
           percent: p,
           locations: locationsToSave,
+          locationsComplete: true,
           updatedAt: Date.now()
         };
 
@@ -1195,6 +1226,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     const handleRelocated = (loc) => {
       if (destroyed) return;
       const cfi = loc?.start?.cfi;
+      if (!cfi || !locationsReadyRef.current || !initialDisplayReadyRef.current) return;
       let p = 0;
       let currentPage = 0;
       let totalPages = 0;
@@ -1263,19 +1295,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         if (epubBookRef.current?.locations?.length()) {
           p = epubBookRef.current.locations.percentageFromCfi(cfi) || 0;
           const idx = epubBookRef.current.locations.locationFromCfi(cfi);
-          currentPage = idx > 0 ? idx : 1;
+          currentPage = idx >= 0 ? idx + 1 : 1;
           totalPages = epubBookRef.current.locations.length();
-        } else if (epubBookRef.current?.spine?.length) {
-          const spineIndex = loc.start?.index !== undefined ? loc.start.index : (epubBookRef.current.spine.get(cfi)?.index || 0);
-          p = (spineIndex / epubBookRef.current.spine.length);
-          currentPage = spineIndex + 1;
-          totalPages = epubBookRef.current.spine.length;
         }
       } catch { }
 
-      setPercent(p);
       if (totalPages > 0) {
-        setLocationText(epubBookRef.current?.locations?.length() > 0 ? `Page ${currentPage} of ${totalPages}` : `Section ${currentPage} of ${totalPages}`);
+        setPercent(p);
+        setLocationText(`Page ${Math.min(currentPage, totalPages)} of ${totalPages}`);
+        setPageInfoReady(true);
         setLastPageInfo({ page: currentPage, percent: Math.round(p * 100) });
       }
 
@@ -1289,6 +1317,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
     const onVisibilityChange = () => { if (document.hidden) saveCurrentProgress(); };
     const onKeyDown = (e) => {
+      if (screenLockedRef.current) return;
       if (e.key === "ArrowRight") renditionRef.current?.next();
       if (e.key === "ArrowLeft") renditionRef.current?.prev();
       if (e.key === "Escape") {
@@ -1303,57 +1332,18 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         setIsLoading(true);
         currentBookIdRef.current = book.id;
 
-        const epubUrl = isOffline ? fileUrl : contentsUrl;
-        const epubOptions = isOffline ? { openAs: "epub" } : {};
-
         if (isOffline) {
-          console.log('[Reader] Loading book in offline mode via Blob');
-          try {
-            // Try direct cache match first to bypass potential Service Worker issues
-            if ('caches' in window) {
-              const cache = await caches.open('thinkread-books-v1');
-              // Try exact match first
-              let cachedResponse = await cache.match(fileUrl);
-              // Fallback to URL match without search params
-              if (!cachedResponse) {
-                cachedResponse = await cache.match(fileUrl, { ignoreSearch: true });
-              }
-
-              if (cachedResponse) {
-                console.log('[Reader] Found book in cache directly (bypassing SW)');
-                const blob = await cachedResponse.blob();
-                console.log('[Reader] Successfully extracted blob from cache, size:', blob.size);
-                if (destroyed) return;
-                epub = ePub(blob);
-              }
-            }
-
-            if (!epub) {
-              console.log('[Reader] Not found in direct cache, trying network fetch...');
-              try {
-                const res = await fetch(fileUrl);
-                if (res.ok) {
-                  const blob = await res.blob();
-                  console.log('[Reader] Successfully fetched blob from network, size:', blob.size);
-                  if (destroyed) return;
-                  epub = ePub(blob);
-                } else {
-                  console.warn('[Reader] Offline fetch returned !ok, status:', res.status);
-                  throw new Error(`Offline fetch failed: ${res.status}`);
-                }
-              } catch (err) {
-                // If we are offline and couldn't get the blob, show specific error
-                setLoadError("Book not cached. Go online to read.");
-                throw err;
-              }
-            }
-          } catch (err) {
-            console.warn('[Reader] Offline blob source failed, trying URL fallback:', err);
-            epub = ePub(epubUrl, epubOptions);
+          const cached = await getCachedBookResponse(book.id, book.sizeBytes);
+          if (!cached) {
+            setLoadError("Book not cached. Go online to read.");
+            throw new Error("Book not cached. Go online to read.");
           }
+          const blob = await cached.blob();
+          if (destroyed) return;
+          epub = ePub(blob);
         } else {
-          console.log('[Reader] Loading book in online mode via URL:', epubUrl);
-          epub = ePub(epubUrl, epubOptions);
+          console.log('[Reader] Loading book in online mode via URL:', contentsUrl);
+          epub = ePub(contentsUrl);
         }
 
         epubBookRef.current = epub;
@@ -1417,17 +1407,26 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
         applyPrefs(rendition, prefs);
 
-        if (progressData?.locations) {
+        let loadedLocations = false;
+        if (progressData?.locationsComplete && progressData?.locations) {
           try {
             await epub.locations.load(progressData.locations);
-            if (rendition.location?.start?.cfi) handleRelocated(rendition.location);
+            loadedLocations = epub.locations.length() > 0;
+            locationsReadyRef.current = loadedLocations;
           } catch { }
-        } else if (book.sizeBytes < 100 * 1024 * 1024) {
+        }
+        if (!loadedLocations && (!book.sizeBytes || book.sizeBytes < 100 * 1024 * 1024)) {
           epub.locations.generate(1600).then(() => {
-            if (!destroyed && renditionRef.current?.location?.start?.cfi) {
+            if (destroyed) return;
+            locationsReadyRef.current = epub.locations.length() > 0;
+            if (locationsReadyRef.current && initialDisplayReadyRef.current && renditionRef.current?.location?.start?.cfi) {
               handleRelocated(renditionRef.current.location);
+            } else if (!locationsReadyRef.current) {
+              setPageInfoUnavailable(true);
             }
-          }).catch(() => { });
+          }).catch(() => { if (!destroyed) setPageInfoUnavailable(true); });
+        } else if (!loadedLocations) {
+          setPageInfoUnavailable(true);
         }
 
         if (destroyed) return;
@@ -1461,11 +1460,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           console.log('[Reader] Displaying at beginning');
           await rendition.display();
         }
+        if (destroyed) return;
+        initialDisplayReadyRef.current = true;
+        if (locationsReadyRef.current && rendition.location?.start?.cfi) handleRelocated(rendition.location);
         console.log('[Reader] Load complete');
         setIsLoading(false);
       } catch (err) {
         console.error("[Reader] Failed to load book:", err);
         setIsLoading(false);
+        setPageInfoUnavailable(true);
         onToast?.(`Failed to load book: ${err.message || 'Unknown error'}`);
       }
     };
@@ -2303,6 +2306,19 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
     setUiVisible(v => !v);
   }
 
+  function lockScreen() {
+    uiVisibleBeforeLockRef.current = uiVisible;
+    screenLockedRef.current = true;
+    setScreenLocked(true);
+    setUiVisible(false);
+  }
+
+  function unlockScreen() {
+    screenLockedRef.current = false;
+    setScreenLocked(false);
+    setUiVisible(uiVisibleBeforeLockRef.current);
+  }
+
   async function goToPercent(percent, isDragging = false) {
     if (book.type === "pdf") {
       // PDF navigation by percentage
@@ -2733,14 +2749,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         allTextElements.forEach(el => {
           try {
             const rect = el.getBoundingClientRect();
-            const iframeRect = iframe.getBoundingClientRect();
-
-            // Check if element is visible and overlaps with iframe viewport
+            // Element rectangles are already relative to the iframe viewport.
             if (rect.width > 0 && rect.height > 0 &&
-              rect.bottom > iframeRect.top &&
-              rect.top < iframeRect.bottom &&
-              rect.right > iframeRect.left &&
-              rect.left < iframeRect.right) {
+              rect.bottom > 0 && rect.top < viewportHeight &&
+              rect.right > 0 && rect.left < viewportWidth) {
               visibleElements.add(el);
             }
           } catch (e) {
@@ -2775,13 +2787,12 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
             // Double-check visibility using getBoundingClientRect to ensure only current page
             try {
               const rect = node.getBoundingClientRect();
-              const iframeRect = iframe.getBoundingClientRect();
 
               // Calculate position relative to document (not viewport)
-              const elementTop = rect.top - iframeRect.top + scrollTop;
-              const elementBottom = rect.bottom - iframeRect.top + scrollTop;
-              const elementLeft = rect.left - iframeRect.left + scrollLeft;
-              const elementRight = rect.right - iframeRect.left + scrollLeft;
+              const elementTop = rect.top + scrollTop;
+              const elementBottom = rect.bottom + scrollTop;
+              const elementLeft = rect.left + scrollLeft;
+              const elementRight = rect.right + scrollLeft;
 
               // Only include if element overlaps with current viewport (current page)
               const inViewport = (
@@ -3226,7 +3237,17 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         };
 
         // Start playing
-        await audio.play();
+        try {
+          await audio.play();
+        } catch (playError) {
+          if (playError.name === 'NotAllowedError') {
+            setIsSpeaking(false);
+            setTtsLoading(false);
+            onToast?.('Audio is ready. Tap Play to start it.');
+            return;
+          }
+          throw playError;
+        }
         console.log('[TTS] Speech started');
 
       } catch (err) {
@@ -3620,6 +3641,15 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
 
   const verticalMargin = clamp(prefs.verticalMargin || 30, 1, 180);
   const horizontalMargin = clamp(prefs.horizontalMargin || 46, 1, 180);
+  const lockButton = (
+    <button className="pill" onClick={lockScreen} title="Lock reading screen" aria-label="Lock reading screen"
+      style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M8 10V7a4 4 0 0 1 7.5-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+      </svg>
+    </button>
+  );
 
   return (
     <div className="readerShell">
@@ -3642,6 +3672,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
           {book.type === "pdf" ? (
             // PDF-specific controls: Scroll mode toggle
             <>
+              {lockButton}
               <button
                 className="pill"
                 onClick={async () => {
@@ -3690,7 +3721,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
               <button
                 className="pill"
                 onClick={toggleTTS}
-                title={isSpeaking ? "Stop reading" : "Read Chapter"}
+                title={isSpeaking ? "Stop reading" : "Read current page"}
                 style={{
                   padding: '6px 8px',
                   display: 'flex',
@@ -3713,6 +3744,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                   </svg>
                 )}
               </button>
+              {lockButton}
               <button
                 className="pill"
                 onClick={() => setTocOpen(true)}
@@ -3851,6 +3883,7 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
       </div>
 
       <div className={`bottomBar ${!uiVisible ? 'hidden' : ''}`}>
+        {pageInfoReady ? <>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '120px', width: '120px' }}>
           <span style={{ fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{locationText || " "}</span>
         </div>
@@ -3879,6 +3912,10 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
         <div style={{ fontSize: '11px', minWidth: '40px', width: '40px', textAlign: 'right' }}>
           {navigatingToPercent !== null ? navigatingToPercent : pct}%
         </div>
+        </> : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', fontSize: '11px' }}>
+          {!pageInfoUnavailable && <div className="spin" style={{ width: '14px', height: '14px', border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%' }} />}
+          {pageInfoUnavailable ? 'Page count unavailable' : 'Calculating pages...'}
+        </div>}
       </div>
 
       {/* Floating "Go back" button popup */}
@@ -4212,6 +4249,39 @@ export default function Reader({ book, prefs, onPrefsChange, onBack, onToast, bo
                 ⏩
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {screenLocked && (
+        <div
+          aria-label="Reading screen locked"
+          onContextMenu={(event) => event.preventDefault()}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 3000,
+            background: 'transparent', touchAction: 'none',
+            userSelect: 'none', WebkitUserSelect: 'none',
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: 'calc(env(safe-area-inset-top) + 12px)',
+            right: 'calc(env(safe-area-inset-right) + 12px)',
+            display: 'flex', alignItems: 'center', gap: '8px',
+          }}>
+            <button className="pill" onClick={goPrev} aria-label="Previous page" title="Previous page"
+              style={{ width: '44px', height: '44px', padding: 0, borderRadius: '50%', background: 'rgba(25,25,25,0.35)', color: '#fff', opacity: 0.75, fontSize: '22px' }}>
+              ‹
+            </button>
+            <button className="pill" onClick={goNext} aria-label="Next page" title="Next page"
+              style={{ width: '44px', height: '44px', padding: 0, borderRadius: '50%', background: 'rgba(25,25,25,0.35)', color: '#fff', opacity: 0.75, fontSize: '22px' }}>
+              ›
+            </button>
+            <button className="pill" onClick={unlockScreen} aria-label="Unlock reading screen" title="Unlock reading screen"
+              style={{ width: '44px', height: '44px', padding: 0, borderRadius: '50%', background: 'rgba(25,25,25,0.35)', color: '#fff', opacity: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <rect x="5" y="10" width="14" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            </button>
           </div>
         </div>
       )}

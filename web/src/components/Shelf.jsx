@@ -12,7 +12,7 @@ function formatBytes(bytes) {
   return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-import { getCachedBooks } from '../lib/serviceWorker';
+import { cacheBook, getCachedBooks, removeCachedBook } from '../lib/serviceWorker';
 
 function isIOS() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -83,6 +83,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   const [progressLoading, setProgressLoading] = useState(false);
   const [cachedBookIds, setCachedBookIds] = useState(new Set());
   const [cachingIds, setCachingIds] = useState(new Set());
+  const [removingIds, setRemovingIds] = useState(new Set());
   const [imagesLoaded, setImagesLoaded] = useState(0);
   const [bookDetailsModal, setBookDetailsModal] = useState(null); // { book, position }
 
@@ -158,24 +159,26 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
   useEffect(() => {
     async function loadCached() {
       try {
-        const cachedIds = await getCachedBooks();
+        const cachedIds = await getCachedBooks(books);
         // ID strings from cache need to match whatever type b.id is. Usually they're strings.
         setCachedBookIds(new Set(cachedIds.map(String)));
       } catch (err) {
         console.error("Failed to load cached book IDs", err);
       }
     }
-    const interval = setInterval(loadCached, 1000 * 30);
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') loadCached();
     };
 
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', loadCached);
+    window.addEventListener('thinkread-book-cache-changed', loadCached);
     loadCached();
 
     return () => {
-      clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', loadCached);
+      window.removeEventListener('thinkread-book-cache-changed', loadCached);
     };
   }, [books]);
 
@@ -267,18 +270,45 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
     if (cachingIds.has(String(book.id))) return;
 
     setCachingIds(prev => new Set(prev).add(String(book.id)));
-    const url = `/api/books/${book.id}/file`;
-    const success = await cacheBook(book.id, url);
-
-    if (success) {
-      setCachedBookIds(prev => new Set(prev).add(String(book.id)));
-      onToast?.("Book cached for offline reading");
-    } else {
-      onToast?.("Failed to cache book");
+    try {
+      const url = `/api/books/${book.id}/file`;
+      const success = await cacheBook(book.id, url, book.sizeBytes);
+      if (success) {
+        setCachedBookIds(prev => new Set(prev).add(String(book.id)));
+        onToast?.("Book cached for offline reading");
+      } else {
+        onToast?.("Failed to cache book. Please try again.");
+      }
+    } catch (error) {
+      console.warn('Failed to cache book:', error);
+      onToast?.("Failed to cache book. Please try again.");
+    } finally {
+      setCachingIds(prev => {
+        const next = new Set(prev);
+        next.delete(String(book.id));
+        return next;
+      });
     }
-    setCachingIds(prev => {
+  }
+
+  async function handleRemoveCachedBook(book) {
+    const id = String(book.id);
+    if (removingIds.has(id)) return;
+    setRemovingIds(prev => new Set(prev).add(id));
+    const removed = await removeCachedBook(book.id);
+    if (removed) {
+      setCachedBookIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      onToast?.('Offline copy removed');
+    } else {
+      onToast?.('Failed to remove offline copy');
+    }
+    setRemovingIds(prev => {
       const next = new Set(prev);
-      next.delete(String(book.id));
+      next.delete(id);
       return next;
     });
   }
@@ -961,7 +991,7 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     Added: {new Date(bookDetailsModal.book.addedAt).toLocaleDateString()}
                   </p>
                 )}
-                {bookDetailsModal.book.cached && (
+                {cachedBookIds.has(String(bookDetailsModal.book.id)) && (
                   <p style={{ margin: '0 0 4px 0', color: 'var(--accent, #007acc)', fontSize: '14px', fontWeight: '500' }}>
                     ✓ Available offline
                   </p>
@@ -971,21 +1001,25 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
 
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => handleCacheBook(bookDetailsModal.book)}
-                disabled={cachingIds.has(String(bookDetailsModal.book.id)) || cachedBookIds.has(String(bookDetailsModal.book.id))}
+                onClick={() => cachedBookIds.has(String(bookDetailsModal.book.id))
+                  ? handleRemoveCachedBook(bookDetailsModal.book)
+                  : handleCacheBook(bookDetailsModal.book)}
+                disabled={cachingIds.has(String(bookDetailsModal.book.id)) ||
+                  removingIds.has(String(bookDetailsModal.book.id)) ||
+                  (isOffline && !cachedBookIds.has(String(bookDetailsModal.book.id)))}
                 style={{
-                  backgroundColor: cachedBookIds.has(String(bookDetailsModal.book.id)) ? 'var(--green, #28a745)' : 'var(--accent, #007acc)',
+                  backgroundColor: cachedBookIds.has(String(bookDetailsModal.book.id)) ? '#dc3545' : 'var(--accent, #007acc)',
                   color: 'white',
                   border: 'none',
                   padding: '10px 16px',
                   borderRadius: '6px',
-                  cursor: (cachingIds.has(String(bookDetailsModal.book.id)) || cachedBookIds.has(String(bookDetailsModal.book.id))) ? 'default' : 'pointer',
+                  cursor: (cachingIds.has(String(bookDetailsModal.book.id)) || removingIds.has(String(bookDetailsModal.book.id))) ? 'default' : 'pointer',
                   fontSize: '14px',
                   fontWeight: '500',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  opacity: cachingIds.has(String(bookDetailsModal.book.id)) ? 0.7 : 1
+                  opacity: (cachingIds.has(String(bookDetailsModal.book.id)) || removingIds.has(String(bookDetailsModal.book.id))) ? 0.7 : 1
                 }}
               >
                 {cachingIds.has(String(bookDetailsModal.book.id)) ? (
@@ -1000,12 +1034,11 @@ export default function Shelf({ books, onOpenBook, onReload, onToast, sortBy, on
                     }}></div>
                     Caching...
                   </>
+                ) : removingIds.has(String(bookDetailsModal.book.id)) ? (
+                  <>Removing...</>
                 ) : cachedBookIds.has(String(bookDetailsModal.book.id)) ? (
                   <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M5 13L9 17L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Cached
+                    Remove Offline Copy
                   </>
                 ) : (
                   <>
