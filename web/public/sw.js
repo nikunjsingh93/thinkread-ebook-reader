@@ -1,23 +1,24 @@
-const CACHE_NAME = 'thinkread-app-v4';
+const CACHE_NAME = 'thinkread-app-__BUILD_ID__';
 const BOOK_CACHE_NAME = 'thinkread-books-v1';
 const OFFLINE_URL = '/';
+// Replaced with the actual build output by Vite. The dev server uses this empty list.
+const BUILD_ASSETS = /*__PRECACHE_ASSETS__*/ [];
 
 // Assets to cache on install
 const STATIC_CACHE_URLS = [
   '/',
+  '/index.html',
   '/manifest.json',
   '/logo.svg',
   '/logo.png',
-  '/logo-dark.svg',
-  '/logo-dark.png',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
-  '/index.html'
+  '/logo-192.png',
+  '/logo-512.png',
+  ...BUILD_ASSETS
 ];
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install event v4 (persistent books)');
+  console.log('[SW] Installing app shell');
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Caching static assets');
@@ -30,7 +31,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old app caches but KEEP book caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate event v4');
+  console.log('[SW] Activating app shell');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -44,7 +45,7 @@ self.addEventListener('activate', (event) => {
         })
       );
     }).then(() => {
-      self.clients.claim();
+      return self.clients.claim();
     })
   );
 });
@@ -86,7 +87,7 @@ async function handleBookRequest(request) {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
       console.log('[SW] Fetched book from network, updating cache');
-      cache.put(request, networkResponse.clone());
+      await cache.put(request, networkResponse.clone());
       return networkResponse;
     }
   } catch (error) {
@@ -133,7 +134,7 @@ async function handleApiRequest(request) {
     // Cache successful GET requests for offline use
     if (response.ok && request.method === 'GET') {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
+      await cache.put(request, response.clone());
     }
 
     return response;
@@ -167,7 +168,7 @@ async function handleStaticRequest(request) {
   try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
+      await cache.put(request, networkResponse.clone());
     }
     return networkResponse;
   } catch (error) {
@@ -195,10 +196,10 @@ self.addEventListener('message', (event) => {
       self.skipWaiting();
       break;
     case 'CACHE_BOOK':
-      if (bId && bUrl) cacheBook(bId, bUrl);
+      if (bId && bUrl) event.waitUntil(cacheBook(bId, bUrl));
       break;
     case 'CACHE_BOOK_METADATA':
-      if (bId && meta) cacheBookMetadata(bId, meta);
+      if (bId && meta) event.waitUntil(cacheBookMetadata(bId, meta));
       break;
   }
 });

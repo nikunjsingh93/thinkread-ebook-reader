@@ -1,5 +1,7 @@
 # --- Build the React web app ---
-FROM node:20-alpine AS web
+# The web build emits static files, so run its tooling on the builder's native
+# architecture. This avoids emulating esbuild when publishing AMD64 from ARM.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
 RUN npm install

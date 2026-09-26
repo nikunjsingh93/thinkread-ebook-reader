@@ -1,7 +1,7 @@
 // Register service worker
 export function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    const register = () => {
       // Use local sw.js
       navigator.serviceWorker.register('/sw.js')
 
@@ -24,7 +24,9 @@ export function registerServiceWorker() {
         .catch((error) => {
           console.error('[SW] Registration failed:', error);
         });
-    });
+    };
+    if (document.readyState === 'complete') register();
+    else window.addEventListener('load', register, { once: true });
   }
 }
 
